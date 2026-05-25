@@ -201,7 +201,7 @@ export class SubscriptionService {
       const existing = await this.prisma.subscription.findFirst({
         where: {
           userId,
-          merchant: { contains: sub.merchant, mode: 'insensitive' },
+          merchantName: { contains: sub.merchant, mode: 'insensitive' },
         },
       });
 
@@ -226,7 +226,7 @@ export class SubscriptionService {
               name: sub.merchant,
               amount: sub.amount,
               frequency: sub.frequency,
-              merchant: sub.merchant,
+              merchantName: sub.merchant,
               status: 'ACTIVE',
               nextBillingDate,
             },
@@ -240,7 +240,7 @@ export class SubscriptionService {
       await this.rabbitMQ.publishSubscriptionDetected({
         subscriptionId: sub.id,
         userId,
-        merchant: sub.merchant,
+        merchant: sub.merchantName,
         amount: Number(sub.amount),
       });
     }

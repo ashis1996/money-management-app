@@ -11,3 +11,16 @@ export * from './insights/insights.module';
 export * from './insights/insights.service';
 export * from './notification/notification.module';
 export * from './notification/notification.service';
+// New feature modules
+export * from './goal/goal.module';
+export * from './goal/goal.service';
+export * from './budget/budget.module';
+export * from './budget/budget.service';
+export * from './account/account.module';
+export * from './account/account.service';
+export * from './action-card/action-card.module';
+export * from './action-card/action-card.service';
+export * from './weekly-summary/weekly-summary.module';
+export * from './weekly-summary/weekly-summary.service';
+export * from './ai-proxy/ai-proxy.module';
+export * from './ai-proxy/ai-proxy.service';

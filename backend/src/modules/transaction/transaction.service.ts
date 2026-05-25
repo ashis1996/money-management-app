@@ -32,7 +32,7 @@ export class TransactionService {
       transactionId: transaction.id,
       userId,
       amount: Number(transaction.amount),
-      category: transaction.category || 'UNKNOWN',
+      category: transaction.categoryId || 'UNKNOWN',
     });
 
     return transaction;

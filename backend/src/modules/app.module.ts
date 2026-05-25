@@ -8,6 +8,12 @@ import { SmsModule } from './sms/sms.module';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { InsightsModule } from './insights/insights.module';
 import { NotificationModule } from './notification/notification.module';
+import { GoalModule } from './goal/goal.module';
+import { BudgetModule } from './budget/budget.module';
+import { AccountModule } from './account/account.module';
+import { ActionCardModule } from './action-card/action-card.module';
+import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
+import { AiProxyModule } from './ai-proxy/ai-proxy.module';
 import { PrismaModule } from '../config/prisma.module';
 import { RabbitMQModule } from '../config/rabbitmq.module';
 import { ConsumersModule } from '../common/consumers/consumers.module';
@@ -46,6 +52,12 @@ import { ConsumersModule } from '../common/consumers/consumers.module';
     SubscriptionModule,
     InsightsModule,
     NotificationModule,
+    GoalModule,
+    BudgetModule,
+    AccountModule,
+    ActionCardModule,
+    AiProxyModule,
+    WeeklySummaryModule,
 
     // Event Consumers
     ConsumersModule,
