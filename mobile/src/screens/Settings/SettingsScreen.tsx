@@ -235,7 +235,20 @@ export function SettingsScreen({ navigation }: any) {
           icon="🏦"
           label="Linked Accounts"
           rightText="3 connected"
-          onPress={() => handleAction('Accounts')}
+          onPress={() => navigation.navigate('Accounts')}
+        />
+        <Row
+          icon="🔔"
+          label="Notifications"
+          hint="Risk alerts, reminders, insights"
+          onPress={() => navigation.navigate('Notifications')}
+          badge="3"
+        />
+        <Row
+          icon="📆"
+          label="Weekly Summary"
+          hint="Your last week's recap"
+          onPress={() => navigation.navigate('WeeklySummary')}
         />
         <Row
           icon="📥"

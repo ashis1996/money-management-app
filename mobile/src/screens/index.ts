@@ -1,6 +1,7 @@
 // Auth screens
 export { LoginScreen } from './Auth/LoginScreen';
 export { RegisterScreen } from './Auth/RegisterScreen';
+export { OnboardingScreen } from './Onboarding/OnboardingScreen';
 
 // Main tab screens
 export { HomeScreen } from './Home/HomeScreen';
@@ -11,8 +12,13 @@ export { SettingsScreen } from './Settings/SettingsScreen';
 
 // Stack screens
 export { AddTransactionScreen } from './Transactions/AddTransactionScreen';
+export { TransactionDetailScreen } from './Transactions/TransactionDetailScreen';
 export { BudgetsScreen } from './Budgets/BudgetsScreen';
 export { GoalsScreen } from './Goals/GoalsScreen';
 export { AIAssistantScreen } from './AIAssistant/AIAssistantScreen';
 export { MoneyLeaksScreen } from './MoneyLeaks/MoneyLeaksScreen';
 export { HealthScoreScreen } from './HealthScore/HealthScoreScreen';
+export { NotificationsScreen } from './Notifications/NotificationsScreen';
+export { WeeklySummaryScreen } from './WeeklySummary/WeeklySummaryScreen';
+export { AccountsScreen } from './Accounts/AccountsScreen';
+export { SplitExpenseScreen } from './SplitExpense/SplitExpenseScreen';

@@ -203,12 +203,21 @@ export function HomeScreen({ navigation }: any) {
               size="sm"
             />
           </View>
-          <TouchableOpacity
-            style={styles.aiButton}
-            onPress={() => navigation.navigate('AIAssistant')}
-          >
-            <Text style={styles.aiButtonIcon}>🤖</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.bellButton}
+              onPress={() => navigation.navigate('Notifications')}
+            >
+              <Text style={styles.bellIcon}>🔔</Text>
+              <View style={styles.bellBadge} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.aiButton}
+              onPress={() => navigation.navigate('AIAssistant')}
+            >
+              <Text style={styles.aiButtonIcon}>🤖</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Quick Actions */}
@@ -550,6 +559,32 @@ const styles = StyleSheet.create({
   },
   aiButtonIcon: {
     fontSize: 24,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bellButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  bellIcon: {
+    fontSize: 22,
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.error,
   },
   quickActions: {
     flexDirection: 'row',

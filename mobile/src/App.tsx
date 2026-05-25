@@ -12,6 +12,7 @@ import {
   // Auth
   LoginScreen,
   RegisterScreen,
+  OnboardingScreen,
   // Tabs
   HomeScreen,
   TransactionsScreen,
@@ -20,11 +21,16 @@ import {
   SettingsScreen,
   // Stack
   AddTransactionScreen,
+  TransactionDetailScreen,
   BudgetsScreen,
   GoalsScreen,
   AIAssistantScreen,
   MoneyLeaksScreen,
   HealthScoreScreen,
+  NotificationsScreen,
+  WeeklySummaryScreen,
+  AccountsScreen,
+  SplitExpenseScreen,
 } from './screens';
 
 const queryClient = new QueryClient({
@@ -96,6 +102,19 @@ function MainStack() {
         component={AddTransactionScreen}
         options={{ presentation: 'modal', animationEnabled: true }}
       />
+      <RootStack.Screen
+        name="SplitExpense"
+        component={SplitExpenseScreen}
+        options={{ presentation: 'modal', animationEnabled: true }}
+      />
+
+      {/* Detail screens (push) */}
+      <RootStack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
+      <RootStack.Screen name="Notifications" component={NotificationsScreen} />
+      <RootStack.Screen name="WeeklySummary" component={WeeklySummaryScreen} />
+      <RootStack.Screen name="Accounts" component={AccountsScreen} />
+
+      {/* Existing stack screens */}
       <RootStack.Screen name="Budgets" component={BudgetsScreen} />
       <RootStack.Screen name="Goals" component={GoalsScreen} />
       <RootStack.Screen name="AIAssistant" component={AIAssistantScreen} />
@@ -108,11 +127,13 @@ function MainStack() {
 function AuthStack() {
   return (
     <AuthStackNav.Navigator
+      initialRouteName="Onboarding"
       screenOptions={{
         headerShown: false,
         cardStyle: { backgroundColor: Colors.background },
       }}
     >
+      <AuthStackNav.Screen name="Onboarding" component={OnboardingScreen} />
       <AuthStackNav.Screen name="Login" component={LoginScreen} />
       <AuthStackNav.Screen name="Register" component={RegisterScreen} />
     </AuthStackNav.Navigator>
