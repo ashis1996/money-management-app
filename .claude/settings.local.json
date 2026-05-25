@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(npm test *)",
+      "Bash(npm install *)",
+      "Bash(npm view *)",
+      "Bash(python -m pytest tests/test_subscription_detector.py tests/test_sms_parser.py -v)",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(npx jest *)",
+      "Bash(Select-Object -Last 80)",
+      "Bash(Copy-Item .env.example .env)",
+      "Bash(docker-compose ps *)",
+      "Bash(docker-compose up *)",
+      "Bash(docker-compose down *)",
+      "Bash(netstat -ano)",
+      "Bash(findstr :6379)",
+      "Bash(npm run *)",
+      "Bash(rm -rf prisma/migrations/*)",
+      "Bash(npx prisma *)",
+      "Bash(curl -s http://localhost:3000/health)",
+      "Bash(New-Item *)",
+      "PowerShell(New-Item *)",
+      "Bash(Test-Path *)",
+      "Bash(Select-Object -First 100)"
+    ]
+  }
+}

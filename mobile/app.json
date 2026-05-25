@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "MoneyMind",
+    "slug": "moneymind",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "moneymind",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#4F46E5"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.moneymind.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Allow $(PRODUCT_NAME) to use Face ID for authentication",
+        "NSContactsUsageDescription": "Allow $(PRODUCT_NAME) to access contacts for SMS parsing"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#4F46E5"
+      },
+      "package": "com.moneymind.app",
+      "permissions": [
+        "READ_SMS",
+        "RECEIVE_SMS",
+        "INTERNET"
+      ],
+      "googleServicesFile": "./google-services.json"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#4F46E5"
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "http://10.0.2.2:3000/api/v1"
+    }
+  }
+}

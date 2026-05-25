@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: money-management
+  labels:
+    app: backend
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+        version: v1
+    spec:
+      containers:
+        - name: backend
+          image: moneymind/backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "3000"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: money-secrets
+                  key: database-url
+            - name: REDIS_HOST
+              value: "redis"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: RABBITMQ_URL
+              value: "amqp://rabbitmq:5672"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: money-secrets
+                  key: jwt-secret
+            - name: AI_SERVICE_URL
+              value: "http://ai-service:8000"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: money-management
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 80
+      targetPort: 3000
+      name: http
+  type: ClusterIP

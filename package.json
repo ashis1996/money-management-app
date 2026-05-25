@@ -1,0 +1,33 @@
+{
+  "name": "money-management-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-powered Money Management Mobile Application",
+  "workspaces": [
+    "backend",
+    "mobile",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:ai-service\"",
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:ai-service": "npm run dev --workspace=ai-service",
+    "dev:mobile": "npm run start --workspace=mobile",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:build": "docker-compose build",
+    "db:migrate": "npm run db:migrate --workspace=backend",
+    "db:seed": "npm run db:seed --workspace=backend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

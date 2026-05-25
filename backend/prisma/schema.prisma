@@ -1,0 +1,422 @@
+// ============================================================
+// MoneyMind - Production-Grade Prisma Schema
+// ============================================================
+// A comprehensive schema for AI-powered money management
+// featuring SMS ingestion, subscription detection, and analytics
+// ============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+/// Transaction type: money flow direction
+enum TransactionType {
+  CREDIT  /// Money incoming
+  DEBIT   /// Money outgoing
+}
+
+/// Transaction source: how the transaction was ingested
+enum TransactionSource {
+  SMS       /// From SMS parsing
+  BANK_API  /// From bank API integration
+  MANUAL    /// Manually entered by user
+  IMPORT    /// Bulk imported from file
+}
+
+/// Account type: financial instrument category
+enum AccountType {
+  BANK        /// Bank account
+  WALLET      /// Digital wallet (Paytm, PhonePe, etc.)
+  CREDIT_CARD /// Credit card
+  INVESTMENT  /// Investment account
+  LOAN        /// Loan account
+}
+
+/// Subscription frequency: billing cycle
+enum SubscriptionFrequency {
+  DAILY     /// Every day
+  WEEKLY    /// Every week
+  MONTHLY   /// Every month
+  QUARTERLY /// Every 3 months
+  YEARLY    /// Every year
+}
+
+/// Subscription status: lifecycle state
+enum SubscriptionStatus {
+  ACTIVE    /// Currently active
+  PAUSED    /// Temporarily paused
+  CANCELLED /// Cancelled by user
+  EXPIRED   /// Expired naturally
+}
+
+/// Budget period: time granularity
+enum BudgetPeriod {
+  WEEKLY   /// Weekly budget
+  MONTHLY  /// Monthly budget
+  YEARLY   /// Yearly budget
+}
+
+/// Notification type: category of notification
+enum NotificationType {
+  TRANSACTION   /// Transaction-related
+  SUBSCRIPTION  /// Subscription-related
+  BUDGET_ALERT  /// Budget threshold alert
+  INSIGHT       /// AI-generated insight
+  REMINDER      /// Scheduled reminder
+  SECURITY      /// Security alert
+}
+
+/// Notification priority: urgency level
+enum NotificationPriority {
+  LOW    /// Low priority
+  NORMAL /// Normal priority
+  HIGH   /// High priority
+  URGENT /// Urgent/critical
+}
+
+/// Notification channel: delivery method
+enum NotificationChannel {
+  PUSH   /// Push notification
+  EMAIL  /// Email
+  SMS    /// SMS
+  IN_APP /// In-app only
+}
+
+// ============================================================
+// MODELS
+// ============================================================
+
+/// User: Application user with authentication
+model User {
+  id                    String    @id @default(uuid())
+  email                 String    @unique
+  passwordHash          String
+  name                  String?
+  phone                 String?   @unique
+  avatarUrl             String?
+  timezone              String    @default("Asia/Kolkata")
+  currency              String    @default("INR")
+  emailVerified         Boolean   @default(false)
+  phoneVerified         Boolean   @default(false)
+  notificationPrefs     Json      @default("{}")
+  isActive              Boolean   @default(true)
+  lastLoginAt           DateTime?
+  deletedAt             DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Relations
+  accounts          Account[]
+  transactions      Transaction[]
+  subscriptions     Subscription[]
+  budgets           Budget[]
+  notifications     Notification[]
+  refreshTokens     RefreshToken[]
+  smsLogs           SmsLog[]
+  auditLogs         AuditLog[]
+
+  // Indexes
+  @@index([email])
+  @@index([phone])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+/// RefreshToken: JWT refresh token storage
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+/// Account: Bank accounts, wallets, credit cards
+model Account {
+  id                  String        @id @default(uuid())
+  userId              String
+  accountType         AccountType
+  accountName         String
+  accountNumber       String?       // Encrypted full number
+  maskedAccountNumber String?       // Last 4 digits
+  providerName        String?       // Bank/provider name
+  ifscCode            String?       // Indian bank IFSC
+  balance             Decimal       @default(0) @db.Decimal(15, 2)
+  currency            String        @default("INR")
+  color               String?       // UI color (#RRGGBB)
+  icon                String?       // UI icon
+  isPrimary           Boolean       @default(false)
+  isActive            Boolean       @default(true)
+  metadata            Json          @default("{}")
+  deletedAt           DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@index([userId, isPrimary])
+  @@index([userId, accountType])
+  @@index([isActive])
+
+  @@unique([userId, accountName])
+}
+
+/// Transaction: Financial transaction record
+model Transaction {
+  id                  String            @id @default(uuid())
+  userId              String
+  accountId           String?
+  amount              Decimal           @db.Decimal(15, 2)
+  type                TransactionType
+  categoryId          String?
+  subcategoryId       String?
+  merchantName        String?
+  description         String?
+  transactionDate     DateTime
+  postingDate         DateTime?
+  source              TransactionSource
+  externalReferenceId String?           // For deduplication
+  rawSmsText          String?
+  smsSenderId         String?
+  isSubscription      Boolean           @default(false)
+  subscriptionId      String?
+  latitude            Decimal?          @db.Decimal(10, 8)
+  longitude           Decimal?          @db.Decimal(11, 8)
+  isVerified          Boolean           @default(false)
+  tags                String[]
+  metadata            Json              @default("{}")
+  deletedAt           DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  account      Account?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category     Category?     @relation("TransactionCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategory  Category?     @relation("TransactionSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@index([userId, transactionDate(sort: Desc)])
+  @@index([userId, categoryId])
+  @@index([userId, type])
+  @@index([userId, source])
+  @@index([merchantName])
+  @@index([subscriptionId])
+  @@index([externalReferenceId])
+  @@index([transactionDate])  // BRIN index recommended for production
+  @@index([deletedAt])
+
+  @@unique([userId, externalReferenceId])
+
+  // Check constraints (enforced at database level)
+  // @@map("transactions")
+}
+
+/// Category: Transaction categories with hierarchy support
+model Category {
+  id          String      @id @default(uuid())
+  userId      String?     // NULL for system categories
+  name        String
+  parentId    String?
+  icon        String?
+  color       String?     // #RRGGBB
+  description String?
+  isSystem    Boolean     @default(false)
+  isActive    Boolean     @default(true)
+  displayOrder Int        @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  parent       Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children     Category[]  @relation("CategoryHierarchy")
+  transactions Transaction[] @relation("TransactionCategory")
+  subtransactions Transaction[] @relation("TransactionSubcategory")
+  budgets      Budget[]
+  subscriptions Subscription[]
+
+  @@index([userId])
+  @@index([parentId])
+  @@index([isSystem])
+  @@index([userId, isActive])
+
+  @@unique([userId, name])
+}
+
+/// Subscription: Recurring payment tracking
+model Subscription {
+  id                String             @id @default(uuid())
+  userId            String
+  name              String
+  merchantName      String
+  merchantPattern   String?            // Regex pattern for detection
+  amount            Decimal            @db.Decimal(15, 2)
+  currency          String             @default("INR")
+  frequency         SubscriptionFrequency
+  status            SubscriptionStatus @default(ACTIVE)
+  categoryId        String?
+  nextBillingDate   DateTime?
+  lastPaymentDate   DateTime?
+  lastPaymentAmount Decimal?           @db.Decimal(15, 2)
+  firstDetectedDate DateTime?
+  totalPaymentsCount Int               @default(0)
+  totalAmountPaid   Decimal            @default(0) @db.Decimal(15, 2)
+  reminderDaysBefore Int               @default(1)
+  isNotified        Boolean            @default(false)
+  notes             String?
+  metadata          Json               @default("{}")
+  deletedAt         DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category     Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([nextBillingDate])
+  @@index([merchantName])
+  @@index([deletedAt])
+}
+
+/// Budget: Spending budget tracking
+model Budget {
+  id            String       @id @default(uuid())
+  userId        String
+  categoryId    String?
+  name          String
+  amountLimit   Decimal      @db.Decimal(15, 2)
+  amountSpent   Decimal      @default(0) @db.Decimal(15, 2)
+  currency      String       @default("INR")
+  period        BudgetPeriod
+  startDate     DateTime
+  endDate       DateTime?
+  alertThreshold Decimal     @default(0.80) @db.Decimal(5, 4)
+  isActive      Boolean      @default(true)
+  rollover      Boolean      @default(false)
+  notes         String?
+  deletedAt     DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([userId, isActive])
+  @@index([period, startDate])
+  @@index([deletedAt])
+}
+
+/// Notification: User notifications
+model Notification {
+  id         String               @id @default(uuid())
+  userId     String
+  type       NotificationType
+  priority   NotificationPriority @default(NORMAL)
+  title      String
+  message    String
+  data       Json                 @default("{}")
+  channel    NotificationChannel  @default(IN_APP)
+  isRead     Boolean              @default(false)
+  readAt     DateTime?
+  sentAt     DateTime?
+  deliveredAt DateTime?
+  deletedAt  DateTime?
+  createdAt  DateTime             @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([type])
+  @@index([deletedAt])
+}
+
+/// SmsLog: Raw SMS ingestion tracking
+model SmsLog {
+  id            String    @id @default(uuid())
+  userId        String
+  body          String
+  sender        String
+  phoneNumber   String?
+  receivedAt    DateTime
+  isProcessed   Boolean   @default(false)
+  parsedData    Json?
+  transactionId String?     @unique
+  createdAt     DateTime    @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sender])
+  @@index([isProcessed])
+  @@index([receivedAt(sort: Desc)])
+}
+
+/// AuditLog: System audit trail
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  action      String
+  entityType  String
+  entityId    String?
+  oldValues   Json?
+  newValues   Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt(sort: Desc)])
+  @@index([action])
+}
+
+// ============================================================
+// VIEWS (PostgreSQL - defined via raw SQL in migrations)
+// ============================================================
+
+// Monthly spending summary view (create in migration):
+// CREATE VIEW monthly_spending_summary AS
+// SELECT
+//     user_id,
+//     DATE_TRUNC('month', transaction_date) AS month,
+//     category_id,
+//     SUM(amount) AS total_spent,
+//     COUNT(*) AS transaction_count
+// FROM transactions
+// WHERE type = 'DEBIT' AND deleted_at IS NULL
+// GROUP BY user_id, DATE_TRUNC('month', transaction_date), category_id;
+
+// Subscription metrics view:
+// CREATE VIEW subscription_metrics AS
+// SELECT
+//     user_id,
+//     COUNT(*) FILTER (WHERE status = 'ACTIVE') AS active_count,
+//     SUM(amount) FILTER (WHERE status = 'ACTIVE' AND frequency = 'MONTHLY') AS monthly_total,
+//     MIN(next_billing_date) FILTER (WHERE status = 'ACTIVE') AS next_billing
+// FROM subscriptions
+// WHERE deleted_at IS NULL
+// GROUP BY user_id;

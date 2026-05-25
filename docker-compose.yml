@@ -1,0 +1,154 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: money_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: money_management
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - money-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: money_redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - money-network
+
+  # RabbitMQ Message Queue
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: money_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5673:5672"   # AMQP port
+      - "15673:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - money-network
+
+  # Backend API (NestJS)
+  backend:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.backend
+    container_name: money_backend
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/money_management?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      JWT_SECRET: development-jwt-secret-change-in-production
+      JWT_EXPIRES_IN: 15m
+      REFRESH_TOKEN_SECRET: development-refresh-secret
+      REFRESH_TOKEN_EXPIRES_IN: 7d
+      BCRYPT_ROUNDS: 10
+      AI_SERVICE_URL: http://ai-service:8000
+      LOG_LEVEL: debug
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: sh -c "npm run db:generate && npm run db:migrate && npm run dev"
+    networks:
+      - money-network
+
+  # AI Service (FastAPI)
+  ai-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.ai
+    container_name: money_ai_service
+    environment:
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL: INFO
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ai-service:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - money-network
+
+  # PGAdmin (Database Management)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: money_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@moneymind.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - money-network
+
+  # Redis Commander (Redis UI)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: money_redis_commander
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - money-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  pgadmin_data:
+
+networks:
+  money-network:
+    driver: bridge
