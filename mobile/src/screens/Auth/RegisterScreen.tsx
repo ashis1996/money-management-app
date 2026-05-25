@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
   TouchableOpacity,
   KeyboardAvoidingView,
@@ -10,33 +9,60 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { useAuthStore } from '@/store/auth.store';
+import { useAuthStore } from '../../store/auth.store';
+import { Button, Input } from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius } from '../../styles/theme';
+
+const STEPS = [
+  { id: 'account', label: 'Account' },
+  { id: 'personal', label: 'You' },
+  { id: 'finance', label: 'Goals' },
+];
 
 export function RegisterScreen({ navigation }: any) {
+  const [step, setStep] = useState(0);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [primaryGoal, setPrimaryGoal] = useState<string | null>(null);
+  const [monthlyIncome, setMonthlyIncome] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { register } = useAuthStore();
 
+  const goalOptions = [
+    { id: 'save_more', icon: '💰', label: 'Save more money' },
+    { id: 'reduce_spending', icon: '📉', label: 'Reduce spending' },
+    { id: 'track_subs', icon: '🔄', label: 'Manage subscriptions' },
+    { id: 'budget', icon: '📊', label: 'Stick to budgets' },
+    { id: 'goal_save', icon: '🎯', label: 'Save for a goal' },
+    { id: 'all', icon: '✨', label: 'All of the above' },
+  ];
+
+  const handleNext = () => {
+    if (step === 0) {
+      if (!name || !email || !password) {
+        Alert.alert('Missing fields', 'Please fill all required fields');
+        return;
+      }
+      if (password !== confirmPassword) {
+        Alert.alert('Mismatch', 'Passwords do not match');
+        return;
+      }
+      if (password.length < 8) {
+        Alert.alert('Weak password', 'Password must be at least 8 characters');
+        return;
+      }
+    }
+    if (step < STEPS.length - 1) {
+      setStep(step + 1);
+    } else {
+      handleRegister();
+    }
+  };
+
   const handleRegister = async () => {
-    if (!name || !email || !password) {
-      Alert.alert('Error', 'Please fill in all required fields');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
-      return;
-    }
-
-    if (password.length < 8) {
-      Alert.alert('Error', 'Password must be at least 8 characters');
-      return;
-    }
-
     setIsLoading(true);
     try {
       await register(email, password, name, phone || undefined);
@@ -52,168 +78,364 @@ export function RegisterScreen({ navigation }: any) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Start managing your finances today</Text>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Progress dots */}
+        <View style={styles.progressBar}>
+          {STEPS.map((s, idx) => (
+            <View key={s.id} style={styles.progressItem}>
+              <View
+                style={[
+                  styles.progressDot,
+                  idx <= step && styles.progressDotActive,
+                ]}
+              />
+              <Text
+                style={[
+                  styles.progressLabel,
+                  idx <= step && styles.progressLabelActive,
+                ]}
+              >
+                {s.label}
+              </Text>
+            </View>
+          ))}
         </View>
 
-        {/* Form */}
-        <View style={styles.form}>
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Full Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your name"
+        {/* Step header */}
+        <View style={styles.header}>
+          {step > 0 && (
+            <TouchableOpacity
+              onPress={() => setStep(step - 1)}
+              style={styles.backBtn}
+            >
+              <Text style={styles.backIcon}>←</Text>
+            </TouchableOpacity>
+          )}
+          <Text style={styles.title}>{getStepTitle(step)}</Text>
+          <Text style={styles.subtitle}>{getStepSubtitle(step)}</Text>
+        </View>
+
+        {/* Step content */}
+        {step === 0 && (
+          <View style={styles.form}>
+            <Input
+              label="Full Name"
+              icon="👤"
+              placeholder="John Doe"
               value={name}
               onChangeText={setName}
               editable={!isLoading}
             />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your email"
+            <Input
+              label="Email"
+              icon="📧"
+              placeholder="you@example.com"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
-              autoCorrect={false}
               editable={!isLoading}
             />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Phone (Optional)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your phone number"
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-              editable={!isLoading}
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your password"
+            <Input
+              label="Password"
+              icon="🔒"
+              placeholder="At least 8 characters"
               value={password}
               onChangeText={setPassword}
               secureTextEntry
               editable={!isLoading}
             />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Confirm Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Confirm your password"
+            <Input
+              label="Confirm Password"
+              icon="🔒"
+              placeholder="Re-enter password"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
               editable={!isLoading}
             />
           </View>
+        )}
 
-          <TouchableOpacity
-            style={[styles.button, isLoading && styles.buttonDisabled]}
-            onPress={handleRegister}
-            disabled={isLoading}
-          >
-            <Text style={styles.buttonText}>
-              {isLoading ? 'Creating account...' : 'Create Account'}
-            </Text>
-          </TouchableOpacity>
+        {step === 1 && (
+          <View style={styles.form}>
+            <Input
+              label="Phone (optional)"
+              icon="📱"
+              placeholder="+91 98765 43210"
+              hint="We'll use this for SMS-based transaction tracking"
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              editable={!isLoading}
+            />
+            <Input
+              label="Monthly Income (optional)"
+              icon="💰"
+              placeholder="50000"
+              hint="Helps personalize your dashboard"
+              value={monthlyIncome}
+              onChangeText={setMonthlyIncome}
+              keyboardType="numeric"
+              editable={!isLoading}
+            />
 
+            {/* Permissions preview */}
+            <View style={styles.permissionsCard}>
+              <Text style={styles.permissionsTitle}>📨 Auto-capture permissions</Text>
+              <Text style={styles.permissionsText}>
+                We'll request permission to:
+              </Text>
+              <Text style={styles.permissionItem}>• Read bank SMS messages</Text>
+              <Text style={styles.permissionItem}>• Detect UPI notifications</Text>
+              <Text style={styles.permissionItem}>• Access transaction emails</Text>
+              <Text style={styles.permissionsFooter}>
+                You can configure later in Settings.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {step === 2 && (
+          <View style={styles.form}>
+            <Text style={styles.questionLabel}>What's your main goal?</Text>
+            <View style={styles.goalsGrid}>
+              {goalOptions.map((goal) => (
+                <TouchableOpacity
+                  key={goal.id}
+                  style={[
+                    styles.goalCard,
+                    primaryGoal === goal.id && styles.goalCardActive,
+                  ]}
+                  onPress={() => setPrimaryGoal(goal.id)}
+                >
+                  <Text style={styles.goalIcon}>{goal.icon}</Text>
+                  <Text
+                    style={[
+                      styles.goalLabel,
+                      primaryGoal === goal.id && styles.goalLabelActive,
+                    ]}
+                  >
+                    {goal.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.aiPreview}>
+              <Text style={styles.aiPreviewIcon}>🤖</Text>
+              <Text style={styles.aiPreviewText}>
+                Based on your goals, we'll personalize your dashboard and detect what matters most for you.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Actions */}
+        <Button
+          title={step === STEPS.length - 1 ? 'Create Account' : 'Continue'}
+          onPress={handleNext}
+          variant="primary"
+          size="lg"
+          fullWidth
+          loading={isLoading}
+          style={{ marginTop: Spacing.lg }}
+        />
+
+        {step === 0 && (
           <View style={styles.loginContainer}>
             <Text style={styles.loginText}>Already have an account? </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Login')}>
               <Text style={styles.loginLink}>Sign in</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
+function getStepTitle(step: number): string {
+  return ['Create Account', 'Tell us about you', 'Your money goals'][step];
+}
+
+function getStepSubtitle(step: number): string {
+  return [
+    'Start your financial journey',
+    'This helps us personalize your experience',
+    "We'll tailor the app for what matters most to you",
+  ][step];
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: Colors.background,
   },
   scrollContent: {
     flexGrow: 1,
-    padding: 24,
+    padding: Spacing.lg,
+    paddingTop: Spacing['4xl'],
   },
+  // Progress
+  progressBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.xl,
+    paddingHorizontal: Spacing.xl,
+  },
+  progressItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  progressDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.gray200,
+    marginBottom: 4,
+  },
+  progressDotActive: {
+    backgroundColor: Colors.primary,
+  },
+  progressLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.textTertiary,
+  },
+  progressLabelActive: {
+    color: Colors.primary,
+    fontWeight: Typography.weights.semiBold,
+  },
+  // Header
   header: {
-    marginBottom: 32,
+    marginBottom: Spacing.xl,
+  },
+  backBtn: {
+    marginBottom: Spacing.sm,
+  },
+  backIcon: {
+    fontSize: Typography.sizes['2xl'],
+    color: Colors.textPrimary,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontSize: Typography.sizes['2xl'],
+    fontWeight: Typography.weights.bold,
+    color: Colors.textPrimary,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginTop: 8,
+    fontSize: Typography.sizes.base,
+    color: Colors.textSecondary,
+    marginTop: 4,
   },
   form: {
     width: '100%',
   },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 8,
-  },
-  input: {
+  // Permissions
+  permissionsCard: {
+    backgroundColor: '#EEF2FF',
+    padding: Spacing.base,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    backgroundColor: '#F9FAFB',
+    borderColor: Colors.primaryLight,
+    marginTop: Spacing.sm,
   },
-  button: {
-    backgroundColor: '#4F46E5',
-    borderRadius: 12,
-    paddingVertical: 16,
+  permissionsTitle: {
+    fontSize: Typography.sizes.base,
+    fontWeight: Typography.weights.bold,
+    color: Colors.primary,
+    marginBottom: Spacing.sm,
+  },
+  permissionsText: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  permissionItem: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.textPrimary,
+    paddingVertical: 2,
+    paddingLeft: Spacing.sm,
+  },
+  permissionsFooter: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.textTertiary,
+    fontStyle: 'italic',
+    marginTop: Spacing.sm,
+  },
+  // Goals
+  questionLabel: {
+    fontSize: Typography.sizes.base,
+    fontWeight: Typography.weights.semiBold,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.base,
+  },
+  goalsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  goalCard: {
+    width: '48%',
+    padding: Spacing.base,
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.md,
+    borderWidth: 2,
+    borderColor: 'transparent',
     alignItems: 'center',
-    marginTop: 8,
   },
-  buttonDisabled: {
-    backgroundColor: '#A5B4FC',
+  goalCardActive: {
+    borderColor: Colors.primary,
+    backgroundColor: '#EEF2FF',
   },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
+  goalIcon: {
+    fontSize: 32,
+    marginBottom: Spacing.xs,
   },
+  goalLabel: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+    fontWeight: Typography.weights.medium,
+  },
+  goalLabelActive: {
+    color: Colors.primary,
+    fontWeight: Typography.weights.bold,
+  },
+  // AI preview
+  aiPreview: {
+    flexDirection: 'row',
+    backgroundColor: Colors.card,
+    padding: Spacing.base,
+    borderRadius: BorderRadius.md,
+    marginTop: Spacing.lg,
+    alignItems: 'flex-start',
+  },
+  aiPreviewIcon: {
+    fontSize: 24,
+    marginRight: Spacing.sm,
+  },
+  aiPreviewText: {
+    flex: 1,
+    fontSize: Typography.sizes.sm,
+    color: Colors.textSecondary,
+    lineHeight: Typography.sizes.sm * 1.5,
+  },
+  // Login link
   loginContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 24,
+    marginTop: Spacing.lg,
   },
   loginText: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: Typography.sizes.base,
+    color: Colors.textSecondary,
   },
   loginLink: {
-    fontSize: 14,
-    color: '#4F46E5',
-    fontWeight: '600',
+    fontSize: Typography.sizes.base,
+    color: Colors.primary,
+    fontWeight: Typography.weights.bold,
   },
 });

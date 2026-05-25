@@ -28,9 +28,28 @@ enum TransactionType {
 /// Transaction source: how the transaction was ingested
 enum TransactionSource {
   SMS       /// From SMS parsing
+  EMAIL     /// From email parsing
+  UPI       /// From UPI notifications
   BANK_API  /// From bank API integration
   MANUAL    /// Manually entered by user
+  VOICE     /// From voice entry
   IMPORT    /// Bulk imported from file
+}
+
+/// Transaction capture mode
+enum CaptureMode {
+  AUTO      /// Automatically captured (SMS, email, UPI)
+  MANUAL    /// User-entered manually
+  ASSISTED  /// AI suggested, user confirmed
+}
+
+/// User behavior archetype
+enum UserArchetype {
+  SPEND_HEAVY      /// High discretionary spending
+  SAVINGS_FOCUSED  /// Prioritizes savings
+  CREDIT_USER      /// Heavy credit card usage
+  SUBSCRIPTION_HEAVY /// Multiple subscriptions
+  BALANCED         /// Balanced spending profile
 }
 
 /// Account type: financial instrument category
@@ -109,6 +128,17 @@ model User {
   emailVerified         Boolean   @default(false)
   phoneVerified         Boolean   @default(false)
   notificationPrefs     Json      @default("{}")
+  
+  // Behavior Profile
+  archetype             UserArchetype @default(BALANCED)
+  financialHealthScore  Decimal?  @db.Decimal(5, 2) // 0-100 score
+  moneyLeakScore        Decimal?  @db.Decimal(5, 2) // 0-100 leak score
+  behaviorProfile       Json      @default("{}") // Spending patterns, habits
+  
+  // Dashboard Preferences
+  dashboardPrefs        Json      @default("{}") // Customized dashboard config
+  preferredCaptureMode  CaptureMode @default(ASSISTED)
+  
   isActive              Boolean   @default(true)
   lastLoginAt           DateTime?
   deletedAt             DateTime?
@@ -120,15 +150,19 @@ model User {
   transactions      Transaction[]
   subscriptions     Subscription[]
   budgets           Budget[]
+  goals             Goal[]
   notifications     Notification[]
   refreshTokens     RefreshToken[]
   smsLogs           SmsLog[]
   auditLogs         AuditLog[]
-
+  actionCards       ActionCard[]
+  weeklySummaries   WeeklySummary[]
+  
   // Indexes
   @@index([email])
   @@index([phone])
   @@index([isActive])
+  @@index([archetype])
   @@index([deletedAt])
 }
 
@@ -190,17 +224,38 @@ model Transaction {
   categoryId          String?
   subcategoryId       String?
   merchantName        String?
+  merchantId          String?           // Normalized merchant ID
   description         String?
   transactionDate     DateTime
   postingDate         DateTime?
   source              TransactionSource
+  captureMode         CaptureMode        @default(AUTO)
+  
+  // AI Assistance Fields
+  aiSuggestedCategory String?           // AI-suggested category
+  aiSuggestedMerchant String?           // AI-suggested merchant name
+  aiConfidence        Decimal?          @db.Decimal(5, 4) // AI confidence score
+  isUserConfirmed     Boolean           @default(false) // User confirmed AI suggestion
+  
+  // Enhanced Detection
   externalReferenceId String?           // For deduplication
   rawSmsText          String?
+  rawEmailText        String?
   smsSenderId         String?
   isSubscription      Boolean           @default(false)
   subscriptionId      String?
+  
+  // Location & Context
   latitude            Decimal?          @db.Decimal(10, 8)
   longitude           Decimal?          @db.Decimal(11, 8)
+  deviceInfo          Json?             // Device info for manual entries
+  
+  // Behavioral Tags
+  isImpulse           Boolean           @default(false) // Impulse purchase flag
+  isLateNight         Boolean           @default(false) // Late-night spending
+  isWeekend           Boolean           @default(false) // Weekend spending
+  emotionTag          String?           // Emotional state if detected
+  
   isVerified          Boolean           @default(false)
   tags                String[]
   metadata            Json              @default("{}")
@@ -218,16 +273,16 @@ model Transaction {
   @@index([userId, categoryId])
   @@index([userId, type])
   @@index([userId, source])
+  @@index([userId, captureMode])
   @@index([merchantName])
+  @@index([merchantId])
   @@index([subscriptionId])
   @@index([externalReferenceId])
-  @@index([transactionDate])  // BRIN index recommended for production
+  @@index([transactionDate])
+  @@index([isImpulse])
   @@index([deletedAt])
 
   @@unique([userId, externalReferenceId])
-
-  // Check constraints (enforced at database level)
-  // @@map("transactions")
 }
 
 /// Category: Transaction categories with hierarchy support
@@ -282,6 +337,17 @@ model Subscription {
   isNotified        Boolean            @default(false)
   notes             String?
   metadata          Json               @default("{}")
+  
+  // Enhanced Detection
+  originalAmount    Decimal?           @db.Decimal(15, 2) // First detected amount
+  priceHistory      Json               @default("[]") // [{date, amount}]
+  priceIncreased    Boolean            @default(false) // Price increase detected
+  priceIncreasePercent Decimal?        @db.Decimal(5, 2)
+  isDuplicate       Boolean            @default(false) // Duplicate subscription flag
+  duplicateOf       String?            // ID of original subscription
+  usageScore        Decimal?           @db.Decimal(5, 4) // Usage frequency 0-1
+  isLowUsage        Boolean            @default(false) // Low usage flag
+  
   deletedAt         DateTime?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
@@ -294,6 +360,8 @@ model Subscription {
   @@index([userId, status])
   @@index([nextBillingDate])
   @@index([merchantName])
+  @@index([priceIncreased])
+  @@index([isLowUsage])
   @@index([deletedAt])
 }
 
@@ -420,3 +488,127 @@ model AuditLog {
 // FROM subscriptions
 // WHERE deleted_at IS NULL
 // GROUP BY user_id;
+
+
+// ============================================================
+// NEW MODELS - Advanced Features
+// ============================================================
+
+/// Goal: User savings goals
+model Goal {
+  id              String    @id @default(uuid())
+  userId          String
+  name            String
+  targetAmount    Decimal   @db.Decimal(15, 2)
+  currentAmount   Decimal   @default(0) @db.Decimal(15, 2)
+  currency        String    @default("INR")
+  targetDate      DateTime?
+  category        String?   // TRIP, GADGET, EMERGENCY_FUND, etc.
+  icon            String?
+  color           String?
+  autoAllocate    Boolean   @default(false)
+  allocationPercent Decimal? @db.Decimal(5, 4) // % of income to auto-allocate
+  priority        Int       @default(0) // 1 = highest
+  isCompleted     Boolean   @default(false)
+  completedAt     DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isCompleted])
+  @@index([targetDate])
+  @@index([deletedAt])
+}
+
+/// ActionCard: Personalized action items for users
+model ActionCard {
+  id              String    @id @default(uuid())
+  userId          String
+  type            String    // CANCEL_SUBSCRIPTION, REDUCE_SPENDING, SET_BUDGET, etc.
+  title           String
+  description     String
+  priority        String    @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  impactAmount    Decimal?  @db.Decimal(15, 2) // Potential savings/impact
+  impactType      String?   // SAVINGS, HEALTH_SCORE, GOAL_PROGRESS
+  status          String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, DISMISSED
+  actionData      Json      @default("{}") // Action-specific data
+  expiresAt       DateTime?
+  completedAt     DateTime?
+  dismissedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([type])
+  @@index([priority])
+  @@index([expiresAt])
+}
+
+/// WeeklySummary: Personalized weekly money summaries
+model WeeklySummary {
+  id              String    @id @default(uuid())
+  userId          String
+  weekStartDate   DateTime
+  weekEndDate     DateTime
+  
+  // Summary Stats
+  totalSpent      Decimal   @db.Decimal(15, 2)
+  totalIncome     Decimal   @db.Decimal(15, 2)
+  savingsAmount   Decimal   @db.Decimal(15, 2)
+  savingsRate     Decimal   @db.Decimal(5, 4)
+  
+  // Insights
+  topCategories   Json      @default("[]")
+  topMerchants    Json      @default("[]")
+  unusualSpending Json?     // Any unusual patterns
+  behaviorInsights Json?    // Behavioral insights
+  
+  // AI Generated
+  aiSummary       String?   // Natural language summary
+  recommendations Json      @default("[]")
+  
+  createdAt       DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStartDate])
+  @@index([userId])
+  @@index([weekStartDate])
+}
+
+/// BehavioralPattern: User spending behavior patterns
+model BehavioralPattern {
+  id              String    @id @default(uuid())
+  userId          String
+  
+  // Time-based patterns
+  lateNightSpending Decimal @default(0) @db.Decimal(15, 2)
+  weekendSpending   Decimal @default(0) @db.Decimal(15, 2)
+  impulseSpending   Decimal @default(0) @db.Decimal(15, 2)
+  
+  // Category preferences
+  dominantCategories Json   @default("[]")
+  
+  // Spending triggers
+  emotionalTriggers Json    @default("[]") // Stress, celebration, etc.
+  
+  // Pattern scores
+  consistencyScore Decimal  @default(0) @db.Decimal(5, 4) // How consistent is spending
+  predictabilityScore Decimal @default(0) @db.Decimal(5, 4)
+  
+  // Time period
+  periodStart     DateTime
+  periodEnd       DateTime
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([userId, periodStart])
+  @@index([userId])
+}

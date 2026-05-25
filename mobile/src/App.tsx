@@ -4,29 +4,40 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
-import { Text, View, StyleSheet } from 'react-native';
+import { Text, View, StyleSheet, ActivityIndicator } from 'react-native';
 
 import { useAuthStore } from './store/auth.store';
+import { Colors, Typography, Spacing } from './styles/theme';
 import {
+  // Auth
   LoginScreen,
   RegisterScreen,
+  // Tabs
   HomeScreen,
   TransactionsScreen,
   SubscriptionsScreen,
   InsightsScreen,
   SettingsScreen,
+  // Stack
+  AddTransactionScreen,
+  BudgetsScreen,
+  GoalsScreen,
+  AIAssistantScreen,
+  MoneyLeaksScreen,
+  HealthScoreScreen,
 } from './screens';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 2,
-      staleTime: 5 * 60 * 1000, // 5 minutes
+      staleTime: 5 * 60 * 1000,
     },
   },
 });
 
-const Stack = createStackNavigator<any>();
+const RootStack = createStackNavigator<any>();
+const AuthStackNav = createStackNavigator<any>();
 const Tab = createBottomTabNavigator<any>();
 
 function TabIcon({ label, focused }: { label: string; focused: boolean }) {
@@ -53,8 +64,8 @@ function MainTabs() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarShowLabel: true,
-        tabBarActiveTintColor: '#4F46E5',
-        tabBarInactiveTintColor: '#9CA3AF',
+        tabBarActiveTintColor: Colors.primary,
+        tabBarInactiveTintColor: Colors.gray400,
         tabBarStyle: styles.tabBar,
         tabBarLabelStyle: styles.tabBarLabel,
         tabBarIcon: ({ focused }) => TabIcon({ label: route.name, focused }),
@@ -69,16 +80,42 @@ function MainTabs() {
   );
 }
 
-function AuthStack() {
+function MainStack() {
   return (
-    <Stack.Navigator
+    <RootStack.Navigator
       screenOptions={{
         headerShown: false,
+        cardStyle: { backgroundColor: Colors.background },
       }}
     >
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Register" component={RegisterScreen} />
-    </Stack.Navigator>
+      <RootStack.Screen name="Tabs" component={MainTabs} />
+
+      {/* Modal-style stack screens */}
+      <RootStack.Screen
+        name="AddTransaction"
+        component={AddTransactionScreen}
+        options={{ presentation: 'modal', animationEnabled: true }}
+      />
+      <RootStack.Screen name="Budgets" component={BudgetsScreen} />
+      <RootStack.Screen name="Goals" component={GoalsScreen} />
+      <RootStack.Screen name="AIAssistant" component={AIAssistantScreen} />
+      <RootStack.Screen name="MoneyLeaks" component={MoneyLeaksScreen} />
+      <RootStack.Screen name="HealthScore" component={HealthScoreScreen} />
+    </RootStack.Navigator>
+  );
+}
+
+function AuthStack() {
+  return (
+    <AuthStackNav.Navigator
+      screenOptions={{
+        headerShown: false,
+        cardStyle: { backgroundColor: Colors.background },
+      }}
+    >
+      <AuthStackNav.Screen name="Login" component={LoginScreen} />
+      <AuthStackNav.Screen name="Register" component={RegisterScreen} />
+    </AuthStackNav.Navigator>
   );
 }
 
@@ -88,7 +125,13 @@ export default function App() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading...</Text>
+        <Text style={styles.loadingIcon}>💰</Text>
+        <Text style={styles.loadingTitle}>MoneyMind</Text>
+        <ActivityIndicator
+          size="large"
+          color={Colors.primary}
+          style={{ marginTop: Spacing.lg }}
+        />
       </View>
     );
   }
@@ -97,7 +140,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <NavigationContainer>
         <StatusBar style="auto" />
-        {isAuthenticated ? <MainTabs /> : <AuthStack />}
+        {isAuthenticated ? <MainStack /> : <AuthStack />}
       </NavigationContainer>
     </QueryClientProvider>
   );
@@ -108,32 +151,38 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: Colors.background,
   },
-  loadingText: {
-    fontSize: 16,
-    color: '#4F46E5',
+  loadingIcon: {
+    fontSize: 64,
+    marginBottom: Spacing.base,
+  },
+  loadingTitle: {
+    fontSize: Typography.sizes['2xl'],
+    fontWeight: Typography.weights.bold,
+    color: Colors.primary,
   },
   tabIcon: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   tabIconText: {
-    fontSize: 24,
+    fontSize: 22,
+    opacity: 0.6,
   },
   tabIconFocused: {
     opacity: 1,
   },
   tabBar: {
-    backgroundColor: 'white',
+    backgroundColor: Colors.card,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: Colors.border,
     paddingBottom: 8,
     paddingTop: 8,
     height: 60,
   },
   tabBarLabel: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: Typography.sizes.xs,
+    fontWeight: Typography.weights.medium,
   },
 });
