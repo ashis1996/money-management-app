@@ -77,52 +77,77 @@ export class WeeklySummaryService {
       },
     });
 
-    // Aggregate
+    // Aggregate locally as a guaranteed-correct fallback baseline
     const totals = this.aggregate(transactions);
     const prevTotals = this.aggregate(prevTransactions);
 
-    // Top categories & merchants
-    const topCategories = this.topByGroup(transactions, 'categoryId', 5);
-    const topMerchants = this.topByGroup(transactions, 'merchantName', 5);
-
-    // Behavioral signals
-    const unusual = transactions
-      .filter((t) => {
-        const amt = Number(t.amount);
-        const avg = totals.totalSpent / Math.max(1, transactions.length);
-        return t.type === 'DEBIT' && amt > avg * 4;
-      })
-      .slice(0, 3)
-      .map((t) => ({
-        id: t.id,
-        merchant: t.merchantName,
-        amount: Number(t.amount),
-        reason: 'Unusually large compared to typical transactions',
-      }));
+    // Top categories & merchants (local fallback values)
+    const localTopCategories = this.topByGroup(transactions, 'categoryId', 5);
+    const localTopMerchants = this.topByGroup(transactions, 'merchantName', 5);
 
     // Behavior flags from existing tags on transactions
     const behaviorInsights = this.computeBehaviorInsights(transactions);
 
-    // Try to enrich with AI service for natural-language summary
+    // Map transactions to AI-service shape
+    const txnsForAi = transactions.map((t) => ({
+      id: t.id,
+      amount: Number(t.amount),
+      type: t.type,
+      category: t.categoryId,
+      merchant: t.merchantName,
+      date: t.transactionDate.toISOString(),
+      isImpulse: t.isImpulse,
+      isLateNight: t.isLateNight,
+      isWeekend: t.isWeekend,
+    }));
+    const prevTxnsForAi = prevTransactions.map((t) => ({
+      id: t.id,
+      amount: Number(t.amount),
+      type: t.type,
+      category: t.categoryId,
+      merchant: t.merchantName,
+      date: t.transactionDate.toISOString(),
+    }));
+
+    // Look up the user's archetype for personalized framing
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { archetype: true },
+    });
+
+    // Try the dedicated /insights/weekly-summary endpoint first.
+    // Falls back to local aggregates if the AI service is unavailable.
     let aiSummary: string | null = null;
     let recommendations: any[] = [];
+    let topCategories: any = localTopCategories;
+    let topMerchants: any = localTopMerchants;
+    let unusualSpending: any = null;
+    let winsAndImprovements: any = null;
+    let aiBehaviorInsights: any = behaviorInsights;
+    let aiStats: any = null;
+
     try {
-      const enriched = await this.aiProxy.callAi('/insights/spending', {
-        user_id: userId,
-        transactions: transactions.map((t) => ({
-          id: t.id,
-          amount: Number(t.amount),
-          type: t.type,
-          category: t.categoryId,
-          merchant: t.merchantName,
-          date: t.transactionDate,
-        })),
-        period: 'week',
-      });
-      aiSummary = enriched?.data?.spending_analysis?.summary ?? null;
-      recommendations = enriched?.data?.recommendations ?? [];
+      const enriched: any = await this.aiProxy.getWeeklySummary(
+        userId,
+        weekStart,
+        weekEnd,
+        txnsForAi,
+        prevTxnsForAi,
+        user?.archetype ?? undefined,
+      );
+      const data = enriched?.data ?? enriched;
+      if (data) {
+        aiSummary = data.aiSummary ?? null;
+        recommendations = data.recommendations ?? [];
+        topCategories = data.topCategories ?? localTopCategories;
+        topMerchants = data.topMerchants ?? localTopMerchants;
+        unusualSpending = data.unusualSpending ?? null;
+        winsAndImprovements = data.winsAndImprovements ?? null;
+        aiBehaviorInsights = data.behaviorInsights ?? behaviorInsights;
+        aiStats = data.stats ?? null;
+      }
     } catch (e: any) {
-      this.logger.warn(`AI summary unavailable: ${e?.message ?? 'unknown'}`);
+      this.logger.warn(`AI weekly summary unavailable: ${e?.message ?? 'unknown'}`);
     }
 
     // Upsert
@@ -139,8 +164,13 @@ export class WeeklySummaryService {
           : 0,
       topCategories,
       topMerchants,
-      unusualSpending: { items: unusual, prevTotals },
-      behaviorInsights,
+      unusualSpending: unusualSpending ?? { items: [], prevTotals },
+      behaviorInsights: {
+        ...behaviorInsights,
+        ...(aiBehaviorInsights ?? {}),
+        winsAndImprovements: winsAndImprovements ?? null,
+        aiStats,
+      },
       aiSummary,
       recommendations,
     };

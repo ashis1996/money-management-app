@@ -1,11 +1,12 @@
-﻿import { IsString, IsOptional, IsEnum, IsBoolean, IsArray } from 'class-validator';
+﻿import { IsString, IsOptional, IsEnum, IsBoolean, IsArray, IsNumber } from 'class-validator';
 
 export enum NotificationType {
   TRANSACTION = 'TRANSACTION',
-  REMINDER = 'REMINDER',
-  INSIGHT = 'INSIGHT',
-  ALERT = 'ALERT',
   SUBSCRIPTION = 'SUBSCRIPTION',
+  BUDGET_ALERT = 'BUDGET_ALERT',
+  INSIGHT = 'INSIGHT',
+  REMINDER = 'REMINDER',
+  SECURITY = 'SECURITY',
 }
 
 export enum NotificationPriority {
@@ -23,20 +24,21 @@ export enum NotificationChannel {
 }
 
 export class CreateNotificationDto {
-  @IsString()
-  userId: string;
-
-  @IsEnum(NotificationType)
-  type: NotificationType;
-
-  @IsString()
-  title: string;
-
-  @IsString()
-  body: string;
-
   @IsOptional()
   @IsString()
+  userId?: string;
+
+  @IsEnum(NotificationType)
+  type!: NotificationType;
+
+  @IsString()
+  title!: string;
+
+  @IsString()
+  body!: string;
+
+  @IsOptional()
+  @IsEnum(NotificationChannel)
   channel?: NotificationChannel;
 
   @IsOptional()
@@ -44,39 +46,59 @@ export class CreateNotificationDto {
   priority?: NotificationPriority;
 
   @IsOptional()
-  data?: Record<string, any>;
+  data?: Record<string, any> | null;
+
+  @IsOptional()
+  @IsBoolean()
+  sendPush?: boolean;
 }
 
 export class NotificationPreferencesDto {
-  @IsBoolean()
-  emailEnabled: boolean;
-
-  @IsBoolean()
-  pushEnabled: boolean;
-
-  @IsBoolean()
-  smsEnabled: boolean;
-
-  @IsArray()
-  @IsEnum(NotificationType, { each: true })
-  enabledTypes: NotificationType[];
-}
-
-export class UpdateNotificationPreferencesDto {
-  @IsOptional()
-  @IsBoolean()
-  emailEnabled?: boolean;
-
   @IsOptional()
   @IsBoolean()
   pushEnabled?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  emailEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   smsEnabled?: boolean;
 
   @IsOptional()
-  @IsArray()
-  @IsEnum(NotificationType, { each: true })
-  enabledTypes?: NotificationType[];
+  @IsBoolean()
+  transactionAlerts?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  subscriptionAlerts?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  budgetAlerts?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  insightAlerts?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  securityAlerts?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  minAmountForAlert?: number;
+}
+
+export class UpdateNotificationPreferencesDto {
+  @IsOptional() @IsBoolean() pushEnabled?: boolean;
+  @IsOptional() @IsBoolean() emailEnabled?: boolean;
+  @IsOptional() @IsBoolean() smsEnabled?: boolean;
+  @IsOptional() @IsBoolean() transactionAlerts?: boolean;
+  @IsOptional() @IsBoolean() subscriptionAlerts?: boolean;
+  @IsOptional() @IsBoolean() budgetAlerts?: boolean;
+  @IsOptional() @IsBoolean() insightAlerts?: boolean;
+  @IsOptional() @IsBoolean() securityAlerts?: boolean;
+  @IsOptional() @IsNumber() minAmountForAlert?: number;
 }

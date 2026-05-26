@@ -2,23 +2,36 @@
 
 export enum SubscriptionStatus {
   ACTIVE = 'ACTIVE',
+  PAUSED = 'PAUSED',
   CANCELLED = 'CANCELLED',
   EXPIRED = 'EXPIRED',
-  PENDING = 'PENDING',
+}
+
+export enum SubscriptionFrequency {
+  DAILY = 'DAILY',
+  WEEKLY = 'WEEKLY',
+  MONTHLY = 'MONTHLY',
+  QUARTERLY = 'QUARTERLY',
+  YEARLY = 'YEARLY',
 }
 
 export class CreateSubscriptionDto {
+  @IsOptional()
   @IsString()
-  userId: string;
+  userId?: string;
 
   @IsString()
-  name: string;
+  name!: string;
 
   @IsNumber()
-  amount: number;
+  amount!: number;
 
+  @IsEnum(SubscriptionFrequency)
+  frequency!: SubscriptionFrequency;
+
+  @IsOptional()
   @IsString()
-  cycle: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
+  merchantName?: string;
 
   @IsOptional()
   @IsString()
@@ -26,69 +39,30 @@ export class CreateSubscriptionDto {
 
   @IsOptional()
   @IsDateString()
-  startDate?: Date;
-
-  @IsOptional()
-  @IsDateString()
-  endDate?: Date;
+  nextBillingDate?: Date | string;
 
   @IsOptional()
   @IsString()
-  merchantName?: string;
+  notes?: string;
 }
 
 export class UpdateSubscriptionDto {
-  @IsOptional()
-  @IsString()
-  name?: string;
-
-  @IsOptional()
-  @IsNumber()
-  amount?: number;
-
-  @IsOptional()
-  cycle?: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
-
-  @IsOptional()
-  @IsString()
-  categoryId?: string;
-
-  @IsOptional()
-  @IsDateString()
-  startDate?: Date;
-
-  @IsOptional()
-  @IsDateString()
-  endDate?: Date;
-
-  @IsOptional()
-  @IsString()
-  merchantName?: string;
-
-  @IsOptional()
-  @IsEnum(SubscriptionStatus)
-  status?: SubscriptionStatus;
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsNumber() amount?: number;
+  @IsOptional() @IsEnum(SubscriptionFrequency) frequency?: SubscriptionFrequency;
+  @IsOptional() @IsString() merchantName?: string;
+  @IsOptional() @IsString() categoryId?: string;
+  @IsOptional() @IsDateString() nextBillingDate?: Date | string;
+  @IsOptional() @IsEnum(SubscriptionStatus) status?: SubscriptionStatus;
+  @IsOptional() @IsString() notes?: string;
 }
 
 export class DetectedSubscriptionDto {
-  @IsString()
-  userId: string;
-
-  @IsString()
-  name: string;
-
-  @IsNumber()
-  amount: number;
-
-  @IsString()
-  cycle: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
-
-  @IsOptional()
-  @IsString()
-  categoryId?: string;
-
-  @IsOptional()
-  merchantName?: string;
-
-  confidence: number;
+  merchant!: string;
+  amount!: number;
+  frequency!: SubscriptionFrequency | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
+  confidence!: number;
+  transactionIds?: string[];
+  firstTransactionDate?: Date;
+  lastTransactionDate?: Date;
 }

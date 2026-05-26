@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { RabbitMQService } from '../../config/rabbitmq.service';
-import { CreateNotificationDto, NotificationPreferencesDto } from '@shared/dto';
+import {
+  CreateNotificationDto,
+  NotificationPreferencesDto,
+  NotificationType,
+  NotificationPriority,
+  NotificationChannel,
+} from '@shared/dto';
 import { Logger } from '../../common/utils/logger';
 
 @Injectable()
@@ -17,17 +23,16 @@ export class NotificationService {
     const notification = await this.prisma.notification.create({
       data: {
         userId,
-        type: dto.type,
+        type: dto.type as any,
         title: dto.title,
         message: dto.body,
-        data: dto.data || null,
-        channel: dto.channel || 'IN_APP',
-        priority: dto.priority || 'NORMAL',
+        data: (dto.data ?? {}) as any,
+        channel: (dto.channel ?? NotificationChannel.IN_APP) as any,
+        priority: (dto.priority ?? NotificationPriority.NORMAL) as any,
       },
     });
 
-    // Send via appropriate channels
-    if (dto.sendPush || dto.channel === 'PUSH') {
+    if (dto.sendPush || dto.channel === NotificationChannel.PUSH) {
       await this.sendPushNotification(userId, notification);
     }
 
@@ -35,10 +40,8 @@ export class NotificationService {
   }
 
   async findAll(userId: string, unreadOnly: boolean = false) {
-    const where: any = { userId };
-    if (unreadOnly) {
-      where.read = false;
-    }
+    const where: any = { userId, deletedAt: null };
+    if (unreadOnly) where.isRead = false;
 
     return this.prisma.notification.findMany({
       where,
@@ -57,29 +60,19 @@ export class NotificationService {
     const notification = await this.prisma.notification.findFirst({
       where: { id, userId },
     });
-
-    if (!notification) {
-      return null;
-    }
+    if (!notification) return null;
 
     return this.prisma.notification.update({
       where: { id },
-      data: {
-        read: true,
-        readAt: new Date(),
-      },
+      data: { isRead: true, readAt: new Date() },
     });
   }
 
   async markAllAsRead(userId: string) {
     await this.prisma.notification.updateMany({
-      where: { userId, read: false },
-      data: {
-        read: true,
-        readAt: new Date(),
-      },
+      where: { userId, isRead: false },
+      data: { isRead: true, readAt: new Date() },
     });
-
     return { message: 'All notifications marked as read' };
   }
 
@@ -87,23 +80,16 @@ export class NotificationService {
     const notification = await this.prisma.notification.findFirst({
       where: { id, userId },
     });
+    if (!notification) return { message: 'Notification not found' };
 
-    if (!notification) {
-      return { message: 'Notification not found' };
-    }
-
-    await this.prisma.notification.delete({
-      where: { id },
-    });
-
+    await this.prisma.notification.delete({ where: { id } });
     return { message: 'Notification deleted' };
   }
 
   async getUnreadCount(userId: string) {
     const count = await this.prisma.notification.count({
-      where: { userId, read: false },
+      where: { userId, isRead: false },
     });
-
     return { count };
   }
 
@@ -125,18 +111,12 @@ export class NotificationService {
       minAmountForAlert: 1000,
     };
 
-    if (!user?.notificationPrefs) {
-      return defaultPrefs;
-    }
-
+    if (!user?.notificationPrefs) return defaultPrefs;
     return { ...defaultPrefs, ...(user.notificationPrefs as any) };
   }
 
   async updatePreferences(userId: string, prefs: Partial<NotificationPreferencesDto>) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
-
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const currentPrefs = (user?.notificationPrefs as any) || {};
     const updatedPrefs = { ...currentPrefs, ...prefs };
 
@@ -144,13 +124,11 @@ export class NotificationService {
       where: { id: userId },
       data: { notificationPrefs: updatedPrefs },
     });
-
     return this.getPreferences(userId);
   }
 
   private async sendPushNotification(userId: string, notification: any) {
     try {
-      // In production, this would integrate with Firebase Cloud Messaging
       await this.rabbitMQ.publishNotificationRequest({
         userId,
         type: notification.type,
@@ -160,13 +138,11 @@ export class NotificationService {
 
       await this.prisma.notification.update({
         where: { id: notification.id },
-        data: {
-          sentAt: new Date(),
-        },
+        data: { sentAt: new Date() },
       });
 
       this.logger.debug(`Push notification sent to user ${userId}`);
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Failed to send push notification: ${error.message}`);
     }
   }
@@ -177,22 +153,16 @@ export class NotificationService {
     transaction: { amount: number; merchant?: string; type: string; category?: string },
   ) {
     const prefs = await this.getPreferences(userId);
-
-    if (!prefs.transactionAlerts) {
-      return;
-    }
-
-    if (prefs.minAmountForAlert && transaction.amount < prefs.minAmountForAlert) {
-      return;
-    }
+    if (!prefs.transactionAlerts) return;
+    if (prefs.minAmountForAlert && transaction.amount < prefs.minAmountForAlert) return;
 
     const isCredit = transaction.type === 'CREDIT';
 
     await this.create(userId, {
-      type: 'TRANSACTION',
+      type: NotificationType.TRANSACTION,
       title: isCredit ? 'Money Credited' : 'Money Debited',
-      body: `${isCredit ? '₹' : '-₹'}${transaction.amount} ${transaction.merchant ? `at ${transaction.merchant}` : ''}`,
-      priority: 'NORMAL',
+      body: `${isCredit ? '₹' : '-₹'}${transaction.amount}${transaction.merchant ? ` at ${transaction.merchant}` : ''}`,
+      priority: NotificationPriority.NORMAL,
       sendPush: prefs.pushEnabled,
       data: { transaction },
     });
@@ -203,16 +173,13 @@ export class NotificationService {
     subscription: { name: string; amount: number; nextBillingDate: Date },
   ) {
     const prefs = await this.getPreferences(userId);
-
-    if (!prefs.subscriptionAlerts) {
-      return;
-    }
+    if (!prefs.subscriptionAlerts) return;
 
     await this.create(userId, {
-      type: 'SUBSCRIPTION',
+      type: NotificationType.SUBSCRIPTION,
       title: 'Upcoming Subscription Payment',
       body: `${subscription.name} of ₹${subscription.amount} due on ${subscription.nextBillingDate.toLocaleDateString()}`,
-      priority: 'HIGH',
+      priority: NotificationPriority.HIGH,
       sendPush: prefs.pushEnabled,
       data: { subscription },
     });
@@ -220,18 +187,15 @@ export class NotificationService {
 
   async sendBudgetAlert(userId: string, category: string, spent: number, limit: number) {
     const prefs = await this.getPreferences(userId);
-
-    if (!prefs.budgetAlerts) {
-      return;
-    }
+    if (!prefs.budgetAlerts) return;
 
     const percentage = (spent / limit) * 100;
 
     await this.create(userId, {
-      type: 'BUDGET_ALERT',
+      type: NotificationType.BUDGET_ALERT,
       title: percentage >= 100 ? 'Budget Exceeded' : 'Budget Warning',
       body: `You've spent ${percentage.toFixed(0)}% of your ${category} budget (₹${spent} of ₹${limit})`,
-      priority: percentage >= 90 ? 'URGENT' : 'HIGH',
+      priority: percentage >= 90 ? NotificationPriority.URGENT : NotificationPriority.HIGH,
       sendPush: prefs.pushEnabled,
       data: { category, spent, limit, percentage },
     });
@@ -239,16 +203,13 @@ export class NotificationService {
 
   async sendInsightNotification(userId: string, title: string, body: string) {
     const prefs = await this.getPreferences(userId);
-
-    if (!prefs.insightAlerts) {
-      return;
-    }
+    if (!prefs.insightAlerts) return;
 
     await this.create(userId, {
-      type: 'INSIGHT',
+      type: NotificationType.INSIGHT,
       title,
       body,
-      priority: 'NORMAL',
+      priority: NotificationPriority.NORMAL,
       sendPush: prefs.pushEnabled,
     });
   }
@@ -257,12 +218,12 @@ export class NotificationService {
     const prefs = await this.getPreferences(userId);
 
     await this.create(userId, {
-      type: 'SECURITY',
+      type: NotificationType.SECURITY,
       title,
       body,
-      priority: 'URGENT',
+      priority: NotificationPriority.URGENT,
       sendPush: prefs.pushEnabled,
-      channel: 'PUSH',
+      channel: NotificationChannel.PUSH,
     });
   }
 }

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { RabbitMQService } from '../../config/rabbitmq.service';
 import { CreateTransactionDto, UpdateTransactionDto, TransactionsFilterDto } from '@shared/dto';
@@ -11,17 +11,19 @@ export class TransactionService {
   ) {}
 
   async create(userId: string, dto: CreateTransactionDto) {
+    const txDate = dto.transactionDate ?? dto.date ?? new Date();
     const transaction = await this.prisma.transaction.create({
       data: {
         userId,
         accountId: dto.accountId,
         amount: dto.amount,
-        type: dto.type,
-        categoryId: dto.category,
+        type: dto.type as any,
+        categoryId: dto.categoryId ?? dto.category,
         description: dto.description,
-        merchantName: dto.merchant,
-        transactionDate: new Date(dto.date),
+        merchantName: dto.merchantName ?? dto.merchant,
+        transactionDate: new Date(txDate as any),
         rawSmsText: dto.rawSms,
+        source: (dto.source as any) ?? 'MANUAL',
         isSubscription: !!dto.subscriptionId,
         subscriptionId: dto.subscriptionId,
       },
@@ -39,19 +41,21 @@ export class TransactionService {
   }
 
   async findAll(userId: string, filters: TransactionsFilterDto) {
-    const { from, to, category, minAmount, maxAmount, search } = filters;
+    const fromDate = filters.from ?? filters.startDate;
+    const toDate = filters.to ?? filters.endDate;
+    const categoryId = filters.categoryId ?? filters.category;
+    const { minAmount, maxAmount, search, type } = filters;
 
-    const where: any = { userId };
+    const where: any = { userId, deletedAt: null };
 
-    if (from || to) {
+    if (fromDate || toDate) {
       where.transactionDate = {};
-      if (from) where.transactionDate.gte = new Date(from);
-      if (to) where.transactionDate.lte = new Date(to);
+      if (fromDate) where.transactionDate.gte = new Date(fromDate as any);
+      if (toDate) where.transactionDate.lte = new Date(toDate as any);
     }
 
-    if (category) {
-      where.categoryId = category;
-    }
+    if (categoryId) where.categoryId = categoryId;
+    if (type) where.type = type;
 
     if (minAmount !== undefined || maxAmount !== undefined) {
       where.amount = {};
@@ -77,7 +81,7 @@ export class TransactionService {
 
   async findOne(userId: string, id: string) {
     const transaction = await this.prisma.transaction.findFirst({
-      where: { id, userId },
+      where: { id, userId, deletedAt: null },
       include: {
         account: true,
         subscription: true,
@@ -100,9 +104,12 @@ export class TransactionService {
       throw new NotFoundException('Transaction not found');
     }
 
+    const data: any = { ...dto };
+    if (dto.transactionDate) data.transactionDate = new Date(dto.transactionDate as any);
+
     return this.prisma.transaction.update({
       where: { id },
-      data: dto,
+      data,
     });
   }
 
@@ -115,8 +122,9 @@ export class TransactionService {
       throw new NotFoundException('Transaction not found');
     }
 
-    await this.prisma.transaction.delete({
+    await this.prisma.transaction.update({
       where: { id },
+      data: { deletedAt: new Date() },
     });
 
     return { message: 'Transaction deleted successfully' };
@@ -128,17 +136,14 @@ export class TransactionService {
       where: {
         userId,
         type: 'DEBIT',
+        deletedAt: null,
         transactionDate: {
           gte: from,
           lte: to || new Date(),
         },
       },
-      _sum: {
-        amount: true,
-      },
-      _count: {
-        id: true,
-      },
+      _sum: { amount: true },
+      _count: { id: true },
     });
 
     return transactions.map((cat) => ({
@@ -155,10 +160,8 @@ export class TransactionService {
     const transactions = await this.prisma.transaction.findMany({
       where: {
         userId,
-        transactionDate: {
-          gte: startDate,
-          lte: endDate,
-        },
+        deletedAt: null,
+        transactionDate: { gte: startDate, lte: endDate },
       },
     });
 
@@ -184,6 +187,7 @@ export class TransactionService {
     return this.prisma.transaction.findMany({
       where: {
         userId,
+        deletedAt: null,
         OR: [
           { description: { contains: query, mode: 'insensitive' } },
           { merchantName: { contains: query, mode: 'insensitive' } },

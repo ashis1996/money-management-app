@@ -21,10 +21,11 @@
       "@modules/*": ["src/modules/*"],
       "@common/*": ["src/common/*"],
       "@config/*": ["src/config/*"],
-      "@shared/*": ["../../shared/dist/*"],
-      "@shared/dto": ["../../shared/dist/dto/index"],
-      "@shared/constants": ["../../shared/dist/constants/index"],
-      "@shared/types": ["../../shared/dist/types/index"]
+      "@shared/*": ["../shared/dist/*"],
+      "@shared/dto": ["../shared/dist/dto/index"],
+      "@shared/constants": ["../shared/dist/constants/index"],
+      "@shared/types": ["../shared/dist/types/index"]
     }
-  }
+  },
+  "exclude": ["node_modules", "dist", "**/*.spec.ts", "test"]
 }

@@ -1,6 +1,6 @@
 ﻿// SMS parsing constants
 
-export const TRANSACTION_KEYWORDS = {
+export const TRANSACTION_KEYWORDS: Record<string, string[]> = {
   CREDIT: [
     'credited', 'credited to', 'received', 'deposit', 'transfer to',
     'inward transfer', 'refund', 'cashback', 'interest',
@@ -9,19 +9,22 @@ export const TRANSACTION_KEYWORDS = {
     'debited', 'debited from', 'paid', 'payment', 'purchase',
     'withdrawal', 'transfer from', 'outward transfer', 'spent',
   ],
+  ATM: ['atm', 'cash withdrawal', 'cash withdraw'],
+  SUBSCRIPTION: ['subscription', 'recurring', 'auto debit', 'autopay', 'standing instruction'],
+  TRANSFER: ['transfer', 'imps', 'neft', 'rtgs', 'upi'],
 };
 
-export const CATEGORY_MAPPINGS: Record<string, string> = {
-  'amazon': 'SHOPPING', 'flipkart': 'SHOPPING', 'myntra': 'SHOPPING', 'ajio': 'SHOPPING',
-  'bigbasket': 'GROCERY', 'grofers': 'GROCERY', 'blinkit': 'GROCERY', 'zepto': 'GROCERY',
-  'swiggy': 'FOOD', 'zomato': 'FOOD', 'uber eats': 'FOOD', 'dineout': 'FOOD',
-  'uber': 'TRANSPORT', 'ola': 'TRANSPORT', 'rapido': 'TRANSPORT',
-  'irctc': 'TRAVEL', 'makemytrip': 'TRAVEL', 'goibibo': 'TRAVEL', 'redbus': 'TRAVEL',
-  'netflix': 'ENTERTAINMENT', 'prime video': 'ENTERTAINMENT', 'hotstar': 'ENTERTAINMENT',
-  'jio': 'UTILITIES', 'airtel': 'UTILITIES', 'vi': 'UTILITIES',
-  'pharmacy': 'HEALTHCARE', 'medicine': 'HEALTHCARE', '1mg': 'HEALTHCARE',
-  'fuel': 'FUEL', 'petrol': 'FUEL', 'diesel': 'FUEL',
-  'subscription': 'SUBSCRIPTION', 'recurring': 'SUBSCRIPTION', 'auto debit': 'SUBSCRIPTION',
+export const CATEGORY_MAPPINGS: Record<string, string[]> = {
+  SHOPPING: ['amazon', 'flipkart', 'myntra', 'ajio'],
+  GROCERY: ['bigbasket', 'grofers', 'blinkit', 'zepto'],
+  FOOD: ['swiggy', 'zomato', 'uber eats', 'dineout'],
+  TRANSPORT: ['uber', 'ola', 'rapido'],
+  TRAVEL: ['irctc', 'makemytrip', 'goibibo', 'redbus'],
+  ENTERTAINMENT: ['netflix', 'prime video', 'hotstar'],
+  UTILITIES: ['jio', 'airtel', 'vi', 'electricity', 'gas'],
+  HEALTHCARE: ['pharmacy', 'medicine', '1mg', 'apollo'],
+  FUEL: ['fuel', 'petrol', 'diesel', 'hpcl', 'iocl', 'bpcl'],
+  SUBSCRIPTION: ['subscription', 'recurring', 'auto debit'],
 };
 
 export const SMS_PATTERNS = {
@@ -33,11 +36,21 @@ export const SMS_PATTERNS = {
 };
 
 export const BANK_SENDER_MAPPING: Record<string, string> = {
-  'HDFCBK': 'HDFC Bank', 'HDFC': 'HDFC Bank',
-  'ICICIB': 'ICICI Bank', 'ICICI': 'ICICI Bank',
-  'SBIBNK': 'SBI', 'SBI': 'SBI',
-  'AXIBNK': 'Axis Bank', 'AXIS': 'Axis Bank',
-  'KKBK': 'Kotak Mahindra Bank', 'KOTAK': 'Kotak Mahindra Bank',
-  'SWIGGY': 'Swiggy', 'ZOMATO': 'Zomato', 'UBER': 'Uber', 'OLA': 'Ola',
-  'NETFLIX': 'Netflix', 'AMZN': 'Amazon', 'FLIPKART': 'Flipkart',
+  HDFCBK: 'HDFC Bank',
+  HDFC: 'HDFC Bank',
+  ICICIB: 'ICICI Bank',
+  ICICI: 'ICICI Bank',
+  SBIBNK: 'SBI',
+  SBI: 'SBI',
+  AXIBNK: 'Axis Bank',
+  AXIS: 'Axis Bank',
+  KKBK: 'Kotak Mahindra Bank',
+  KOTAK: 'Kotak Mahindra Bank',
+  SWIGGY: 'Swiggy',
+  ZOMATO: 'Zomato',
+  UBER: 'Uber',
+  OLA: 'Ola',
+  NETFLIX: 'Netflix',
+  AMZN: 'Amazon',
+  FLIPKART: 'Flipkart',
 };

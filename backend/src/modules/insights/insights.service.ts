@@ -6,6 +6,15 @@ import { Logger } from '../../common/utils/logger';
 import { firstValueFrom } from 'rxjs';
 import { InsightPeriod } from '@shared/dto';
 
+export interface CategoryBreakdown {
+  categoryId: string;
+  amount: number;
+  percentage: number;
+  transactionCount: number;
+  averageTransaction: number;
+  changeFromPrevious: number;
+}
+
 @Injectable()
 export class InsightsService {
   private readonly logger = new Logger(InsightsService.name);
@@ -23,23 +32,22 @@ export class InsightsService {
     const now = new Date();
     const { startDate, previousStartDate } = this.getDateRange(period, now);
 
-    // Current period transactions
     const currentTransactions = await this.prisma.transaction.findMany({
       where: {
         userId,
+        deletedAt: null,
         transactionDate: { gte: startDate, lte: now },
       },
     });
 
-    // Previous period transactions
     const previousTransactions = await this.prisma.transaction.findMany({
       where: {
         userId,
+        deletedAt: null,
         transactionDate: { gte: previousStartDate, lt: startDate },
       },
     });
 
-    // Calculate totals
     const currentIncome = currentTransactions
       .filter((t) => t.type === 'CREDIT')
       .reduce((sum, t) => sum + Number(t.amount), 0);
@@ -56,11 +64,7 @@ export class InsightsService {
       .filter((t) => t.type === 'DEBIT')
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
-    // Category breakdown
     const categoryBreakdown = await this.getCategoryBreakdown(userId, startDate, now);
-    const previousCategoryBreakdown = await this.getCategoryBreakdown(userId, previousStartDate, startDate);
-
-    // Top merchants
     const topMerchants = await this.getTopMerchants(userId, startDate, now);
 
     const daysInPeriod = (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
@@ -77,21 +81,33 @@ export class InsightsService {
       dailyAverage,
       monthlyAverage: currentExpense,
       comparisonToPrevious: {
-        spentChange: previousExpense > 0 ? ((currentExpense - previousExpense) / previousExpense) * 100 : 0,
-        incomeChange: previousIncome > 0 ? ((currentIncome - previousIncome) / previousIncome) * 100 : 0,
-        savingsChange: previousIncome - previousExpense !== 0
-          ? ((currentIncome - currentExpense - (previousIncome - previousExpense)) / (previousIncome - previousExpense)) * 100
-          : 0,
+        spentChange:
+          previousExpense > 0 ? ((currentExpense - previousExpense) / previousExpense) * 100 : 0,
+        incomeChange:
+          previousIncome > 0 ? ((currentIncome - previousIncome) / previousIncome) * 100 : 0,
+        savingsChange:
+          previousIncome - previousExpense !== 0
+            ? ((currentIncome -
+                currentExpense -
+                (previousIncome - previousExpense)) /
+                (previousIncome - previousExpense)) *
+              100
+            : 0,
       },
     };
   }
 
-  private async getCategoryBreakdown(userId: string, startDate: Date, endDate: Date) {
+  private async getCategoryBreakdown(
+    userId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<CategoryBreakdown[]> {
     const breakdown = await this.prisma.transaction.groupBy({
       by: ['categoryId'],
       where: {
         userId,
         type: 'DEBIT',
+        deletedAt: null,
         transactionDate: { gte: startDate, lte: endDate },
       },
       _sum: { amount: true },
@@ -106,7 +122,7 @@ export class InsightsService {
       percentage: total > 0 ? (Number(cat._sum.amount || 0) / total) * 100 : 0,
       transactionCount: cat._count.id,
       averageTransaction: Number(cat._sum.amount || 0) / cat._count.id,
-      changeFromPrevious: 0, // Would need previous period comparison
+      changeFromPrevious: 0,
     }));
   }
 
@@ -116,6 +132,7 @@ export class InsightsService {
       where: {
         userId,
         type: 'DEBIT',
+        deletedAt: null,
         merchantName: { not: null },
         transactionDate: { gte: startDate, lte: endDate },
       },
@@ -160,25 +177,24 @@ export class InsightsService {
   }
 
   async getRecommendations(userId: string) {
-    // Get spending insights
     const insights = await this.getSpendingInsights(userId, InsightPeriod.MONTH);
 
-    const recommendations = [];
+    const recommendations: any[] = [];
 
-    // Check for high spending categories
     const highSpendCategories = insights.byCategory.filter((c) => c.percentage > 25);
     if (highSpendCategories.length > 0) {
       recommendations.push({
         id: `rec-${Date.now()}-1`,
         type: 'SPENDING_ANALYSIS',
         title: 'Review High Spending Categories',
-        description: `You're spending more than 25% on ${highSpendCategories.map((c) => c.categoryId).join(', ')}. Consider setting budgets for these categories.`,
+        description: `You're spending more than 25% on ${highSpendCategories
+          .map((c) => c.categoryId)
+          .join(', ')}. Consider setting budgets for these categories.`,
         priority: 'HIGH' as const,
         potentialSavings: insights.totalSpent * 0.1,
       });
     }
 
-    // Check savings rate
     if (insights.savingsRate < 20) {
       recommendations.push({
         id: `rec-${Date.now()}-2`,
@@ -190,7 +206,6 @@ export class InsightsService {
       });
     }
 
-    // Check for increasing spending trend
     if (insights.comparisonToPrevious.spentChange > 10) {
       recommendations.push({
         id: `rec-${Date.now()}-3`,
@@ -205,7 +220,6 @@ export class InsightsService {
   }
 
   async getPredictions(userId: string) {
-    // Try to get predictions from AI service
     try {
       const response = await firstValueFrom(
         this.httpService.post(`${this.aiServiceUrl}/api/v1/predict`, {
@@ -217,18 +231,17 @@ export class InsightsService {
       if (response.data && response.data.success) {
         return response.data.data;
       }
-    } catch (error) {
+    } catch (error: any) {
       this.logger.warn(`AI service unavailable, using basic predictions: ${error.message}`);
     }
 
-    // Fallback to basic predictions
     const insights = await this.getSpendingInsights(userId, InsightPeriod.MONTH);
 
     return {
-      nextMonthSpending: insights.totalSpent * 1.05, // Assume 5% increase
+      nextMonthSpending: insights.totalSpent * 1.05,
       confidence: 0.6,
       categoryPredictions: insights.byCategory.map((cat) => ({
-        category: cat.category,
+        category: cat.categoryId,
         predictedAmount: cat.amount * 1.05,
         confidence: 0.5,
       })),
@@ -242,7 +255,7 @@ export class InsightsService {
   }
 
   async getAnomalies(userId: string) {
-    const anomalies = [];
+    const anomalies: any[] = [];
     const now = new Date();
     const startDate = new Date(now);
     startDate.setDate(now.getDate() - 30);
@@ -251,27 +264,26 @@ export class InsightsService {
       where: {
         userId,
         type: 'DEBIT',
-        date: { gte: startDate },
+        deletedAt: null,
+        transactionDate: { gte: startDate },
       },
     });
 
-    if (transactions.length < 5) {
-      return anomalies;
-    }
+    if (transactions.length < 5) return anomalies;
 
-    // Calculate average and standard deviation
     const amounts = transactions.map((t) => Number(t.amount));
     const avg = amounts.reduce((a, b) => a + b, 0) / amounts.length;
-    const stdDev = Math.sqrt(amounts.reduce((sum, a) => sum + Math.pow(a - avg, 2), 0) / amounts.length);
+    const stdDev = Math.sqrt(
+      amounts.reduce((sum, a) => sum + Math.pow(a - avg, 2), 0) / amounts.length,
+    );
 
-    // Find anomalies (transactions > 2 standard deviations)
     for (const t of transactions) {
       const amount = Number(t.amount);
       if (amount > avg + 2 * stdDev) {
         anomalies.push({
           type: 'UNUSUAL_SPENDING' as const,
           severity: 'HIGH' as const,
-          description: `Unusually high transaction of ₹${amount} at ${t.merchant || 'Unknown merchant'}`,
+          description: `Unusually high transaction of ₹${amount} at ${t.merchantName || 'Unknown merchant'}`,
           amount,
           transactionId: t.id,
           detectedAt: new Date(),

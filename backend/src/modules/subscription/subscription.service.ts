@@ -1,9 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { RabbitMQService } from '../../config/rabbitmq.service';
-import { CreateSubscriptionDto, UpdateSubscriptionDto, DetectedSubscriptionDto } from '@shared/dto';
+import {
+  CreateSubscriptionDto,
+  UpdateSubscriptionDto,
+  DetectedSubscriptionDto,
+  SubscriptionFrequency,
+} from '@shared/dto';
 import { SUBSCRIPTION_DEFAULTS } from '@shared/constants';
 import { Logger } from '../../common/utils/logger';
+
+type FrequencyValue = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
 
 @Injectable()
 export class SubscriptionService {
@@ -18,8 +25,13 @@ export class SubscriptionService {
     const subscription = await this.prisma.subscription.create({
       data: {
         userId,
-        ...dto,
-        nextBillingDate: dto.nextBillingDate ? new Date(dto.nextBillingDate) : null,
+        name: dto.name,
+        merchantName: dto.merchantName ?? dto.name,
+        amount: dto.amount,
+        frequency: dto.frequency as any,
+        categoryId: dto.categoryId,
+        notes: dto.notes,
+        nextBillingDate: dto.nextBillingDate ? new Date(dto.nextBillingDate as any) : null,
       },
     });
 
@@ -27,10 +39,8 @@ export class SubscriptionService {
   }
 
   async findAll(userId: string, status?: string) {
-    const where: any = { userId };
-    if (status) {
-      where.status = status;
-    }
+    const where: any = { userId, deletedAt: null };
+    if (status) where.status = status;
 
     return this.prisma.subscription.findMany({
       where,
@@ -40,7 +50,7 @@ export class SubscriptionService {
 
   async findOne(userId: string, id: string) {
     const subscription = await this.prisma.subscription.findFirst({
-      where: { id, userId },
+      where: { id, userId, deletedAt: null },
     });
 
     if (!subscription) {
@@ -61,7 +71,7 @@ export class SubscriptionService {
 
     const updateData: any = { ...dto };
     if (dto.nextBillingDate) {
-      updateData.nextBillingDate = new Date(dto.nextBillingDate);
+      updateData.nextBillingDate = new Date(dto.nextBillingDate as any);
     }
 
     return this.prisma.subscription.update({
@@ -79,8 +89,9 @@ export class SubscriptionService {
       throw new NotFoundException('Subscription not found');
     }
 
-    await this.prisma.subscription.delete({
+    await this.prisma.subscription.update({
       where: { id },
+      data: { deletedAt: new Date() },
     });
 
     return { message: 'Subscription deleted successfully' };
@@ -89,50 +100,34 @@ export class SubscriptionService {
   async detectSubscriptions(userId: string): Promise<DetectedSubscriptionDto[]> {
     this.logger.log(`Starting subscription detection for user ${userId}`);
 
-    // Get all debit transactions grouped by merchant
     const transactions = await this.prisma.transaction.findMany({
       where: {
         userId,
         type: 'DEBIT',
+        deletedAt: null,
       },
       orderBy: { transactionDate: 'asc' },
     });
 
-    // Group by merchant
     const merchantGroups = new Map<string, any[]>();
     transactions.forEach((t) => {
       if (!t.merchantName) return;
-
       const key = t.merchantName.toLowerCase().trim();
-      if (!merchantGroups.has(key)) {
-        merchantGroups.set(key, []);
-      }
+      if (!merchantGroups.has(key)) merchantGroups.set(key, []);
       merchantGroups.get(key)!.push(t);
     });
 
     const detected: DetectedSubscriptionDto[] = [];
 
     for (const [merchant, txns] of merchantGroups.entries()) {
-      // Need at least N occurrences
-      if (txns.length < SUBSCRIPTION_DEFAULTS.DETECTION_THRESHOLD) {
-        continue;
-      }
+      if (txns.length < SUBSCRIPTION_DEFAULTS.DETECTION_THRESHOLD) continue;
 
-      // Analyze frequency
       const frequency = this.analyzeFrequency(txns.map((t) => t.transactionDate));
-      if (!frequency) {
-        continue;
-      }
+      if (!frequency) continue;
 
-      // Calculate average amount
       const avgAmount = txns.reduce((sum, t) => sum + Number(t.amount), 0) / txns.length;
-
-      // Calculate confidence based on regularity
       const confidence = this.calculateConfidence(txns, frequency);
-
-      if (confidence < 0.5) {
-        continue;
-      }
+      if (confidence < 0.5) continue;
 
       detected.push({
         merchant,
@@ -146,23 +141,20 @@ export class SubscriptionService {
     }
 
     this.logger.log(`Detected ${detected.length} potential subscriptions`);
-
     return detected;
   }
 
-  private analyzeFrequency(dates: Date[]): 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | null {
+  private analyzeFrequency(dates: Date[]): FrequencyValue | null {
     if (dates.length < 2) return null;
 
-    // Calculate intervals between transactions
     const intervals: number[] = [];
     for (let i = 1; i < dates.length; i++) {
       const diff = dates[i].getTime() - dates[i - 1].getTime();
-      intervals.push(diff / (1000 * 60 * 60 * 24)); // Convert to days
+      intervals.push(diff / (1000 * 60 * 60 * 24));
     }
 
     const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
 
-    // Determine frequency based on average interval
     if (avgInterval <= 2) return 'DAILY';
     if (avgInterval <= 10) return 'WEEKLY';
     if (avgInterval <= 40) return 'MONTHLY';
@@ -170,26 +162,21 @@ export class SubscriptionService {
     return 'YEARLY';
   }
 
-  private calculateConfidence(transactions: any[], frequency: string): number {
-    if (transactions.length < SUBSCRIPTION_DEFAULTS.DETECTION_THRESHOLD) {
-      return 0;
-    }
+  private calculateConfidence(transactions: any[], _frequency: string): number {
+    if (transactions.length < SUBSCRIPTION_DEFAULTS.DETECTION_THRESHOLD) return 0;
 
-    let confidence = 0.5; // Base confidence
-
-    // More transactions = higher confidence
+    let confidence = 0.5;
     confidence += Math.min(transactions.length * 0.05, 0.2);
 
-    // Check amount consistency
     const amounts = transactions.map((t) => Number(t.amount));
     const avgAmount = amounts.reduce((a, b) => a + b, 0) / amounts.length;
     const stdDev = Math.sqrt(
       amounts.reduce((sum, a) => sum + Math.pow(a - avgAmount, 2), 0) / amounts.length,
     );
-    const cv = stdDev / avgAmount; // Coefficient of variation
+    const cv = stdDev / avgAmount;
 
-    if (cv < 0.1) confidence += 0.2; // Very consistent amounts
-    else if (cv < 0.2) confidence += 0.1; // Moderately consistent
+    if (cv < 0.1) confidence += 0.2;
+    else if (cv < 0.2) confidence += 0.1;
 
     return Math.min(confidence, 1.0);
   }
@@ -202,31 +189,30 @@ export class SubscriptionService {
         where: {
           userId,
           merchantName: { contains: sub.merchant, mode: 'insensitive' },
+          deletedAt: null,
         },
       });
 
       if (existing) {
-        // Update existing
         saved.push(
           await this.prisma.subscription.update({
             where: { id: existing.id },
             data: {
               amount: sub.amount,
-              frequency: sub.frequency,
+              frequency: sub.frequency as any,
             },
           }),
         );
       } else {
-        // Create new
-        const nextBillingDate = this.calculateNextBillingDate(sub.frequency);
+        const nextBillingDate = this.calculateNextBillingDate(sub.frequency as string);
         saved.push(
           await this.prisma.subscription.create({
             data: {
               userId,
               name: sub.merchant,
-              amount: sub.amount,
-              frequency: sub.frequency,
               merchantName: sub.merchant,
+              amount: sub.amount,
+              frequency: sub.frequency as any,
               status: 'ACTIVE',
               nextBillingDate,
             },
@@ -235,7 +221,6 @@ export class SubscriptionService {
       }
     }
 
-    // Publish events for new subscriptions
     for (const sub of saved) {
       await this.rabbitMQ.publishSubscriptionDetected({
         subscriptionId: sub.id,
@@ -279,10 +264,9 @@ export class SubscriptionService {
     return this.prisma.subscription.findMany({
       where: {
         userId,
+        deletedAt: null,
         status: 'ACTIVE',
-        nextBillingDate: {
-          lte: endDate,
-        },
+        nextBillingDate: { lte: endDate },
       },
       orderBy: { nextBillingDate: 'asc' },
     });
@@ -290,7 +274,7 @@ export class SubscriptionService {
 
   async getSummary(userId: string) {
     const subscriptions = await this.prisma.subscription.findMany({
-      where: { userId, status: 'ACTIVE' },
+      where: { userId, status: 'ACTIVE', deletedAt: null },
     });
 
     const totalMonthlySpend = subscriptions.reduce((sum, sub) => {

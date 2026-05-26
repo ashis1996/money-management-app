@@ -178,7 +178,7 @@ class LeakDetectorService:
             "music": ["spotify", "apple music", "youtube music", "gaana", "jiosaavn"],
             "video": ["netflix", "amazon prime video", "hotstar", "zee5", "sony liv"],
             "cloud": ["google one", "icloud", "dropbox", "onedrive"],
-            "news": ["the hindu", "times of india", "economic times", "news+"),
+            "news": ["the hindu", "times of india", "economic times", "news+"],
         }
 
         active_subs = [

@@ -94,6 +94,33 @@ export class AiProxyService {
     });
   }
 
+  async getWeeklySummary(
+    userId: string,
+    weekStart: Date,
+    weekEnd: Date,
+    transactions: any[],
+    previousTransactions: any[],
+    archetype?: string,
+  ) {
+    const [subscriptions, budgets, goals] = await Promise.all([
+      this.fetchSubscriptions(userId),
+      this.fetchBudgets(userId),
+      this.fetchGoals(userId),
+    ]);
+
+    return this.callAi('/insights/weekly-summary', {
+      user_id: userId,
+      week_start: weekStart.toISOString(),
+      week_end: weekEnd.toISOString(),
+      transactions,
+      previous_transactions: previousTransactions,
+      subscriptions,
+      budgets,
+      goals,
+      archetype: archetype ?? null,
+    });
+  }
+
   async parseSms(body: string, sender: string, timestamp?: string) {
     return this.callAi('/sms/parse', {
       body,

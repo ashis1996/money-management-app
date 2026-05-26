@@ -344,6 +344,241 @@ async def get_recommendations(request: InsightsRequest):
         raise HTTPException(status_code=400, detail=f"Failed to generate recommendations: {str(e)}")
 
 
+class WeeklySummaryRequest(BaseModel):
+    """
+    Request model for the weekly summary endpoint.
+
+    The backend builds this payload before forwarding to the AI service so
+    the heavy lifting (transactions/subs/budgets/goals fetch) stays in NestJS.
+    """
+    user_id: str
+    week_start: datetime
+    week_end: datetime
+    transactions: List[Dict[str, Any]] = []
+    previous_transactions: List[Dict[str, Any]] = []
+    subscriptions: List[Dict[str, Any]] = []
+    budgets: List[Dict[str, Any]] = []
+    goals: List[Dict[str, Any]] = []
+    archetype: Optional[str] = None
+
+
+@app.post("/api/v1/insights/weekly-summary")
+async def generate_weekly_summary(request: WeeklySummaryRequest):
+    """
+    Generate a personalized weekly money summary.
+
+    Combines insights, behavior signals, and an LLM-generated narrative into
+    a single response shape consumed by the backend's WeeklySummary module.
+
+    Returns:
+        - aiSummary: natural-language summary (LLM if configured, otherwise
+          a deterministic fallback)
+        - stats: totals, savings rate, week-over-week deltas
+        - topCategories / topMerchants: top 5 by spend
+        - behaviorInsights: late-night / weekend / impulse counts and amounts
+        - unusualSpending: outliers vs the user's typical spending
+        - recommendations: actionable suggestions
+        - winsAndImprovements: highlights for the share-card UI
+    """
+    try:
+        txns = request.transactions
+        prev_txns = request.previous_transactions
+
+        # Aggregate current week
+        total_spent = sum(
+            float(t.get("amount", 0)) for t in txns if t.get("type") == "DEBIT"
+        )
+        total_income = sum(
+            float(t.get("amount", 0)) for t in txns if t.get("type") == "CREDIT"
+        )
+        savings = total_income - total_spent
+        savings_rate = (savings / total_income) if total_income > 0 else 0.0
+
+        # Aggregate previous week (for deltas)
+        prev_spent = sum(
+            float(t.get("amount", 0)) for t in prev_txns if t.get("type") == "DEBIT"
+        )
+        prev_income = sum(
+            float(t.get("amount", 0)) for t in prev_txns if t.get("type") == "CREDIT"
+        )
+        spent_delta_pct = (
+            ((total_spent - prev_spent) / prev_spent) * 100 if prev_spent > 0 else None
+        )
+        income_delta_pct = (
+            ((total_income - prev_income) / prev_income) * 100 if prev_income > 0 else None
+        )
+
+        # Top categories (DEBIT only)
+        cat_totals: Dict[str, Dict[str, float]] = {}
+        for t in txns:
+            if t.get("type") != "DEBIT":
+                continue
+            key = (t.get("category") or t.get("categoryName") or t.get("categoryId") or "OTHER")
+            entry = cat_totals.setdefault(key, {"amount": 0.0, "count": 0})
+            entry["amount"] += float(t.get("amount", 0))
+            entry["count"] += 1
+        top_categories = [
+            {"name": k, "amount": round(v["amount"], 2), "count": int(v["count"])}
+            for k, v in sorted(cat_totals.items(), key=lambda i: i[1]["amount"], reverse=True)
+        ][:5]
+
+        # Top merchants (DEBIT only)
+        merch_totals: Dict[str, Dict[str, float]] = {}
+        for t in txns:
+            if t.get("type") != "DEBIT":
+                continue
+            key = (t.get("merchant") or t.get("merchantName") or "Unknown")
+            entry = merch_totals.setdefault(key, {"amount": 0.0, "count": 0})
+            entry["amount"] += float(t.get("amount", 0))
+            entry["count"] += 1
+        top_merchants = [
+            {"name": k, "amount": round(v["amount"], 2), "count": int(v["count"])}
+            for k, v in sorted(merch_totals.items(), key=lambda i: i[1]["amount"], reverse=True)
+        ][:5]
+
+        # Behavior signals from transaction flags
+        debit_txns = [t for t in txns if t.get("type") == "DEBIT"]
+        late_night = [t for t in debit_txns if t.get("isLateNight") or t.get("is_late_night")]
+        weekend = [t for t in debit_txns if t.get("isWeekend") or t.get("is_weekend")]
+        impulse = [t for t in debit_txns if t.get("isImpulse") or t.get("is_impulse")]
+
+        behavior_insights = {
+            "lateNightCount": len(late_night),
+            "lateNightAmount": round(sum(float(t.get("amount", 0)) for t in late_night), 2),
+            "weekendCount": len(weekend),
+            "weekendAmount": round(sum(float(t.get("amount", 0)) for t in weekend), 2),
+            "impulseCount": len(impulse),
+            "impulseAmount": round(sum(float(t.get("amount", 0)) for t in impulse), 2),
+        }
+
+        # Unusual spending: > 4x the average DEBIT
+        avg_amount = (
+            total_spent / len(debit_txns) if debit_txns else 0.0
+        )
+        unusual = [
+            {
+                "id": t.get("id"),
+                "merchant": t.get("merchant") or t.get("merchantName") or "Unknown",
+                "amount": round(float(t.get("amount", 0)), 2),
+                "date": t.get("date") or t.get("transactionDate"),
+                "reason": "Unusually large compared to your typical spending",
+            }
+            for t in debit_txns
+            if avg_amount > 0 and float(t.get("amount", 0)) > avg_amount * 4
+        ][:3]
+
+        # Wins & improvements (lightweight heuristics)
+        wins: List[str] = []
+        improvements: List[str] = []
+        if savings_rate >= 0.20:
+            wins.append(
+                f"You saved {savings_rate * 100:.0f}% of your income this week"
+            )
+        if spent_delta_pct is not None and spent_delta_pct < -10:
+            wins.append(
+                f"Spending dropped {abs(spent_delta_pct):.0f}% versus last week"
+            )
+        if behavior_insights["impulseCount"] == 0 and behavior_insights["lateNightCount"] == 0:
+            wins.append("No impulse or late-night purchases this week")
+
+        if behavior_insights["impulseAmount"] > 0:
+            improvements.append(
+                f"You spent ₹{behavior_insights['impulseAmount']:.0f} on "
+                f"{behavior_insights['impulseCount']} impulse purchase(s)"
+            )
+        if savings_rate < 0.10 and total_income > 0:
+            improvements.append(
+                "Savings rate is below 10%. Try cutting one discretionary category"
+            )
+        if spent_delta_pct is not None and spent_delta_pct > 20:
+            improvements.append(
+                f"Spending climbed {spent_delta_pct:.0f}% versus last week"
+            )
+
+        # Build recommendations using existing service
+        try:
+            recs = insights_generator.generate_recommendations(
+                request.user_id, txns, "week"
+            )
+        except Exception as e:
+            logger.warning(f"Could not generate recommendations: {e}")
+            recs = []
+
+        # AI narrative (LLM if configured, fallback otherwise)
+        try:
+            ai_summary = llm_integration.generate_financial_summary(
+                request.user_id, txns, "week"
+            )
+        except Exception as e:
+            logger.warning(f"AI summary failed, using fallback: {e}")
+            ai_summary = _local_summary_fallback(
+                total_spent, total_income, savings_rate, top_categories
+            )
+
+        return ApiResponse(
+            success=True,
+            data={
+                "weekStart": request.week_start.isoformat(),
+                "weekEnd": request.week_end.isoformat(),
+                "stats": {
+                    "totalSpent": round(total_spent, 2),
+                    "totalIncome": round(total_income, 2),
+                    "savingsAmount": round(savings, 2),
+                    "savingsRate": round(savings_rate, 4),
+                    "transactionCount": len(txns),
+                    "previousWeek": {
+                        "totalSpent": round(prev_spent, 2),
+                        "totalIncome": round(prev_income, 2),
+                        "spentDeltaPercent": (
+                            round(spent_delta_pct, 2) if spent_delta_pct is not None else None
+                        ),
+                        "incomeDeltaPercent": (
+                            round(income_delta_pct, 2) if income_delta_pct is not None else None
+                        ),
+                    },
+                },
+                "topCategories": top_categories,
+                "topMerchants": top_merchants,
+                "behaviorInsights": behavior_insights,
+                "unusualSpending": unusual,
+                "winsAndImprovements": {
+                    "wins": wins,
+                    "improvements": improvements,
+                },
+                "aiSummary": ai_summary,
+                "recommendations": recs,
+            },
+        )
+    except Exception as e:
+        logger.error(f"Error generating weekly summary: {str(e)}")
+        raise HTTPException(
+            status_code=400, detail=f"Failed to generate weekly summary: {str(e)}"
+        )
+
+
+def _local_summary_fallback(
+    total_spent: float,
+    total_income: float,
+    savings_rate: float,
+    top_categories: List[Dict[str, Any]],
+) -> str:
+    """Deterministic, LLM-free narrative used when no API key is configured."""
+    rate_pct = round(savings_rate * 100)
+    top_cat = top_categories[0]["name"] if top_categories else "general spending"
+    if savings_rate >= 0.20:
+        sentiment = "Strong week — you saved a healthy chunk."
+    elif savings_rate >= 0.10:
+        sentiment = "Decent week — savings are positive but there's room to grow."
+    elif savings_rate >= 0:
+        sentiment = "Tight week — most of your income went out the door."
+    else:
+        sentiment = "Heads up — you spent more than you earned this week."
+    return (
+        f"This week you spent ₹{total_spent:,.0f} and earned ₹{total_income:,.0f}, "
+        f"saving {rate_pct}% of income. Most went toward {top_cat}. {sentiment}"
+    )
+
+
 @app.post("/api/v1/insights/anomalies")
 async def detect_anomalies(request: InsightsRequest):
     """

@@ -2,13 +2,14 @@
 
 export class CreateUserDto {
   @IsEmail()
-  email: string;
+  email!: string;
 
   @IsString()
-  name: string;
+  password!: string;
 
+  @IsOptional()
   @IsString()
-  password: string;
+  name?: string;
 
   @IsOptional()
   @IsString()
@@ -17,22 +18,29 @@ export class CreateUserDto {
 
 export class LoginDto {
   @IsEmail()
-  email: string;
+  email!: string;
 
   @IsString()
-  password: string;
+  password!: string;
 }
 
 export class UserResponseDto {
-  id: string;
-  email: string;
-  name: string;
-  phone?: string;
-  createdAt: Date;
+  id!: string;
+  email!: string;
+  name?: string | null;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+  isActive?: boolean;
+  lastLoginAt?: Date | null;
+  createdAt!: Date;
+  updatedAt?: Date;
 }
 
 export class AuthResponseDto {
-  user: UserResponseDto;
-  accessToken: string;
-  refreshToken: string;
+  user!: UserResponseDto;
+  accessToken!: string;
+  refreshToken!: string;
+  expiresIn?: number;
 }

@@ -1,10 +1,19 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import { RabbitMQService } from '../../config/rabbitmq.service';
-import { SmsIngestDto, SmsParseResponseDto, ParsedSmsDto } from '@shared/dto';
+import {
+  SmsIngestDto,
+  SmsParseResponseDto,
+  ParsedSmsDto,
+  TransactionType,
+} from '@shared/dto';
 import { Logger } from '../../common/utils/logger';
-import { SMS_PATTERNS, TRANSACTION_KEYWORDS, CATEGORY_MAPPINGS, BANK_SENDER_MAPPING } from '@shared/constants';
+import {
+  TRANSACTION_KEYWORDS,
+  CATEGORY_MAPPINGS,
+  BANK_SENDER_MAPPING,
+} from '@shared/constants';
 
 @Injectable()
 export class SmsService {
@@ -20,30 +29,27 @@ export class SmsService {
   }
 
   async ingestSms(userId: string, dto: SmsIngestDto): Promise<SmsParseResponseDto> {
-    // Save raw SMS
+    const receivedAt = dto.timestamp ?? dto.receivedAt ?? new Date();
     const smsLog = await this.prisma.smsLog.create({
       data: {
         userId,
         body: dto.body,
         sender: dto.sender,
         phoneNumber: dto.phoneNumber,
-        receivedAt: new Date(dto.timestamp),
+        receivedAt: new Date(receivedAt as any),
         isProcessed: false,
       },
     });
 
-    // Publish to queue for async processing
     await this.rabbitMQ.publishSmsReceived({
       smsId: smsLog.id,
       body: dto.body,
       sender: dto.sender,
-      timestamp: new Date(dto.timestamp),
+      timestamp: new Date(receivedAt as any),
     });
 
-    // Try to parse immediately for quick response
-    const parsed = await this.parseSms(dto.body, dto.sender, new Date(dto.timestamp));
+    const parsed = await this.parseSms(dto.body, dto.sender, new Date(receivedAt as any));
 
-    // Update SMS log with parsed data
     await this.prisma.smsLog.update({
       where: { id: smsLog.id },
       data: {
@@ -52,7 +58,6 @@ export class SmsService {
       },
     });
 
-    // Create transaction if SMS was parsed successfully
     let transactionCreated = false;
     let transactionId: string | undefined;
 
@@ -62,12 +67,13 @@ export class SmsService {
           data: {
             userId,
             amount: parsed.amount,
-            type: parsed.transactionType,
+            type: parsed.transactionType as any,
             categoryId: parsed.category,
             merchantName: parsed.merchant,
             transactionDate: parsed.timestamp,
             rawSmsText: dto.body,
             smsSenderId: dto.sender,
+            source: 'SMS',
           },
         });
 
@@ -79,14 +85,13 @@ export class SmsService {
         transactionCreated = true;
         transactionId = transaction.id;
 
-        // Publish transaction event
         await this.rabbitMQ.publishTransactionCreated({
           transactionId: transaction.id,
           userId,
           amount: parsed.amount,
           category: parsed.category || 'UNKNOWN',
         });
-      } catch (error) {
+      } catch (error: any) {
         this.logger.error(`Failed to create transaction from SMS: ${error.message}`);
       }
     }
@@ -107,59 +112,53 @@ export class SmsService {
       confidence: 0,
     };
 
-    // Identify bank from sender
     const bank = this.identifyBank(sender);
-    if (bank) {
-      this.logger.debug(`Identified bank: ${bank}`);
-    }
+    if (bank) this.logger.debug(`Identified bank: ${bank}`);
 
     // Extract amount
-    const amountMatch = body.match(/(?:INR|₹|Rs\.?)\s*([\d,]+\.?\d*)/i) ||
-                        body.match(/(?:debited|credited)[^\d]*([\d,]+\.?\d*)/i);
+    const amountMatch =
+      body.match(/(?:INR|₹|Rs\.?)\s*([\d,]+\.?\d*)/i) ||
+      body.match(/(?:debited|credited)[^\d]*([\d,]+\.?\d*)/i);
 
     if (amountMatch) {
       const amountStr = amountMatch[1] || amountMatch[0];
       parsed.amount = parseFloat(amountStr.replace(/,/g, ''));
-      parsed.confidence += 0.3;
+      parsed.confidence = (parsed.confidence ?? 0) + 0.3;
     }
 
     // Determine transaction type
     const lowerBody = body.toLowerCase();
-    if (TRANSACTION_KEYWORDS.CREDIT.some((kw) => lowerBody.includes(kw))) {
-      parsed.transactionType = 'CREDIT';
-      parsed.confidence += 0.2;
-    } else if (TRANSACTION_KEYWORDS.DEBIT.some((kw) => lowerBody.includes(kw))) {
-      parsed.transactionType = 'DEBIT';
-      parsed.confidence += 0.2;
+    if (TRANSACTION_KEYWORDS.CREDIT.some((kw: string) => lowerBody.includes(kw))) {
+      parsed.transactionType = TransactionType.CREDIT;
+      parsed.confidence = (parsed.confidence ?? 0) + 0.2;
+    } else if (TRANSACTION_KEYWORDS.DEBIT.some((kw: string) => lowerBody.includes(kw))) {
+      parsed.transactionType = TransactionType.DEBIT;
+      parsed.confidence = (parsed.confidence ?? 0) + 0.2;
     }
 
     // Extract merchant
     const merchantMatch = body.match(/(?:at|to|from)\s+([A-Za-z0-9\s&.,-]+)/i);
     if (merchantMatch) {
       parsed.merchant = merchantMatch[1].trim();
-      parsed.confidence += 0.1;
+      parsed.confidence = (parsed.confidence ?? 0) + 0.1;
     }
 
-    // Categorize based on merchant and keywords
     parsed.category = this.categorizeTransaction(body, parsed.merchant);
 
-    // Extract balance if available
     const balanceMatch = body.match(/(?:balance|avail)[^\d]*([\d,]+\.?\d*)/i);
     if (balanceMatch) {
       parsed.balance = parseFloat(balanceMatch[1].replace(/,/g, ''));
-      parsed.confidence += 0.1;
+      parsed.confidence = (parsed.confidence ?? 0) + 0.1;
     }
 
-    // Extract account last 4 digits
     const accountMatch = body.match(/(?:ending|card)[^\d]*(\d{4})/i);
     if (accountMatch) {
       parsed.accountLast4 = accountMatch[1];
-      parsed.confidence += 0.1;
+      parsed.confidence = (parsed.confidence ?? 0) + 0.1;
     }
 
-    // Boost confidence if we have key elements
     if (parsed.amount && parsed.transactionType) {
-      parsed.confidence = Math.min(parsed.confidence + 0.2, 1.0);
+      parsed.confidence = Math.min((parsed.confidence ?? 0) + 0.2, 1.0);
     }
 
     return parsed;
@@ -175,23 +174,17 @@ export class SmsService {
     const lowerMerchant = merchant?.toLowerCase() || '';
 
     for (const [category, keywords] of Object.entries(CATEGORY_MAPPINGS)) {
-      if (keywords.some((kw) => lowerBody.includes(kw) || lowerMerchant.includes(kw))) {
+      const kwArr = keywords as string[];
+      if (kwArr.some((kw: string) => lowerBody.includes(kw) || lowerMerchant.includes(kw))) {
         return category;
       }
     }
 
-    // Check for specific transaction types
-    if (TRANSACTION_KEYWORDS.ATM.some((kw) => lowerBody.includes(kw))) {
-      return 'ATM';
-    }
-
-    if (TRANSACTION_KEYWORDS.SUBSCRIPTION.some((kw) => lowerBody.includes(kw))) {
+    if (TRANSACTION_KEYWORDS.ATM?.some((kw: string) => lowerBody.includes(kw))) return 'ATM';
+    if (TRANSACTION_KEYWORDS.SUBSCRIPTION?.some((kw: string) => lowerBody.includes(kw)))
       return 'SUBSCRIPTION';
-    }
-
-    if (TRANSACTION_KEYWORDS.TRANSFER.some((kw) => lowerBody.includes(kw))) {
+    if (TRANSACTION_KEYWORDS.TRANSFER?.some((kw: string) => lowerBody.includes(kw)))
       return 'TRANSFER';
-    }
 
     return 'OTHER';
   }
@@ -212,15 +205,6 @@ export class SmsService {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { receivedAt: 'desc' },
-        include: {
-          transaction: {
-            select: {
-              id: true,
-              amount: true,
-              category: true,
-            },
-          },
-        },
       }),
     ]);
 
