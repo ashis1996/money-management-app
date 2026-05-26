@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, Header, EmptyState } from '../../components/shared';
 import {
@@ -14,6 +15,11 @@ import {
   Spacing,
   BorderRadius,
 } from '../../styles/theme';
+import {
+  useNotifications,
+  useMarkAsRead,
+  useMarkAllAsRead,
+} from '../../hooks';
 
 type NotifType =
   | 'LOW_BALANCE'
@@ -50,183 +56,7 @@ interface Notification {
   createdAt: string;
 }
 
-const mockNotifications: Notification[] = [
-  {
-    id: 'n1',
-    type: 'LOW_BALANCE',
-    category: 'risks',
-    priority: 'URGENT',
-    title: 'Low balance warning',
-    message: 'At current pace, your account will hit ₹0 in 18 days',
-    icon: '⚠️',
-    actionLabel: 'View forecast',
-    actionRoute: 'Insights',
-    isRead: false,
-    createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'n2',
-    type: 'FRAUD_ALERT',
-    category: 'risks',
-    priority: 'URGENT',
-    title: 'Unusual transaction',
-    message: '₹15,000 charged at "Online Store XYZ" — 5x your usual transaction size. Recognize this?',
-    icon: '🚨',
-    amount: 15000,
-    actionLabel: 'Review',
-    actionRoute: 'TransactionDetail',
-    actionParams: { id: 'unusual-1' },
-    isRead: false,
-    createdAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'n3',
-    type: 'DUPLICATE_CHARGE',
-    category: 'risks',
-    priority: 'HIGH',
-    title: 'Possible duplicate charge',
-    message: 'Two charges of ₹649 from Netflix in the same day',
-    icon: '🔁',
-    amount: 649,
-    actionLabel: 'Investigate',
-    isRead: false,
-    createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: 'n4',
-    type: 'BUDGET_EXCEEDED',
-    category: 'risks',
-    priority: 'HIGH',
-    title: 'Shopping budget exceeded',
-    message: "You've spent ₹6,500 of your ₹5,000 shopping budget (130%)",
-    icon: '🚨',
-    amount: 1500,
-    actionLabel: 'View budget',
-    actionRoute: 'Budgets',
-    isRead: true,
-    createdAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: 'n5',
-    type: 'BUDGET_WARNING',
-    category: 'risks',
-    priority: 'NORMAL',
-    title: 'Food budget at 85%',
-    message: 'Only ₹1,500 left in your Food budget (12 days remaining)',
-    icon: '⚠️',
-    actionLabel: 'View budget',
-    actionRoute: 'Budgets',
-    isRead: true,
-    createdAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: 'n6',
-    type: 'BILL_DUE',
-    category: 'reminders',
-    priority: 'HIGH',
-    title: 'Credit card due in 2 days',
-    message: 'HDFC ****1234 — ₹12,500 due May 27',
-    icon: '💳',
-    amount: 12500,
-    daysUntil: 2,
-    actionLabel: 'Pay now',
-    isRead: false,
-    createdAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: 'n7',
-    type: 'SUBSCRIPTION_RENEWAL',
-    category: 'reminders',
-    priority: 'NORMAL',
-    title: 'Netflix renews in 3 days',
-    message: '₹649 will be charged on May 28. Cancel before to avoid the charge.',
-    icon: '🎬',
-    amount: 649,
-    daysUntil: 3,
-    actionLabel: 'Manage',
-    actionRoute: 'Subscriptions',
-    isRead: false,
-    createdAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: 'n8',
-    type: 'EMI_DUE',
-    category: 'reminders',
-    priority: 'HIGH',
-    title: 'Bike loan EMI in 5 days',
-    message: '₹4,200 due May 30',
-    icon: '🏍️',
-    amount: 4200,
-    daysUntil: 5,
-    isRead: true,
-    createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: 'n9',
-    type: 'PRICE_INCREASE',
-    category: 'insights',
-    priority: 'NORMAL',
-    title: 'Netflix increased price',
-    message: 'Now ₹649/month (was ₹499). +30% increase detected silently.',
-    icon: '📈',
-    actionLabel: 'Review',
-    actionRoute: 'Subscriptions',
-    isRead: false,
-    createdAt: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: 'n10',
-    type: 'INSIGHT',
-    category: 'insights',
-    priority: 'LOW',
-    title: 'Late-night spending alert',
-    message: 'You spent ₹2,500 after 10 PM this month — likely impulse purchases',
-    icon: '🌙',
-    actionLabel: 'View patterns',
-    actionRoute: 'Insights',
-    isRead: true,
-    createdAt: new Date(Date.now() - 4 * 24 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: 'n11',
-    type: 'WEEKLY_SUMMARY',
-    category: 'insights',
-    priority: 'NORMAL',
-    title: 'Weekly summary ready',
-    message: 'Your week of May 19-25 is ready to review',
-    icon: '📊',
-    actionLabel: 'View summary',
-    actionRoute: 'WeeklySummary',
-    isRead: false,
-    createdAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: 'n12',
-    type: 'ACHIEVEMENT',
-    category: 'wins',
-    priority: 'LOW',
-    title: '🎉 Goal completed!',
-    message: 'You reached your Bike Down Payment goal of ₹25,000',
-    icon: '🎉',
-    actionLabel: 'Celebrate',
-    actionRoute: 'Goals',
-    isRead: true,
-    createdAt: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: 'n13',
-    type: 'GOAL_PROGRESS',
-    category: 'wins',
-    priority: 'LOW',
-    title: 'Emergency Fund 65% complete',
-    message: "You're ₹35,000 away. On track for 6 months!",
-    icon: '🛡️',
-    actionLabel: 'View',
-    actionRoute: 'Goals',
-    isRead: true,
-    createdAt: new Date(Date.now() - 6 * 24 * 3600 * 1000).toISOString(),
-  },
-];
+const mockNotifications: Notification[] = [];
 
 const FILTERS: { key: NotifCategory | 'all' | 'unread'; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -237,8 +67,65 @@ const FILTERS: { key: NotifCategory | 'all' | 'unread'; label: string }[] = [
   { key: 'wins', label: '🎉 Wins' },
 ];
 
+/**
+ * Map a backend NotificationType + data payload to the rich UI shape.
+ * The schema only has type/title/message/data; we infer category/icon/priority.
+ */
+function backendToNotification(n: any): Notification {
+  const data = n.data ?? {};
+  const rawType = (data.uiType as string) ?? (n.type as string);
+  const type: NotifType = rawType as NotifType;
+
+  let category: NotifCategory = 'reminders';
+  if (
+    rawType === 'LOW_BALANCE' ||
+    rawType === 'FRAUD_ALERT' ||
+    rawType === 'DUPLICATE_CHARGE' ||
+    rawType === 'BUDGET_EXCEEDED' ||
+    rawType === 'BUDGET_WARNING' ||
+    rawType === 'BUDGET_ALERT'
+  ) category = 'risks';
+  else if (
+    rawType === 'BILL_DUE' ||
+    rawType === 'EMI_DUE' ||
+    rawType === 'SUBSCRIPTION_RENEWAL' ||
+    rawType === 'SUBSCRIPTION'
+  ) category = 'reminders';
+  else if (
+    rawType === 'INSIGHT' ||
+    rawType === 'PRICE_INCREASE' ||
+    rawType === 'WEEKLY_SUMMARY'
+  ) category = 'insights';
+  else if (rawType === 'ACHIEVEMENT' || rawType === 'GOAL_PROGRESS') category = 'wins';
+
+  return {
+    id: n.id,
+    type: type as NotifType,
+    category,
+    priority: (n.priority || 'NORMAL') as NotifPriority,
+    title: n.title,
+    message: n.message || '',
+    icon: data.icon || '🔔',
+    amount: data.amount,
+    daysUntil: data.daysUntil,
+    actionLabel: data.actionLabel,
+    actionRoute: data.actionRoute,
+    actionParams: data.actionParams,
+    isRead: !!n.isRead,
+    createdAt: n.createdAt,
+  };
+}
+
 export function NotificationsScreen({ navigation }: any) {
-  const [notifs, setNotifs] = useState<Notification[]>(mockNotifications);
+  const notifsQuery = useNotifications();
+  const markAsRead = useMarkAsRead();
+  const markAllAsRead = useMarkAllAsRead();
+
+  const notifs: Notification[] = useMemo(() => {
+    const list = notifsQuery.data || [];
+    return list.map(backendToNotification);
+  }, [notifsQuery.data]);
+
   const [filter, setFilter] = useState<typeof FILTERS[0]['key']>('all');
 
   const unreadCount = notifs.filter((n) => !n.isRead).length;
@@ -265,27 +152,26 @@ export function NotificationsScreen({ navigation }: any) {
   }, [filtered]);
 
   const handleMarkAllRead = () => {
-    setNotifs((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    markAllAsRead.mutate();
   };
 
   const handleClearAll = () => {
-    Alert.alert('Clear all notifications?', 'They will be removed.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Clear', style: 'destructive', onPress: () => setNotifs([]) },
-    ]);
+    Alert.alert(
+      'Clear all notifications?',
+      'Use Mark All Read instead — clearing is not yet supported',
+      [{ text: 'OK' }],
+    );
   };
 
   const handleAction = (notif: Notification) => {
-    setNotifs((prev) =>
-      prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
-    );
+    if (!notif.isRead) markAsRead.mutate(notif.id);
     if (notif.actionRoute) {
       navigation.navigate(notif.actionRoute, notif.actionParams);
     }
   };
 
   const handleDismiss = (id: string) => {
-    setNotifs((prev) => prev.filter((n) => n.id !== id));
+    markAsRead.mutate(id);
   };
 
   return (

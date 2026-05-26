@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TextInputProps,
   ViewStyle,
+  StyleProp,
   TouchableOpacity,
 } from 'react-native';
 import { Colors, Typography, Spacing, BorderRadius } from '../../styles/theme';
@@ -17,7 +18,7 @@ interface InputProps extends TextInputProps {
   icon?: string;
   rightIcon?: string;
   onRightIconPress?: () => void;
-  containerStyle?: ViewStyle;
+  containerStyle?: StyleProp<ViewStyle>;
 }
 
 export function Input({
@@ -40,7 +41,7 @@ export function Input({
         style={[
           styles.inputContainer,
           focused && styles.focused,
-          error && styles.error,
+          !!error && styles.error,
         ]}
       >
         {icon && <Text style={styles.icon}>{icon}</Text>}

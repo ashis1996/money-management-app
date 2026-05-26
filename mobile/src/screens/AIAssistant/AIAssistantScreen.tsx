@@ -17,6 +17,7 @@ import {
   Spacing,
   BorderRadius,
 } from '../../styles/theme';
+import { useAskAi } from '../../hooks';
 
 interface Message {
   id: string;
@@ -47,6 +48,7 @@ export function AIAssistantScreen({ navigation }: any) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const askAi = useAskAi();
 
   useEffect(() => {
     // Initial greeting
@@ -65,7 +67,7 @@ export function AIAssistantScreen({ navigation }: any) {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [messages]);
 
-  const handleSend = (text?: string) => {
+  const handleSend = async (text?: string) => {
     const query = (text ?? input).trim();
     if (!query) return;
 
@@ -79,21 +81,44 @@ export function AIAssistantScreen({ navigation }: any) {
     setInput('');
     setIsLoading(true);
 
-    // Simulate AI response
-    setTimeout(() => {
+    try {
+      const result: any = await askAi.mutateAsync({ query });
+      const text =
+        result?.answer ??
+        result?.response ??
+        result?.text ??
+        result?.message ??
+        result?.data?.answer ??
+        "I couldn't generate a response right now. Try rephrasing your question.";
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: String(Date.now() + 1),
+          role: 'assistant',
+          content: text,
+          data: result?.data ?? result?.metadata ?? undefined,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    } catch (e: any) {
+      // Fallback to local heuristic so the UI stays useful when offline
       const response = generateResponse(query);
       setMessages((prev) => [
         ...prev,
         {
           id: String(Date.now() + 1),
           role: 'assistant',
-          content: response.text,
+          content:
+            response.text +
+            '\n\n_(AI service unavailable, showing local analysis)_',
           data: response.data,
           timestamp: new Date().toISOString(),
         },
       ]);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   const handleClear = () => {

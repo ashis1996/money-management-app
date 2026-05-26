@@ -8,6 +8,7 @@ import {
   Modal,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, ProgressRing, ProgressBar, EmptyState } from '../../components/shared';
 import {
@@ -16,80 +17,32 @@ import {
   Spacing,
   BorderRadius,
 } from '../../styles/theme';
+import {
+  useGoals,
+  useCreateGoal,
+  useContributeGoal,
+  useDeleteGoal,
+} from '../../hooks';
 
 interface Goal {
   id: string;
   name: string;
-  icon: string;
-  color: string;
-  category: string;
+  icon?: string;
+  color?: string;
+  category?: string;
   targetAmount: number;
   currentAmount: number;
-  targetDate: string;
-  monthlyContribution: number;
-  autoAllocate: boolean;
-  priority: number;
+  targetDate?: string | null;
+  monthlyContribution?: number;
+  autoAllocate?: boolean;
+  priority?: number;
   isCompleted: boolean;
+  progressPercent?: number;
+  monthsToGoal?: number | null;
+  dailyContributionNeeded?: number | null;
 }
 
-const mockGoals: Goal[] = [
-  {
-    id: '1',
-    name: 'Emergency Fund',
-    icon: '🛡️',
-    color: '#10B981',
-    category: 'emergency',
-    targetAmount: 100000,
-    currentAmount: 65000,
-    targetDate: new Date(Date.now() + 180 * 24 * 3600 * 1000).toISOString(),
-    monthlyContribution: 6000,
-    autoAllocate: true,
-    priority: 1,
-    isCompleted: false,
-  },
-  {
-    id: '2',
-    name: 'Goa Vacation',
-    icon: '🏖️',
-    color: '#3B82F6',
-    category: 'travel',
-    targetAmount: 50000,
-    currentAmount: 32000,
-    targetDate: new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString(),
-    monthlyContribution: 6000,
-    autoAllocate: false,
-    priority: 2,
-    isCompleted: false,
-  },
-  {
-    id: '3',
-    name: 'New iPhone',
-    icon: '📱',
-    color: '#8B5CF6',
-    category: 'gadget',
-    targetAmount: 80000,
-    currentAmount: 15000,
-    targetDate: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
-    monthlyContribution: 5500,
-    autoAllocate: false,
-    priority: 3,
-    isCompleted: false,
-  },
-  {
-    id: '4',
-    name: 'Bike Down Payment',
-    icon: '🏍️',
-    color: '#F59E0B',
-    category: 'vehicle',
-    targetAmount: 25000,
-    currentAmount: 25000,
-    targetDate: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
-    monthlyContribution: 0,
-    autoAllocate: false,
-    priority: 4,
-    isCompleted: true,
-  },
-];
+const mockGoals: Goal[] = [];
 
 const GOAL_CATEGORIES = [
   { id: 'emergency', label: 'Emergency Fund', icon: '🛡️', color: '#10B981' },
@@ -105,7 +58,34 @@ const GOAL_CATEGORIES = [
 type FilterType = 'active' | 'completed' | 'all';
 
 export function GoalsScreen({ navigation }: any) {
-  const [goals, setGoals] = useState<Goal[]>(mockGoals);
+  const goalsQuery = useGoals();
+  const createGoal = useCreateGoal();
+  const contributeGoal = useContributeGoal();
+  const deleteGoal = useDeleteGoal();
+
+  const goals: Goal[] = useMemo(() => {
+    const list = goalsQuery.data || [];
+    return list.map((g: any) => {
+      const cat = GOAL_CATEGORIES.find((c) => c.id === g.category);
+      const monthly =
+        g.monthsToGoal && g.monthsToGoal > 0
+          ? Math.round(
+              Math.max(0, g.targetAmount - g.currentAmount) / g.monthsToGoal,
+            )
+          : 0;
+      return {
+        ...g,
+        icon: g.icon || cat?.icon || '🎯',
+        color: g.color || cat?.color || Colors.primary,
+        category: g.category || 'other',
+        monthlyContribution: monthly,
+        autoAllocate: !!g.autoAllocate,
+        priority: g.priority ?? 0,
+        isCompleted: !!g.isCompleted,
+      };
+    });
+  }, [goalsQuery.data]);
+
   const [filter, setFilter] = useState<FilterType>('active');
   const [showCreate, setShowCreate] = useState(false);
   const [contributingGoal, setContributingGoal] = useState<Goal | null>(null);
@@ -125,7 +105,7 @@ export function GoalsScreen({ navigation }: any) {
     const active = goals.filter((g) => !g.isCompleted);
     const totalTarget = active.reduce((sum, g) => sum + g.targetAmount, 0);
     const totalSaved = active.reduce((sum, g) => sum + g.currentAmount, 0);
-    const totalMonthly = active.reduce((sum, g) => sum + g.monthlyContribution, 0);
+    const totalMonthly = active.reduce((sum, g) => sum + (g.monthlyContribution || 0), 0);
     const completedCount = goals.filter((g) => g.isCompleted).length;
 
     return {
@@ -144,7 +124,7 @@ export function GoalsScreen({ navigation }: any) {
     return goals;
   }, [goals, filter]);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!newGoal.name || !newGoal.targetAmount) {
       Alert.alert('Missing fields', 'Please fill goal name and target amount');
       return;
@@ -152,57 +132,48 @@ export function GoalsScreen({ navigation }: any) {
     const cat = GOAL_CATEGORIES.find((c) => c.id === newGoal.category);
     const target = parseFloat(newGoal.targetAmount);
 
-    setGoals([
-      ...goals,
-      {
-        id: String(Date.now()),
+    try {
+      await createGoal.mutateAsync({
         name: newGoal.name,
-        icon: cat?.icon || '🎯',
-        color: cat?.color || Colors.primary,
-        category: newGoal.category,
         targetAmount: target,
-        currentAmount: 0,
-        targetDate:
-          newGoal.targetDate ||
-          new Date(Date.now() + 180 * 24 * 3600 * 1000).toISOString(),
-        monthlyContribution: Math.round(target / 12),
+        targetDate: newGoal.targetDate || undefined,
+        category: newGoal.category,
+        icon: cat?.icon,
+        color: cat?.color,
         autoAllocate: newGoal.autoAllocate,
-        priority: goals.length + 1,
-        isCompleted: false,
-      },
-    ]);
-    setNewGoal({
-      name: '',
-      targetAmount: '',
-      targetDate: '',
-      category: 'emergency',
-      icon: '🛡️',
-      color: '#10B981',
-      autoAllocate: false,
-    });
-    setShowCreate(false);
+      });
+      setNewGoal({
+        name: '',
+        targetAmount: '',
+        targetDate: '',
+        category: 'emergency',
+        icon: '🛡️',
+        color: '#10B981',
+        autoAllocate: false,
+      });
+      setShowCreate(false);
+    } catch (e: any) {
+      Alert.alert('Could not create goal', e?.message ?? 'Unknown error');
+    }
   };
 
-  const handleContribute = () => {
+  const handleContribute = async () => {
     if (!contributingGoal || !contributionAmount) return;
     const amt = parseFloat(contributionAmount);
     if (isNaN(amt) || amt <= 0) {
       Alert.alert('Invalid amount', 'Please enter a valid amount');
       return;
     }
-    setGoals((prev) =>
-      prev.map((g) => {
-        if (g.id !== contributingGoal.id) return g;
-        const newAmount = g.currentAmount + amt;
-        return {
-          ...g,
-          currentAmount: Math.min(newAmount, g.targetAmount),
-          isCompleted: newAmount >= g.targetAmount,
-        };
-      })
-    );
-    setContributingGoal(null);
-    setContributionAmount('');
+    try {
+      await contributeGoal.mutateAsync({
+        id: contributingGoal.id,
+        amount: amt,
+      });
+      setContributingGoal(null);
+      setContributionAmount('');
+    } catch (e: any) {
+      Alert.alert('Could not contribute', e?.message ?? 'Unknown error');
+    }
   };
 
   const handleDelete = (id: string) => {
@@ -211,10 +182,32 @@ export function GoalsScreen({ navigation }: any) {
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => setGoals((prev) => prev.filter((g) => g.id !== id)),
+        onPress: () => deleteGoal.mutate(id),
       },
     ]);
   };
+
+  if (goalsQuery.isLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+
+  if (goalsQuery.isError) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', padding: Spacing.xl }]}>
+        <EmptyState
+          icon="⚠️"
+          title="Couldn't load goals"
+          message={(goalsQuery.error as any)?.message || 'Pull to refresh and try again'}
+          actionLabel="Retry"
+          onAction={() => goalsQuery.refetch()}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -547,10 +540,12 @@ function GoalCard({ goal, onContribute, onDelete }: GoalCardProps) {
   const monthsLeft = Math.max(
     1,
     Math.ceil(
-      (new Date(goal.targetDate).getTime() - Date.now()) / (30 * 24 * 3600 * 1000)
-    )
+      (new Date(goal.targetDate ?? Date.now()).getTime() - Date.now()) /
+        (30 * 24 * 3600 * 1000),
+    ),
   );
-  const onTrack = goal.monthlyContribution * monthsLeft >= remaining;
+  const monthlyContribution = goal.monthlyContribution ?? 0;
+  const onTrack = monthlyContribution * monthsLeft >= remaining;
 
   return (
     <Card style={[styles.goalCard, goal.isCompleted && styles.goalCardCompleted]}>
@@ -609,7 +604,7 @@ function GoalCard({ goal, onContribute, onDelete }: GoalCardProps) {
                   { color: onTrack ? Colors.success : Colors.warning },
                 ]}
               >
-                ₹{goal.monthlyContribution.toLocaleString()}
+                ₹{monthlyContribution.toLocaleString()}
               </Text>
             </View>
           </View>

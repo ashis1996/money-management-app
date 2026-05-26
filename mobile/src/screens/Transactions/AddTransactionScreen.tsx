@@ -15,6 +15,7 @@ import {
   Spacing,
   BorderRadius,
 } from '../../styles/theme';
+import { useCreateTransaction, useAccounts } from '../../hooks';
 
 type EntryMode = 'manual' | 'assisted' | 'voice';
 type TransactionType = 'CREDIT' | 'DEBIT';
@@ -46,13 +47,29 @@ interface AISuggestion {
 }
 
 export function AddTransactionScreen({ navigation }: any) {
+  const createTx = useCreateTransaction();
+  const accountsQuery = useAccounts({ isActive: true });
+
+  const accounts = (accountsQuery.data ?? []).map((a: any) => ({
+    id: a.id,
+    name: a.accountName,
+    mask: a.maskedAccountNumber || '',
+    icon: a.icon || '🏦',
+    balance: Number(a.balance ?? 0),
+  }));
+  const ACCOUNTS_FALLBACK = accounts.length > 0 ? accounts : [
+    { id: '', name: 'No accounts', mask: '', icon: '🏦', balance: 0 },
+  ];
+
   const [mode, setMode] = useState<EntryMode>('assisted');
   const [type, setType] = useState<TransactionType>('DEBIT');
   const [amount, setAmount] = useState('');
   const [merchant, setMerchant] = useState('');
   const [description, setDescription] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedAccount, setSelectedAccount] = useState<string>('1');
+  const [selectedAccount, setSelectedAccount] = useState<string>(
+    ACCOUNTS_FALLBACK[0]?.id ?? '',
+  );
   const [voiceInput, setVoiceInput] = useState('');
   const [aiSuggestion, setAiSuggestion] = useState<AISuggestion | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -71,7 +88,7 @@ export function AddTransactionScreen({ navigation }: any) {
     }
   }, [merchant, amount, mode]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!amount || parseFloat(amount) <= 0) {
       Alert.alert('Invalid amount', 'Please enter a valid amount');
       return;
@@ -81,11 +98,29 @@ export function AddTransactionScreen({ navigation }: any) {
       return;
     }
 
-    Alert.alert(
-      'Transaction Added',
-      `${type === 'CREDIT' ? '+' : '-'}₹${amount} for ${merchant || 'transaction'}`,
-      [{ text: 'OK', onPress: () => navigation.goBack() }]
-    );
+    try {
+      await createTx.mutateAsync({
+        amount: parseFloat(amount),
+        type,
+        categoryId: selectedCategory,
+        merchantName: merchant || undefined,
+        description: description || undefined,
+        accountId: selectedAccount || undefined,
+        captureMode:
+          mode === 'manual' ? 'MANUAL' : mode === 'assisted' ? 'ASSISTED' : 'AUTO',
+        source:
+          mode === 'manual' ? 'MANUAL' : mode === 'voice' ? 'VOICE' : 'MANUAL',
+        isUserConfirmed: true,
+      });
+
+      Alert.alert(
+        'Transaction Added',
+        `${type === 'CREDIT' ? '+' : '-'}₹${amount} for ${merchant || 'transaction'}`,
+        [{ text: 'OK', onPress: () => navigation.goBack() }],
+      );
+    } catch (e: any) {
+      Alert.alert('Could not save', e?.message ?? 'Unknown error');
+    }
   };
 
   const handleAcceptAI = () => {
@@ -314,7 +349,7 @@ export function AddTransactionScreen({ navigation }: any) {
         {/* Account */}
         <Card style={styles.fieldCard}>
           <Text style={styles.fieldLabel}>Account</Text>
-          {ACCOUNTS.map((account) => (
+          {ACCOUNTS_FALLBACK.map((account) => (
             <TouchableOpacity
               key={account.id}
               style={[

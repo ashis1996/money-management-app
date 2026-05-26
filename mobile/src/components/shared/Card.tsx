@@ -1,12 +1,12 @@
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { Colors, Spacing, BorderRadius, Shadows } from '../../styles/theme';
 
 interface CardProps {
   children: React.ReactNode;
   onPress?: () => void;
   onLongPress?: () => void;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   padding?: keyof typeof Spacing | 'none';
   variant?: 'elevated' | 'outlined' | 'flat';
 }

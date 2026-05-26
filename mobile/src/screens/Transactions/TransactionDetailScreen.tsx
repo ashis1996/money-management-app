@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,14 +8,20 @@ import {
   Alert,
   Modal,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
-import { Card, Badge, Button, Header } from '../../components/shared';
+import { Card, Badge, Button, Header, EmptyState } from '../../components/shared';
 import {
   Colors,
   Typography,
   Spacing,
   BorderRadius,
 } from '../../styles/theme';
+import {
+  useTransaction,
+  useUpdateTransaction,
+  useDeleteTransaction,
+} from '../../hooks';
 
 interface TransactionDetail {
   id: string;
@@ -51,29 +57,49 @@ const CATEGORIES = [
   { id: 'other', label: 'Other', icon: '📦' },
 ];
 
-// Mock fetch - in production fetch from store/API by id
-function getMockTransaction(id: string): TransactionDetail {
+// Default placeholder while transaction is loading or missing
+const EMPTY_TX: TransactionDetail = {
+  id: '',
+  amount: 0,
+  type: 'DEBIT',
+  category: 'Other',
+  categoryIcon: '📦',
+  categoryColor: Colors.gray400,
+  merchant: 'Unknown',
+  description: '',
+  date: new Date().toISOString(),
+  source: 'MANUAL',
+  captureMode: 'MANUAL',
+  account: '',
+  isImpulse: false,
+  isLateNight: false,
+  isWeekend: false,
+  isSubscription: false,
+  tags: [],
+};
+
+function backendToTxDetail(t: any): TransactionDetail {
+  if (!t) return EMPTY_TX;
+  const cat = CATEGORIES.find((c) => c.id === t.categoryId) ?? CATEGORIES[7];
   return {
-    id,
-    amount: 549,
-    type: 'DEBIT',
-    category: 'Food & Dining',
-    categoryIcon: '🍔',
-    categoryColor: '#EF4444',
-    merchant: 'Swiggy',
-    description: 'Order #45289 - Pizza Hut',
-    date: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    source: 'UPI',
-    captureMode: 'ASSISTED',
-    account: 'HDFC Bank ****4521',
-    rawSms:
-      'INR 549.00 debited from HDFC Bank A/c **4521 on 25-MAY-26 for UPI/SWIGGY/order 45289. Avl bal: INR 24,567.00',
-    isImpulse: true,
-    isLateNight: true,
-    isWeekend: true,
-    isSubscription: false,
-    location: { latitude: 12.9716, longitude: 77.5946, name: 'Bangalore, KA' },
-    tags: ['food', 'delivery'],
+    id: t.id,
+    amount: Number(t.amount ?? 0),
+    type: t.type,
+    category: cat.label,
+    categoryIcon: cat.icon,
+    categoryColor: Colors.gray400,
+    merchant: t.merchantName || 'Unknown',
+    description: t.description || '',
+    date: t.transactionDate,
+    source: t.source || 'MANUAL',
+    captureMode: t.captureMode || 'MANUAL',
+    account: t.account?.accountName || t.accountId || '',
+    rawSms: t.rawSmsText,
+    isImpulse: !!t.isImpulse,
+    isLateNight: !!t.isLateNight,
+    isWeekend: !!t.isWeekend,
+    isSubscription: !!t.isSubscription,
+    tags: t.tags ?? [],
   };
 }
 
@@ -84,35 +110,54 @@ const RELATED = [
 ];
 
 export function TransactionDetailScreen({ navigation, route }: any) {
-  const id = route?.params?.id || '1';
-  const [tx, setTx] = useState<TransactionDetail>(getMockTransaction(id));
+  const id = route?.params?.id;
+  const txQuery = useTransaction(id);
+  const updateTx = useUpdateTransaction();
+  const deleteTx = useDeleteTransaction();
+
+  const tx: TransactionDetail = useMemo(
+    () => backendToTxDetail(txQuery.data),
+    [txQuery.data],
+  );
+
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [showEditNote, setShowEditNote] = useState(false);
-  const [editedNote, setEditedNote] = useState(tx.description);
+  const [editedNote, setEditedNote] = useState('');
   const [showRawSms, setShowRawSms] = useState(false);
 
+  // Sync local state when tx loads
+  useEffect(() => {
+    setEditedNote(tx.description);
+  }, [tx.id, tx.description]);
+
   const handleDelete = () => {
-    Alert.alert(
-      'Delete transaction?',
-      'This action cannot be undone',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => navigation.goBack(),
+    Alert.alert('Delete transaction?', 'This action cannot be undone', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          if (!tx.id) return;
+          try {
+            await deleteTx.mutateAsync(tx.id);
+            navigation.goBack();
+          } catch (e: any) {
+            Alert.alert('Could not delete', e?.message ?? 'Unknown error');
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleChangeCategory = (cat: typeof CATEGORIES[0]) => {
-    setTx({ ...tx, category: cat.label, categoryIcon: cat.icon });
+    if (!tx.id) return;
+    updateTx.mutate({ id: tx.id, data: { categoryId: cat.id } });
     setShowCategoryPicker(false);
   };
 
   const handleSaveNote = () => {
-    setTx({ ...tx, description: editedNote });
+    if (!tx.id) return;
+    updateTx.mutate({ id: tx.id, data: { description: editedNote } });
     setShowEditNote(false);
   };
 
@@ -121,8 +166,17 @@ export function TransactionDetailScreen({ navigation, route }: any) {
   };
 
   const handleMarkImpulse = () => {
-    setTx({ ...tx, isImpulse: !tx.isImpulse });
+    if (!tx.id) return;
+    updateTx.mutate({ id: tx.id, data: { isImpulse: !tx.isImpulse } });
   };
+
+  if (txQuery.isLoading || !tx.id) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

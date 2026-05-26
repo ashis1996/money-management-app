@@ -7,14 +7,20 @@ import {
   TouchableOpacity,
   Alert,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
-import { Card, Badge, Button, ProgressBar } from '../../components/shared';
+import { Card, Badge, Button, ProgressBar, EmptyState } from '../../components/shared';
 import {
   Colors,
   Typography,
   Spacing,
   BorderRadius,
 } from '../../styles/theme';
+import {
+  useSubscriptions,
+  useCancelSubscription,
+  usePauseSubscription,
+} from '../../hooks';
 
 type Frequency = 'MONTHLY' | 'YEARLY' | 'WEEKLY' | 'QUARTERLY';
 type Status = 'ACTIVE' | 'PAUSED' | 'CANCELLED';
@@ -42,127 +48,42 @@ interface Subscription {
   duplicateGroup?: string;
 }
 
-const mockSubscriptions: Subscription[] = [
-  {
-    id: '1',
-    name: 'Netflix',
-    merchantName: 'Netflix',
-    amount: 649,
-    frequency: 'MONTHLY',
-    status: 'ACTIVE',
-    category: 'Entertainment',
-    icon: '🎬',
-    color: '#E50914',
-    nextBillingDate: new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString(),
-    lastPaymentDate: new Date(Date.now() - 27 * 24 * 3600 * 1000).toISOString(),
-    totalPaid: 7788,
-    paymentCount: 12,
-    originalAmount: 499,
-    priceIncreasePercent: 30.06,
-    usageScore: 0.7,
-    isLowUsage: false,
-    isDuplicate: true,
-    duplicateGroup: 'video',
-  },
-  {
-    id: '2',
-    name: 'Amazon Prime',
-    merchantName: 'Amazon',
-    amount: 1499,
-    frequency: 'YEARLY',
-    status: 'ACTIVE',
-    category: 'Entertainment',
-    icon: '📦',
-    color: '#FF9900',
-    nextBillingDate: new Date(Date.now() + 180 * 24 * 3600 * 1000).toISOString(),
-    lastPaymentDate: new Date(Date.now() - 185 * 24 * 3600 * 1000).toISOString(),
-    totalPaid: 4497,
-    paymentCount: 3,
-    usageScore: 0.85,
-    isLowUsage: false,
-    isDuplicate: true,
-    duplicateGroup: 'video',
-  },
-  {
-    id: '3',
-    name: 'Spotify',
-    merchantName: 'Spotify',
-    amount: 119,
-    frequency: 'MONTHLY',
-    status: 'ACTIVE',
-    category: 'Music',
-    icon: '🎵',
-    color: '#1DB954',
-    nextBillingDate: new Date(Date.now() + 8 * 24 * 3600 * 1000).toISOString(),
-    lastPaymentDate: new Date(Date.now() - 22 * 24 * 3600 * 1000).toISOString(),
-    totalPaid: 952,
-    paymentCount: 8,
-    usageScore: 0.15,
-    isLowUsage: true,
-    isDuplicate: true,
-    duplicateGroup: 'music',
-  },
-  {
-    id: '4',
-    name: 'YouTube Premium',
-    merchantName: 'YouTube',
-    amount: 129,
-    frequency: 'MONTHLY',
-    status: 'ACTIVE',
-    category: 'Music',
-    icon: '📺',
-    color: '#FF0000',
-    nextBillingDate: new Date(Date.now() + 12 * 24 * 3600 * 1000).toISOString(),
-    lastPaymentDate: new Date(Date.now() - 18 * 24 * 3600 * 1000).toISOString(),
-    totalPaid: 645,
-    paymentCount: 5,
-    usageScore: 0.9,
-    isLowUsage: false,
-    isDuplicate: true,
-    duplicateGroup: 'music',
-  },
-  {
-    id: '5',
-    name: 'Cult.fit',
-    merchantName: 'Cult.fit',
-    amount: 999,
-    frequency: 'MONTHLY',
-    status: 'ACTIVE',
-    category: 'Health',
-    icon: '🏋️',
-    color: '#FF5722',
-    nextBillingDate: new Date(Date.now() + 5 * 24 * 3600 * 1000).toISOString(),
-    lastPaymentDate: new Date(Date.now() - 25 * 24 * 3600 * 1000).toISOString(),
-    totalPaid: 5994,
-    paymentCount: 6,
-    usageScore: 0.05,
-    isLowUsage: true,
-    isDuplicate: false,
-  },
-  {
-    id: '6',
-    name: 'Notion',
-    merchantName: 'Notion',
-    amount: 800,
-    frequency: 'MONTHLY',
-    status: 'ACTIVE',
-    category: 'Productivity',
-    icon: '📝',
-    color: '#000000',
-    nextBillingDate: new Date(Date.now() + 22 * 24 * 3600 * 1000).toISOString(),
-    lastPaymentDate: new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString(),
-    totalPaid: 9600,
-    paymentCount: 12,
-    usageScore: 0.8,
-    isLowUsage: false,
-    isDuplicate: false,
-  },
-];
+const mockSubscriptions: Subscription[] = [];
 
 type FilterType = 'all' | 'active' | 'leaks' | 'upcoming';
 
 export function SubscriptionsScreen({ navigation }: any) {
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>(mockSubscriptions);
+  const subsQuery = useSubscriptions();
+  const cancelSub = useCancelSubscription();
+  const pauseSub = usePauseSubscription();
+
+  const subscriptions: Subscription[] = useMemo(() => {
+    const list = subsQuery.data || [];
+    return list.map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      merchantName: s.merchantName || s.name,
+      amount: Number(s.amount),
+      frequency: s.frequency,
+      status: s.status,
+      category: s.category?.name || s.categoryId || 'Other',
+      icon: s.icon || '🔄',
+      color: s.color || Colors.primary,
+      nextBillingDate: s.nextBillingDate || new Date().toISOString(),
+      lastPaymentDate: s.lastPaymentDate || new Date().toISOString(),
+      totalPaid: Number(s.totalAmountPaid ?? 0),
+      paymentCount: s.totalPaymentsCount ?? 0,
+      originalAmount: s.originalAmount ? Number(s.originalAmount) : undefined,
+      priceIncreasePercent: s.priceIncreasePercent
+        ? Number(s.priceIncreasePercent)
+        : undefined,
+      usageScore: s.usageScore ? Number(s.usageScore) : 0.5,
+      isLowUsage: !!s.isLowUsage,
+      isDuplicate: !!s.isDuplicate,
+      duplicateGroup: s.duplicateGroup,
+    }));
+  }, [subsQuery.data]);
+
   const [filter, setFilter] = useState<FilterType>('all');
   const [selectedSub, setSelectedSub] = useState<Subscription | null>(null);
 
@@ -246,11 +167,12 @@ export function SubscriptionsScreen({ navigation }: any) {
   };
 
   const handlePause = (sub: Subscription) => {
-    setSubscriptions((prev) =>
-      prev.map((s) =>
-        s.id === sub.id ? { ...s, status: s.status === 'PAUSED' ? 'ACTIVE' : 'PAUSED' } : s
-      )
-    );
+    if (sub.status === 'PAUSED') {
+      // Resume
+      pauseSub.mutate(sub.id);
+    } else {
+      pauseSub.mutate(sub.id);
+    }
   };
 
   return (
@@ -432,11 +354,7 @@ export function SubscriptionsScreen({ navigation }: any) {
                   <Button
                     title="Mark as Cancelled"
                     onPress={() => {
-                      setSubscriptions((prev) =>
-                        prev.map((s) =>
-                          s.id === selectedSub.id ? { ...s, status: 'CANCELLED' } : s
-                        )
-                      );
+                      cancelSub.mutate(selectedSub.id);
                       setSelectedSub(null);
                     }}
                     variant="success"

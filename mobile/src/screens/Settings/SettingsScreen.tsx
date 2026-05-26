@@ -17,6 +17,7 @@ import {
   BorderRadius,
   ArchetypeColors,
 } from '../../styles/theme';
+import { useHealthScore, useUnreadCount } from '../../hooks';
 
 interface MenuItem {
   icon: string;
@@ -31,6 +32,12 @@ interface MenuItem {
 
 export function SettingsScreen({ navigation }: any) {
   const { user, logout } = useAuthStore();
+  const healthQuery = useHealthScore();
+  const unreadCount = useUnreadCount();
+
+  const healthScoreValue = Math.round(
+    Number(healthQuery.data?.score ?? healthQuery.data?.healthScore ?? 0),
+  );
 
   // Settings state
   const [autoCapture, setAutoCapture] = useState(true);
@@ -162,7 +169,7 @@ export function SettingsScreen({ navigation }: any) {
           icon="❤️"
           label="Health Score"
           onPress={() => navigation.navigate('HealthScore')}
-          badge="68"
+          badge={healthScoreValue > 0 ? String(healthScoreValue) : undefined}
         />
       </Section>
 

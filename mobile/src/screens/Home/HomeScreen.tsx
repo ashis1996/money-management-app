@@ -25,6 +25,16 @@ import {
   HealthScoreColors,
   PriorityColors,
 } from '../../styles/theme';
+import {
+  useDashboard,
+  useHealthScore,
+  useMoneyLeaks,
+  useActionCards,
+  useGoals,
+  useUpcomingSubscriptions,
+  useArchetype,
+  useSubscriptions,
+} from '../../hooks';
 
 type Archetype = 'SPEND_HEAVY' | 'SAVINGS_FOCUSED' | 'CREDIT_USER' | 'SUBSCRIPTION_HEAVY' | 'BALANCED';
 
@@ -64,56 +74,23 @@ interface MockData {
   forecast: { daysLeft: number; balance: number };
 }
 
-// Mock data - in production this comes from API
-const mockData: MockData = {
-  archetype: 'SPEND_HEAVY',
-  healthScore: 68,
-  leakScore: 42,
-  monthlySpent: 45000,
-  monthlyIncome: 75000,
-  monthlySavings: 30000,
-  potentialSavings: 4500,
-  upcomingDues: 8500,
-  activeSubscriptions: 7,
-  goalProgress: 65,
-  topGoal: { name: 'Emergency Fund', progress: 65, target: 100000, current: 65000 },
-  actionCards: [
-    {
-      id: 'a1',
-      title: 'Cancel Spotify',
-      description: 'Low usage detected. Save ₹119/month.',
-      priority: 'HIGH',
-      impact: 119,
-      icon: '🎵',
-    },
-    {
-      id: 'a2',
-      title: 'Reduce Food Delivery',
-      description: 'You spent ₹8,200 on Swiggy. Try cooking 2 days/week.',
-      priority: 'MEDIUM',
-      impact: 2000,
-      icon: '🍔',
-    },
-    {
-      id: 'a3',
-      title: 'Netflix Price Hike',
-      description: 'Increased from ₹499 to ₹649. Review subscription.',
-      priority: 'MEDIUM',
-      impact: 150,
-      icon: '🎬',
-    },
-  ],
-  topLeaks: [
-    { type: 'Late-night impulse', amount: 2500, description: 'Spent after 10 PM' },
-    { type: 'Duplicate music apps', merchant: 'Spotify + YT Music', amount: 248, description: 'Two services overlap' },
-    { type: 'Unused gym', merchant: 'Cult.fit', amount: 999, description: '0 visits in 30 days' },
-  ],
-  upcomingPayments: [
-    { id: 'p1', name: 'Netflix', amount: 649, dueIn: 3, icon: '🎬' },
-    { id: 'p2', name: 'Credit Card', amount: 12500, dueIn: 5, icon: '💳' },
-    { id: 'p3', name: 'Internet', amount: 999, dueIn: 8, icon: '🌐' },
-  ],
-  forecast: { daysLeft: 18, balance: 27500 },
+// Default empty data structure - replaced by API data
+const EMPTY_DATA: MockData = {
+  archetype: 'BALANCED',
+  healthScore: 0,
+  leakScore: 0,
+  monthlySpent: 0,
+  monthlyIncome: 0,
+  monthlySavings: 0,
+  potentialSavings: 0,
+  upcomingDues: 0,
+  activeSubscriptions: 0,
+  goalProgress: 0,
+  topGoal: { name: 'No goals yet', progress: 0, target: 0, current: 0 },
+  actionCards: [],
+  topLeaks: [],
+  upcomingPayments: [],
+  forecast: { daysLeft: 0, balance: 0 },
 };
 
 function getGreeting(): string {
@@ -151,11 +128,146 @@ function getArchetypeLabel(archetype: Archetype): string {
 export function HomeScreen({ navigation }: any) {
   const { user } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
-  const data = mockData;
+
+  const dashboardQuery = useDashboard();
+  const healthQuery = useHealthScore();
+  const leaksQuery = useMoneyLeaks();
+  const cardsQuery = useActionCards({ status: 'PENDING' });
+  const goalsQuery = useGoals({ isCompleted: false });
+  const upcomingSubs = useUpcomingSubscriptions(14);
+  const archetypeQuery = useArchetype();
+  const allSubs = useSubscriptions('ACTIVE');
+
+  const data: MockData = useMemo(() => {
+    const dash = dashboardQuery.data ?? {};
+    const health = healthQuery.data ?? {};
+    const leaks = leaksQuery.data ?? {};
+    const cards = cardsQuery.data ?? [];
+    const goals = goalsQuery.data ?? [];
+    const upcoming = upcomingSubs.data ?? [];
+    const arch = archetypeQuery.data ?? {};
+    const subs = allSubs.data ?? [];
+
+    const archetype: Archetype =
+      (arch.archetype as Archetype) ||
+      (user as any)?.archetype ||
+      'BALANCED';
+
+    const healthScore = Number(health.score ?? health.healthScore ?? 0);
+    const leakScore = Number(leaks.score ?? leaks.leak_score ?? 0);
+    const potentialSavings = Number(
+      leaks.potential_monthly_savings ??
+        leaks.potentialMonthlySavings ??
+        leaks.monthly_savings ??
+        0,
+    );
+
+    const monthlySpent = Number(dash.monthlyExpense ?? 0);
+    const monthlyIncome = Number(dash.monthlyIncome ?? 0);
+    const monthlySavings = Number(dash.netSavings ?? monthlyIncome - monthlySpent);
+
+    const upcomingDues = upcoming.reduce(
+      (s: number, u: any) => s + Number(u.amount ?? 0),
+      0,
+    );
+
+    const goalsList = (goals ?? []).filter((g: any) => !g.isCompleted);
+    const topGoalRaw = goalsList[0];
+    const topGoal = topGoalRaw
+      ? {
+          name: topGoalRaw.name,
+          progress: Number(topGoalRaw.progressPercent ?? 0),
+          target: Number(topGoalRaw.targetAmount ?? 0),
+          current: Number(topGoalRaw.currentAmount ?? 0),
+        }
+      : EMPTY_DATA.topGoal;
+
+    const overallProgress =
+      goalsList.length > 0
+        ? goalsList.reduce(
+            (s: number, g: any) => s + Number(g.progressPercent ?? 0),
+            0,
+          ) / goalsList.length
+        : 0;
+
+    const topLeaks = (leaks.leaks ?? leaks.data?.leaks ?? [])
+      .slice(0, 3)
+      .map((l: any) => ({
+        type: l.title || l.type || 'Leak',
+        merchant: l.merchant,
+        amount: Number(l.monthly_savings ?? l.monthlySavings ?? l.amount ?? 0),
+        description: l.description || '',
+      }));
+
+    const actionCards = (cards ?? []).slice(0, 3).map((c: any) => ({
+      id: c.id,
+      title: c.title,
+      description: c.description,
+      priority: (c.priority || 'MEDIUM') as 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW',
+      impact: Number(c.impactAmount ?? 0),
+      icon: '💡',
+    }));
+
+    const upcomingPayments = upcoming.slice(0, 3).map((u: any, i: number) => {
+      const due = u.nextBillingDate ? new Date(u.nextBillingDate) : new Date();
+      const days = Math.max(
+        0,
+        Math.ceil((due.getTime() - Date.now()) / (24 * 3600 * 1000)),
+      );
+      return {
+        id: u.id || `p${i}`,
+        name: u.name,
+        amount: Number(u.amount ?? 0),
+        dueIn: days,
+        icon: '🔔',
+      };
+    });
+
+    // Forecast: rough days left at current burn rate
+    const dailyBurn = monthlySpent / 30;
+    const balance = Number(dash.totalBalance ?? 0);
+    const daysLeft = dailyBurn > 0 ? Math.floor(balance / dailyBurn) : 30;
+
+    return {
+      archetype,
+      healthScore,
+      leakScore,
+      monthlySpent,
+      monthlyIncome,
+      monthlySavings,
+      potentialSavings,
+      upcomingDues,
+      activeSubscriptions: subs.length,
+      goalProgress: Math.round(overallProgress),
+      topGoal,
+      actionCards,
+      topLeaks,
+      upcomingPayments,
+      forecast: { daysLeft, balance },
+    };
+  }, [
+    dashboardQuery.data,
+    healthQuery.data,
+    leaksQuery.data,
+    cardsQuery.data,
+    goalsQuery.data,
+    upcomingSubs.data,
+    archetypeQuery.data,
+    allSubs.data,
+    user,
+  ]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    await Promise.all([
+      dashboardQuery.refetch(),
+      healthQuery.refetch(),
+      leaksQuery.refetch(),
+      cardsQuery.refetch(),
+      goalsQuery.refetch(),
+      upcomingSubs.refetch(),
+    ]);
+    setRefreshing(false);
   };
 
   // Personalized widget order based on archetype

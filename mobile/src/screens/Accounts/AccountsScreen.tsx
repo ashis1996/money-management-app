@@ -8,6 +8,7 @@ import {
   Modal,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, Header, EmptyState } from '../../components/shared';
 import {
@@ -16,6 +17,14 @@ import {
   Spacing,
   BorderRadius,
 } from '../../styles/theme';
+import {
+  useAccounts,
+  useCreateAccount,
+  useUpdateAccount,
+  useDeleteAccount,
+  useSetPrimaryAccount,
+  useRecomputeAccount,
+} from '../../hooks';
 
 type AccountType = 'BANK' | 'WALLET' | 'CREDIT_CARD' | 'INVESTMENT' | 'LOAN';
 
@@ -63,101 +72,38 @@ const TYPE_LABELS: Record<AccountType, string> = {
   LOAN: 'Loan',
 };
 
-const mockAccounts: Account[] = [
-  {
-    id: 'a1',
-    type: 'BANK',
-    name: 'Salary Account',
-    provider: 'HDFC Bank',
-    mask: '****4521',
-    balance: 45620,
-    currency: 'INR',
-    color: '#004C8F',
-    icon: '🏦',
-    isPrimary: true,
-    isActive: true,
-    lastSync: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'a2',
-    type: 'BANK',
-    name: 'Savings',
-    provider: 'ICICI Bank',
-    mask: '****1234',
-    balance: 12450,
-    currency: 'INR',
-    color: '#F37423',
-    icon: '🏦',
-    isPrimary: false,
-    isActive: true,
-    lastSync: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'a3',
-    type: 'CREDIT_CARD',
-    name: 'Diners Club Black',
-    provider: 'HDFC Bank',
-    mask: '****8745',
-    balance: -12500, // -ve = utilized
-    currency: 'INR',
-    color: '#1A1A1A',
-    icon: '💳',
-    isPrimary: false,
-    isActive: true,
-    creditLimit: 100000,
-    dueDate: new Date(Date.now() + 5 * 24 * 3600 * 1000).toISOString(),
-    dueAmount: 12500,
-    lastSync: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'a4',
-    type: 'WALLET',
-    name: 'Paytm',
-    provider: 'Paytm',
-    balance: 1250,
-    currency: 'INR',
-    color: '#00BAF2',
-    icon: '📱',
-    isPrimary: false,
-    isActive: true,
-    lastSync: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'a5',
-    type: 'WALLET',
-    name: 'GPay',
-    provider: 'Google Pay',
-    balance: 0,
-    currency: 'INR',
-    color: '#34A853',
-    icon: '📱',
-    isPrimary: false,
-    isActive: true,
-    lastSync: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'a6',
-    type: 'LOAN',
-    name: 'Bike Loan',
-    provider: 'Bajaj Finserv',
-    mask: '****9821',
-    balance: -85000,
-    currency: 'INR',
-    color: '#003F88',
-    icon: '🏍️',
-    isPrimary: false,
-    isActive: true,
-    emiAmount: 4200,
-    emiNextDate: new Date(Date.now() + 5 * 24 * 3600 * 1000).toISOString(),
-    loanRemaining: 85000,
-    lastSync: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-  },
-];
+const mockAccounts: Account[] = [];
 
 type FilterType = 'all' | AccountType;
 
 export function AccountsScreen({ navigation }: any) {
-  const [accounts, setAccounts] = useState<Account[]>(mockAccounts);
+  const accountsQuery = useAccounts();
+  const createAccount = useCreateAccount();
+  const deleteAccount = useDeleteAccount();
+  const setPrimary = useSetPrimaryAccount();
+  const recompute = useRecomputeAccount();
+
+  const accounts: Account[] = useMemo(() => {
+    const list = accountsQuery.data || [];
+    return list.map((a: any) => {
+      const typeOpt = TYPE_OPTIONS.find((t) => t.type === a.accountType);
+      return {
+        id: a.id,
+        type: a.accountType,
+        name: a.accountName,
+        provider: a.providerName || '',
+        mask: a.maskedAccountNumber || undefined,
+        balance: Number(a.balance ?? 0),
+        currency: a.currency || 'INR',
+        color: a.color || typeOpt?.color || Colors.primary,
+        icon: a.icon || typeOpt?.icon || '🏦',
+        isPrimary: !!a.isPrimary,
+        isActive: a.isActive !== false,
+        lastSync: a.updatedAt || new Date().toISOString(),
+      };
+    });
+  }, [accountsQuery.data]);
+
   const [filter, setFilter] = useState<FilterType>('all');
   const [showAdd, setShowAdd] = useState(false);
   const [selectedType, setSelectedType] = useState<AccountType | null>(null);
@@ -197,18 +143,16 @@ export function AccountsScreen({ navigation }: any) {
   }, [filtered]);
 
   const handleSetPrimary = (id: string) => {
-    setAccounts((prev) =>
-      prev.map((a) => ({ ...a, isPrimary: a.id === id }))
-    );
+    setPrimary.mutate(id);
   };
 
   const handleSync = (id: string) => {
-    setAccounts((prev) =>
-      prev.map((a) =>
-        a.id === id ? { ...a, lastSync: new Date().toISOString() } : a
-      )
-    );
-    Alert.alert('Synced', 'Account refreshed with latest data');
+    recompute.mutate(id, {
+      onSuccess: () =>
+        Alert.alert('Synced', 'Account refreshed from transaction history'),
+      onError: (e: any) =>
+        Alert.alert('Sync failed', e?.message ?? 'Could not sync account'),
+    });
   };
 
   const handleRemove = (acc: Account) => {
@@ -220,40 +164,41 @@ export function AccountsScreen({ navigation }: any) {
         {
           text: 'Remove',
           style: 'destructive',
-          onPress: () =>
-            setAccounts((prev) => prev.filter((a) => a.id !== acc.id)),
+          onPress: () => deleteAccount.mutate(acc.id),
         },
-      ]
+      ],
     );
   };
 
-  const handleAddAccount = () => {
+  const handleAddAccount = async () => {
     if (!selectedType || !newAccount.name || !newAccount.provider) {
       Alert.alert('Missing fields', 'Please fill all required fields');
       return;
     }
-    const typeOpt = TYPE_OPTIONS.find((t) => t.type === selectedType)!;
-    setAccounts([
-      ...accounts,
-      {
-        id: `acc-${Date.now()}`,
-        type: selectedType,
-        name: newAccount.name,
-        provider: newAccount.provider,
-        mask: newAccount.mask || undefined,
+    try {
+      await createAccount.mutateAsync({
+        accountType: selectedType,
+        accountName: newAccount.name,
+        providerName: newAccount.provider,
+        maskedAccountNumber: newAccount.mask || undefined,
         balance: parseFloat(newAccount.balance || '0'),
-        currency: 'INR',
-        color: typeOpt.color,
-        icon: typeOpt.icon,
         isPrimary: accounts.length === 0,
-        isActive: true,
-        lastSync: new Date().toISOString(),
-      },
-    ]);
-    setShowAdd(false);
-    setSelectedType(null);
-    setNewAccount({ name: '', provider: '', mask: '', balance: '' });
+      });
+      setShowAdd(false);
+      setSelectedType(null);
+      setNewAccount({ name: '', provider: '', mask: '', balance: '' });
+    } catch (e: any) {
+      Alert.alert('Could not add account', e?.message ?? 'Unknown error');
+    }
   };
+
+  if (accountsQuery.isLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

@@ -6,14 +6,16 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
-import { Card, Badge, Button, ProgressRing, Header } from '../../components/shared';
+import { Card, Badge, Button, ProgressRing, Header, EmptyState } from '../../components/shared';
 import {
   Colors,
   Typography,
   Spacing,
   BorderRadius,
 } from '../../styles/theme';
+import { useMoneyLeaks } from '../../hooks';
 
 type LeakType =
   | 'UNUSED_SUBSCRIPTION'
@@ -40,88 +42,7 @@ interface MoneyLeak {
   isFixed: boolean;
 }
 
-const mockLeaks: MoneyLeak[] = [
-  {
-    id: 'leak-1',
-    type: 'IMPULSE_PURCHASE',
-    severity: 'HIGH',
-    title: 'Late-night impulse purchases',
-    description: '12 transactions after 10 PM totaling ₹2,500',
-    monthlySavings: 2500,
-    yearlySavings: 30000,
-    icon: '🌙',
-    recommendation:
-      'Try the 24-hour rule: wait a day before making non-essential purchases after 10 PM.',
-    isFixed: false,
-  },
-  {
-    id: 'leak-2',
-    type: 'UNUSED_SUBSCRIPTION',
-    severity: 'HIGH',
-    title: 'Cult.fit subscription unused',
-    description: '0 visits in last 30 days',
-    monthlySavings: 999,
-    yearlySavings: 11988,
-    icon: '🏋️',
-    merchant: 'Cult.fit',
-    recommendation:
-      'You haven\'t used this gym subscription. Cancel to save ₹999/month.',
-    isFixed: false,
-  },
-  {
-    id: 'leak-3',
-    type: 'DUPLICATE_SERVICE',
-    severity: 'MEDIUM',
-    title: 'Duplicate music subscriptions',
-    description: 'Spotify (₹119) + YouTube Premium (₹129)',
-    monthlySavings: 119,
-    yearlySavings: 1428,
-    icon: '🎵',
-    recommendation: 'Pick one music service. Spotify has lower usage (15%).',
-    isFixed: false,
-  },
-  {
-    id: 'leak-4',
-    type: 'PRICE_INCREASE',
-    severity: 'MEDIUM',
-    title: 'Netflix price increased',
-    description: 'From ₹499 to ₹649 (+30%)',
-    monthlySavings: 150,
-    yearlySavings: 1800,
-    icon: '🎬',
-    merchant: 'Netflix',
-    recommendation:
-      'Netflix raised prices silently. Consider downgrading to a cheaper plan.',
-    isFixed: false,
-  },
-  {
-    id: 'leak-5',
-    type: 'SMALL_FREQUENT',
-    severity: 'MEDIUM',
-    title: 'Small purchases at Swiggy',
-    description: '15 small orders averaging ₹120 each = ₹1,800/month',
-    monthlySavings: 800,
-    yearlySavings: 9600,
-    icon: '🍔',
-    merchant: 'Swiggy',
-    recommendation:
-      "Cooking 2 days a week instead of ordering could save ~₹800/month.",
-    isFixed: false,
-  },
-  {
-    id: 'leak-6',
-    type: 'UNUSED_SUBSCRIPTION',
-    severity: 'LOW',
-    title: 'Spotify low usage',
-    description: 'Only 15% usage in last 30 days',
-    monthlySavings: 119,
-    yearlySavings: 1428,
-    icon: '🎵',
-    merchant: 'Spotify',
-    recommendation: 'Pause or cancel - you barely use this.',
-    isFixed: false,
-  },
-];
+const mockLeaks: MoneyLeak[] = [];
 
 const LEAK_TYPE_LABELS: Record<LeakType, string> = {
   UNUSED_SUBSCRIPTION: 'Unused',
@@ -134,20 +55,71 @@ const LEAK_TYPE_LABELS: Record<LeakType, string> = {
 
 type FilterType = 'all' | LeakSeverity;
 
+/**
+ * The AI service returns leaks in this rough shape:
+ *   { type, severity, title, description, monthly_savings, yearly_savings,
+ *     recommendation, merchant?, icon? }
+ * Map to UI shape (keys can vary - guard for both snake and camel case).
+ */
+function aiToLeak(l: any, idx: number): MoneyLeak {
+  const monthly =
+    Number(l.monthlySavings ?? l.monthly_savings ?? l.potential_savings ?? 0) || 0;
+  return {
+    id: l.id ?? `leak-${idx}`,
+    type: (l.type || 'IMPULSE_PURCHASE') as LeakType,
+    severity: (l.severity || 'MEDIUM') as LeakSeverity,
+    title: l.title || 'Leak detected',
+    description: l.description || '',
+    monthlySavings: monthly,
+    yearlySavings:
+      Number(l.yearlySavings ?? l.yearly_savings ?? monthly * 12) || 0,
+    icon: l.icon || '💧',
+    merchant: l.merchant,
+    recommendation: l.recommendation || 'Review this spending pattern',
+    isFixed: !!l.isFixed,
+  };
+}
+
 export function MoneyLeaksScreen({ navigation }: any) {
-  const [leaks, setLeaks] = useState<MoneyLeak[]>(mockLeaks);
+  const leaksQuery = useMoneyLeaks();
+
+  const leaks: MoneyLeak[] = useMemo(() => {
+    const data = leaksQuery.data;
+    const items = data?.leaks || data?.data?.leaks || [];
+    return items.map((l: any, i: number) => aiToLeak(l, i));
+  }, [leaksQuery.data]);
+
+  const [fixedIds, setFixedIds] = useState<Set<string>>(new Set());
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const visibleLeaks = useMemo(
+    () =>
+      leaks
+        .filter((l) => !dismissedIds.has(l.id))
+        .map((l) => ({ ...l, isFixed: fixedIds.has(l.id) || l.isFixed })),
+    [leaks, fixedIds, dismissedIds],
+  );
+
   const [filter, setFilter] = useState<FilterType>('all');
 
   const stats = useMemo(() => {
-    const active = leaks.filter((l) => !l.isFixed);
+    const active = visibleLeaks.filter((l) => !l.isFixed);
     const monthlySavings = active.reduce((sum, l) => sum + l.monthlySavings, 0);
     const yearlySavings = active.reduce((sum, l) => sum + l.yearlySavings, 0);
-    const fixed = leaks.filter((l) => l.isFixed);
+    const fixed = visibleLeaks.filter((l) => l.isFixed);
     const fixedSavings = fixed.reduce((sum, l) => sum + l.monthlySavings, 0);
 
-    // Leak score: lower is better
+    // AI service returns score directly; fall back to local heuristic
+    const aiScore =
+      Number(
+        (leaksQuery.data as any)?.score ??
+          (leaksQuery.data as any)?.leak_score ??
+          0,
+      ) || 0;
     const totalSpending = 45000;
-    const leakScore = Math.min(100, Math.round((monthlySavings / totalSpending) * 100));
+    const fallbackScore = Math.min(
+      100,
+      Math.round((monthlySavings / totalSpending) * 100),
+    );
 
     return {
       activeCount: active.length,
@@ -155,14 +127,14 @@ export function MoneyLeaksScreen({ navigation }: any) {
       yearlySavings,
       fixedCount: fixed.length,
       fixedSavings,
-      leakScore,
+      leakScore: aiScore || fallbackScore,
     };
-  }, [leaks]);
+  }, [visibleLeaks, leaksQuery.data]);
 
   const filteredLeaks = useMemo(() => {
-    if (filter === 'all') return leaks.filter((l) => !l.isFixed);
-    return leaks.filter((l) => !l.isFixed && l.severity === filter);
-  }, [leaks, filter]);
+    if (filter === 'all') return visibleLeaks.filter((l) => !l.isFixed);
+    return visibleLeaks.filter((l) => !l.isFixed && l.severity === filter);
+  }, [visibleLeaks, filter]);
 
   const handleFix = (leak: MoneyLeak) => {
     Alert.alert(
@@ -172,19 +144,24 @@ export function MoneyLeaksScreen({ navigation }: any) {
         { text: 'Not now', style: 'cancel' },
         {
           text: 'Mark Fixed',
-          onPress: () => {
-            setLeaks((prev) =>
-              prev.map((l) => (l.id === leak.id ? { ...l, isFixed: true } : l))
-            );
-          },
+          onPress: () =>
+            setFixedIds((prev) => new Set(prev).add(leak.id)),
         },
-      ]
+      ],
     );
   };
 
   const handleDismiss = (id: string) => {
-    setLeaks((prev) => prev.filter((l) => l.id !== id));
+    setDismissedIds((prev) => new Set(prev).add(id));
   };
+
+  if (leaksQuery.isLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

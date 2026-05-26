@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,19 @@ import {
   ScrollView,
   TouchableOpacity,
   Share,
+  ActivityIndicator,
 } from 'react-native';
-import { Card, Badge, Button, ProgressBar, Header } from '../../components/shared';
+import { Card, Badge, Button, ProgressBar, Header, EmptyState } from '../../components/shared';
 import {
   Colors,
   Typography,
   Spacing,
   BorderRadius,
 } from '../../styles/theme';
+import {
+  useCurrentWeeklySummary,
+  useGenerateWeeklySummary,
+} from '../../hooks';
 
 interface WeekData {
   weekStart: string;
@@ -44,110 +49,161 @@ interface WeekData {
   healthScore: { current: number; change: number };
 }
 
-const mockWeek: WeekData = {
-  weekStart: '2026-05-19',
-  weekEnd: '2026-05-25',
-  totalSpent: 11500,
-  totalIncome: 18750,
-  netSavings: 7250,
-  savingsRate: 38.7,
-  spendChange: -12, // 12% less than last week
-  savingsChange: 22, // 22% more than last week
-  topCategories: [
-    { category: 'Food & Dining', icon: '🍔', amount: 3200, trend: -8 },
-    { category: 'Shopping', icon: '🛍️', amount: 2400, trend: 35 },
-    { category: 'Transport', icon: '🚗', amount: 1800, trend: -15 },
-    { category: 'Bills', icon: '⚡', amount: 2100, trend: 0 },
-    { category: 'Entertainment', icon: '🎬', amount: 850, trend: 5 },
-  ],
-  topMerchants: [
-    { name: 'Swiggy', amount: 2200, transactions: 5 },
-    { name: 'Amazon', amount: 1900, transactions: 2 },
-    { name: 'Uber', amount: 1100, transactions: 8 },
-  ],
+const EMPTY_WEEK: WeekData = {
+  weekStart: new Date().toISOString(),
+  weekEnd: new Date().toISOString(),
+  totalSpent: 0,
+  totalIncome: 0,
+  netSavings: 0,
+  savingsRate: 0,
+  spendChange: 0,
+  savingsChange: 0,
+  topCategories: [],
+  topMerchants: [],
   daily: [
-    { day: 'Mon', amount: 1200 },
-    { day: 'Tue', amount: 800 },
-    { day: 'Wed', amount: 2400 },
-    { day: 'Thu', amount: 1500 },
-    { day: 'Fri', amount: 1900 },
-    { day: 'Sat', amount: 2100 },
-    { day: 'Sun', amount: 1600 },
+    { day: 'Mon', amount: 0 },
+    { day: 'Tue', amount: 0 },
+    { day: 'Wed', amount: 0 },
+    { day: 'Thu', amount: 0 },
+    { day: 'Fri', amount: 0 },
+    { day: 'Sat', amount: 0 },
+    { day: 'Sun', amount: 0 },
   ],
-  wins: [
-    {
-      icon: '💰',
-      title: 'Saved 22% more than last week',
-      description: 'Your savings of ₹7,250 is ₹1,300 more than last week.',
-    },
-    {
-      icon: '🍔',
-      title: 'Food spending down',
-      description: 'Reduced food orders from 9 to 5 — saved ₹280.',
-    },
-    {
-      icon: '🚫',
-      title: 'No-Spend Day on Tuesday',
-      description: 'Kept spending under ₹100 — keep it up!',
-    },
-  ],
-  improvements: [
-    {
-      icon: '🛍️',
-      title: 'Shopping up 35%',
-      description: 'You spent ₹2,400 — ₹620 more than usual.',
-      amount: 620,
-    },
-    {
-      icon: '🌙',
-      title: '4 late-night purchases',
-      description: 'Spent ₹890 after 10 PM (impulse-prone hours).',
-      amount: 890,
-    },
-  ],
-  unusual: [
-    {
-      merchant: 'Online Store XYZ',
-      amount: 1899,
-      reason: '5x larger than your typical transaction',
-    },
-  ],
-  aiSummary:
-    'A solid week! You saved ₹7,250 — your highest savings rate (38.7%) in 4 weeks. Food and transport costs dropped. Watch your shopping spike (+35%) and late-night purchases (₹890) — these are the easy wins for next week.',
-  recommendations: [
-    {
-      icon: '🛍️',
-      text: 'Set a ₹500/week shopping limit',
-      impact: 600,
-    },
-    {
-      icon: '🌙',
-      text: 'Use 24-hour rule for late-night buys',
-      impact: 500,
-    },
-    {
-      icon: '🍔',
-      text: 'Cook 2 meals/week — save ₹400',
-      impact: 400,
-    },
-  ],
-  streak: { days: 1, type: 'No-Spend Day' },
-  healthScore: { current: 70, change: 2 },
+  wins: [],
+  improvements: [],
+  unusual: [],
+  aiSummary: '',
+  recommendations: [],
+  streak: { days: 0, type: 'Tracking' },
+  healthScore: { current: 0, change: 0 },
 };
 
-export function WeeklySummaryScreen({ navigation }: any) {
-  const [week] = useState(mockWeek);
-  const maxDaily = Math.max(...week.daily.map((d) => d.amount));
+const CATEGORY_ICON: Record<string, string> = {
+  'Food & Dining': '🍔',
+  Food: '🍔',
+  Shopping: '🛍️',
+  Transport: '🚗',
+  Bills: '⚡',
+  Entertainment: '🎬',
+  Health: '💊',
+  Travel: '✈️',
+  Subscription: '🔄',
+  Income: '💰',
+};
 
+/**
+ * Map the backend WeeklySummary record + behaviorInsights into the UI shape.
+ */
+function backendToWeekData(summary: any): WeekData {
+  if (!summary) return EMPTY_WEEK;
+
+  const insights = summary.behaviorInsights ?? {};
+  const aiStats = insights.aiStats ?? {};
+  const wins = insights.winsAndImprovements?.wins ?? [];
+  const improvements = insights.winsAndImprovements?.improvements ?? [];
+  const prevWeek = aiStats?.previousWeek ?? {};
+
+  const topCategories = (summary.topCategories ?? []).slice(0, 5).map((c: any) => ({
+    category: c.name || c.categoryId || 'Other',
+    icon: CATEGORY_ICON[c.name] ?? '📦',
+    amount: Number(c.amount || 0),
+    trend: 0,
+  }));
+
+  const topMerchants = (summary.topMerchants ?? []).slice(0, 3).map((m: any) => ({
+    name: m.name || m.merchant || 'Unknown',
+    amount: Number(m.amount || 0),
+    transactions: Number(m.count || 0),
+  }));
+
+  const unusual = (summary.unusualSpending?.items ?? summary.unusualSpending ?? []).map(
+    (u: any) => ({
+      merchant: u.merchant || 'Unknown',
+      amount: Number(u.amount || 0),
+      reason: u.reason || 'Unusually large',
+    }),
+  );
+
+  return {
+    weekStart: summary.weekStartDate || new Date().toISOString(),
+    weekEnd: summary.weekEndDate || new Date().toISOString(),
+    totalSpent: Number(summary.totalSpent || 0),
+    totalIncome: Number(summary.totalIncome || 0),
+    netSavings: Number(summary.savingsAmount || 0),
+    savingsRate: Number(summary.savingsRate || 0) * 100,
+    spendChange: Number(prevWeek.spentDeltaPercent ?? 0),
+    savingsChange: Number(prevWeek.incomeDeltaPercent ?? 0),
+    topCategories,
+    topMerchants,
+    daily: EMPTY_WEEK.daily,
+    wins: wins.map((w: string) => ({
+      icon: '🏆',
+      title: w,
+      description: '',
+    })),
+    improvements: improvements.map((m: string) => ({
+      icon: '⚠️',
+      title: m,
+      description: '',
+    })),
+    unusual,
+    aiSummary: summary.aiSummary || '',
+    recommendations: (summary.recommendations ?? []).map((r: any) => ({
+      icon: '💡',
+      text: typeof r === 'string' ? r : r.text || r.title || '',
+      impact: Number(r.impact || r.potentialSavings || 0),
+    })),
+    streak: { days: 0, type: 'Tracking' },
+    healthScore: { current: 0, change: 0 },
+  };
+}
+
+export function WeeklySummaryScreen({ navigation }: any) {
+  const summaryQuery = useCurrentWeeklySummary();
+  const generateSummary = useGenerateWeeklySummary();
+
+  const week: WeekData = useMemo(
+    () => backendToWeekData(summaryQuery.data),
+    [summaryQuery.data],
+  );
+
+  const maxDaily = Math.max(1, ...week.daily.map((d) => d.amount));
   const dateRange = formatRange(week.weekStart, week.weekEnd);
 
   const handleShare = async () => {
     try {
+      const winsTitle = week.wins[0]?.title ?? '';
       await Share.share({
-        message: `My week of ${dateRange}:\n💰 Saved ₹${week.netSavings.toLocaleString()} (${week.savingsRate}%)\n📊 Spent ₹${week.totalSpent.toLocaleString()}\n${week.wins[0].title} 🎉\n\nTracked with MoneyMind`,
+        message: `My week of ${dateRange}:\n💰 Saved ₹${week.netSavings.toLocaleString()} (${week.savingsRate.toFixed(1)}%)\n📊 Spent ₹${week.totalSpent.toLocaleString()}\n${winsTitle ? winsTitle + ' 🎉\n' : ''}\nTracked with MoneyMind`,
       });
     } catch {}
   };
+
+  if (summaryQuery.isLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+
+  if (!summaryQuery.data) {
+    return (
+      <View style={styles.container}>
+        <Header
+          title="Weekly Summary"
+          onBack={() => navigation.goBack()}
+        />
+        <EmptyState
+          icon="📊"
+          title="No summary yet"
+          message="Generate your first weekly summary to see how you're doing"
+          actionLabel={generateSummary.isPending ? 'Generating…' : 'Generate now'}
+          onAction={() => generateSummary.mutate(undefined)}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

@@ -67,14 +67,15 @@ function TabIcon({ label, focused }: { label: string; focused: boolean }) {
 function MainTabs() {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
+      screenOptions={({ route }: { route: any }) => ({
         headerShown: false,
         tabBarShowLabel: true,
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.gray400,
         tabBarStyle: styles.tabBar,
         tabBarLabelStyle: styles.tabBarLabel,
-        tabBarIcon: ({ focused }) => TabIcon({ label: route.name, focused }),
+        tabBarIcon: ({ focused }: { focused: boolean }) =>
+          TabIcon({ label: route.name, focused }),
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />

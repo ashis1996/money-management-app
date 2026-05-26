@@ -1,6 +1,6 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Card, Badge, ProgressRing, ProgressBar, Header } from '../../components/shared';
+import React, { useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { Card, Badge, ProgressRing, ProgressBar, Header, EmptyState } from '../../components/shared';
 import {
   Colors,
   Typography,
@@ -8,6 +8,7 @@ import {
   BorderRadius,
   HealthScoreColors,
 } from '../../styles/theme';
+import { useHealthScore } from '../../hooks';
 
 interface HealthComponent {
   key: string;
@@ -21,110 +22,86 @@ interface HealthComponent {
   icon: string;
 }
 
-const healthData = {
-  score: 68,
-  rating: 'GOOD' as const,
-  trend: 'up' as 'up' | 'down' | 'stable',
-  trendValue: 5,
-  history: [62, 65, 60, 64, 68, 70, 68], // Last 7 weeks
-  components: [
-    {
-      key: 'savings_rate',
-      name: 'Savings Rate',
-      weight: 25,
-      score: 60,
-      status: 'FAIR' as const,
-      description: 'Savings rate of 12% (target: 20%+)',
-      details: 'You save ₹30,000 of ₹75,000 income',
-      improvementTips: [
-        'Set up automatic transfer to savings on payday',
-        'Aim to increase savings by 2% each month',
-      ],
-      icon: '💰',
-    },
-    {
-      key: 'budget_adherence',
-      name: 'Budget Adherence',
-      weight: 20,
-      score: 75,
-      status: 'GOOD' as const,
-      description: '3 of 4 budgets on track',
-      details: 'Shopping budget exceeded by ₹1,500 this month',
-      improvementTips: [
-        'Pause shopping for the rest of the month',
-        'Review your shopping budget - is it realistic?',
-      ],
-      icon: '📊',
-    },
-    {
-      key: 'subscription_health',
-      name: 'Subscription Health',
-      weight: 15,
-      score: 50,
-      status: 'NEEDS_WORK' as const,
-      description: '3 subscriptions need attention',
-      details: 'Low usage on Spotify, Cult.fit. Netflix had price hike.',
-      improvementTips: [
-        'Cancel unused subscriptions (₹1,118/mo savings)',
-        'Audit subscriptions monthly',
-      ],
-      icon: '🔄',
-    },
-    {
-      key: 'spending_consistency',
-      name: 'Spending Consistency',
-      weight: 15,
-      score: 70,
-      status: 'GOOD' as const,
-      description: 'Relatively stable daily spending',
-      details: 'Daily avg: ₹1,500 (variation: ±35%)',
-      improvementTips: [
-        'Avoid weekend spending spikes',
-        'Track spending in real-time to stay consistent',
-      ],
-      icon: '📈',
-    },
-    {
-      key: 'impulse_control',
-      name: 'Impulse Control',
-      weight: 10,
-      score: 55,
-      status: 'NEEDS_WORK' as const,
-      description: '12 impulse purchases this month',
-      details: '₹4,200 spent on impulse buys',
-      improvementTips: [
-        'Use the 24-hour rule before non-essential purchases',
-        'Avoid late-night shopping (₹2,500 saved last month)',
-      ],
-      icon: '🎯',
-    },
-    {
-      key: 'goal_progress',
-      name: 'Goal Progress',
-      weight: 10,
-      score: 80,
-      status: 'GOOD' as const,
-      description: '3 active goals progressing well',
-      details: 'Average progress: 49%. Emergency fund 65% done.',
-      improvementTips: [
-        'Increase iPhone goal contribution by ₹500/mo',
-        'Consider auto-allocation for steady progress',
-      ],
-      icon: '🎯',
-    },
-    {
-      key: 'credit_utilization',
-      name: 'Credit Utilization',
-      weight: 5,
-      score: 85,
-      status: 'EXCELLENT' as const,
-      description: '15% of credit limit used',
-      details: '₹15,000 of ₹100,000 limit',
-      improvementTips: ['Keep utilization below 30%'],
-      icon: '💳',
-    },
-  ] as HealthComponent[],
+const COMPONENT_DEFS: Record<
+  string,
+  Pick<HealthComponent, 'key' | 'name' | 'weight' | 'icon'>
+> = {
+  savings_rate: { key: 'savings_rate', name: 'Savings Rate', weight: 25, icon: '💰' },
+  budget_adherence: {
+    key: 'budget_adherence',
+    name: 'Budget Adherence',
+    weight: 20,
+    icon: '📊',
+  },
+  subscription_health: {
+    key: 'subscription_health',
+    name: 'Subscription Health',
+    weight: 15,
+    icon: '🔄',
+  },
+  spending_consistency: {
+    key: 'spending_consistency',
+    name: 'Spending Consistency',
+    weight: 15,
+    icon: '📈',
+  },
+  impulse_control: {
+    key: 'impulse_control',
+    name: 'Impulse Control',
+    weight: 10,
+    icon: '🎯',
+  },
+  goal_progress: { key: 'goal_progress', name: 'Goal Progress', weight: 10, icon: '🎯' },
+  credit_utilization: {
+    key: 'credit_utilization',
+    name: 'Credit Utilization',
+    weight: 5,
+    icon: '💳',
+  },
 };
+
+function statusFromScore(score: number): HealthComponent['status'] {
+  if (score >= 85) return 'EXCELLENT';
+  if (score >= 70) return 'GOOD';
+  if (score >= 55) return 'FAIR';
+  if (score >= 40) return 'NEEDS_WORK';
+  return 'CRITICAL';
+}
+
+function buildHealthData(apiResponse: any) {
+  if (!apiResponse) return null;
+  const score = Number(apiResponse.score ?? apiResponse.healthScore ?? 0);
+  const componentsRaw =
+    apiResponse.components ?? apiResponse.componentScores ?? {};
+  const components: HealthComponent[] = Object.entries(COMPONENT_DEFS).map(
+    ([key, def]) => {
+      const componentData = componentsRaw[key] ?? {};
+      const compScore = Number(
+        typeof componentData === 'number' ? componentData : componentData.score ?? 0,
+      );
+      return {
+        ...def,
+        score: compScore,
+        status: statusFromScore(compScore),
+        description: componentData.description ?? '',
+        details: componentData.details ?? '',
+        improvementTips: componentData.tips ?? componentData.improvementTips ?? [],
+      };
+    },
+  );
+
+  const history: number[] =
+    apiResponse.history ?? apiResponse.scoreHistory ?? [score];
+
+  return {
+    score,
+    rating: statusFromScore(score),
+    trend: 'stable' as 'up' | 'down' | 'stable',
+    trendValue: 0,
+    history,
+    components,
+  };
+}
 
 function getRatingInfo(score: number) {
   if (score >= 85) return { label: 'Excellent', color: HealthScoreColors.excellent, emoji: '🎉' };
@@ -152,6 +129,35 @@ function getStatusColor(status: string) {
 }
 
 export function HealthScoreScreen({ navigation }: any) {
+  const healthQuery = useHealthScore();
+  const healthData = useMemo(
+    () => buildHealthData(healthQuery.data),
+    [healthQuery.data],
+  );
+
+  if (healthQuery.isLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+
+  if (!healthData) {
+    return (
+      <View style={styles.container}>
+        <Header title="Health Score" onBack={() => navigation.goBack()} />
+        <EmptyState
+          icon="📊"
+          title="Score not yet calculated"
+          message="Add transactions and refresh to see your financial health score"
+          actionLabel="Retry"
+          onAction={() => healthQuery.refetch()}
+        />
+      </View>
+    );
+  }
+
   const ratingInfo = getRatingInfo(healthData.score);
 
   // Sort components by weighted contribution (lowest score first)

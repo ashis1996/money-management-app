@@ -6,14 +6,20 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
-import { Card, Badge, ProgressBar } from '../../components/shared';
+import { Card, Badge, ProgressBar, EmptyState } from '../../components/shared';
 import {
   Colors,
   Typography,
   Spacing,
   BorderRadius,
 } from '../../styles/theme';
+import {
+  useSpendingInsights,
+  useBehaviorAnalysis,
+  useCategoryBreakdown,
+} from '../../hooks';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -44,66 +50,47 @@ interface BehavioralPattern {
   icon: string;
 }
 
-const mockData = {
-  totalSpent: 45000,
-  totalIncome: 75000,
-  savings: 30000,
-  savingsRate: 40,
-  prevMonth: { spent: 42000, savings: 28000 },
-  topMerchants: [
-    { name: 'Swiggy', amount: 8200, count: 15 },
-    { name: 'Amazon', amount: 6500, count: 4 },
-    { name: 'Uber', amount: 4200, count: 22 },
-    { name: 'BookMyShow', amount: 2800, count: 3 },
-    { name: 'Tata Power', amount: 4500, count: 1 },
-  ],
-  categories: [
-    { category: 'Food & Dining', icon: '🍔', amount: 12500, percentage: 28, color: '#EF4444', trend: 'up' as const, changePercent: 18 },
-    { category: 'Shopping', icon: '🛍️', amount: 9000, percentage: 20, color: '#8B5CF6', trend: 'up' as const, changePercent: 35 },
-    { category: 'Transport', icon: '🚗', amount: 6500, percentage: 14, color: '#3B82F6', trend: 'down' as const, changePercent: -8 },
-    { category: 'Bills', icon: '⚡', amount: 8500, percentage: 19, color: '#F59E0B', trend: 'stable' as const, changePercent: 2 },
-    { category: 'Entertainment', icon: '🎬', amount: 4500, percentage: 10, color: '#EC4899', trend: 'up' as const, changePercent: 12 },
-    { category: 'Health', icon: '💊', amount: 2000, percentage: 4, color: '#10B981', trend: 'stable' as const, changePercent: 0 },
-    { category: 'Other', icon: '📦', amount: 2000, percentage: 4, color: '#6B7280', trend: 'down' as const, changePercent: -15 },
-  ] as CategorySpending[],
+const EMPTY_DATA = {
+  totalSpent: 0,
+  totalIncome: 0,
+  savings: 0,
+  savingsRate: 0,
+  prevMonth: { spent: 0, savings: 0 },
+  topMerchants: [] as { name: string; amount: number; count: number }[],
+  categories: [] as CategorySpending[],
   dailySpending: [
-    { day: 'Mon', amount: 1200 },
-    { day: 'Tue', amount: 800 },
-    { day: 'Wed', amount: 2400 },
-    { day: 'Thu', amount: 1500 },
-    { day: 'Fri', amount: 3200 },
-    { day: 'Sat', amount: 4500 },
-    { day: 'Sun', amount: 3800 },
+    { day: 'Mon', amount: 0 },
+    { day: 'Tue', amount: 0 },
+    { day: 'Wed', amount: 0 },
+    { day: 'Thu', amount: 0 },
+    { day: 'Fri', amount: 0 },
+    { day: 'Sat', amount: 0 },
+    { day: 'Sun', amount: 0 },
   ] as DailySpending[],
-  behavioralPatterns: [
-    {
-      type: 'late_night' as const,
-      title: 'Late-Night Spending',
-      description: 'You spend ₹2,500/month after 10 PM. These are often impulse purchases.',
-      amount: 2500,
-      percentage: 5.5,
-      severity: 'high' as const,
-      icon: '🌙',
-    },
-    {
-      type: 'weekend' as const,
-      title: 'Weekend Spending',
-      description: 'You spend 40% more on weekends. Top categories: Food, Entertainment.',
-      amount: 8300,
-      percentage: 18.4,
-      severity: 'medium' as const,
-      icon: '🎉',
-    },
-    {
-      type: 'impulse' as const,
-      title: 'Impulse Purchases',
-      description: '12 transactions look impulsive. Total: ₹4,200',
-      amount: 4200,
-      percentage: 9.3,
-      severity: 'high' as const,
-      icon: '🎯',
-    },
-  ] as BehavioralPattern[],
+  behavioralPatterns: [] as BehavioralPattern[],
+};
+
+const CATEGORY_COLORS = [
+  '#EF4444',
+  '#8B5CF6',
+  '#3B82F6',
+  '#F59E0B',
+  '#EC4899',
+  '#10B981',
+  '#6B7280',
+  '#06B6D4',
+  '#F97316',
+];
+const CATEGORY_ICON: Record<string, string> = {
+  'Food & Dining': '🍔',
+  Food: '🍔',
+  Shopping: '🛍️',
+  Transport: '🚗',
+  Bills: '⚡',
+  Entertainment: '🎬',
+  Health: '💊',
+  Other: '📦',
+  Subscription: '🔄',
 };
 
 const CHART_HEIGHT = 160;
@@ -111,16 +98,132 @@ const CHART_HEIGHT = 160;
 export function InsightsScreen({ navigation }: any) {
   const [period, setPeriod] = useState<Period>('month');
 
+  const insightsQuery = useSpendingInsights(period);
+  const behaviorQuery = useBehaviorAnalysis();
+  const categoryQuery = useCategoryBreakdown();
+
+  const data = useMemo(() => {
+    const insights = insightsQuery.data;
+    if (!insights) return EMPTY_DATA;
+
+    const spending = insights.spending ?? insights;
+    const totalSpent = Number(spending.totalSpent ?? 0);
+    const totalIncome = Number(spending.totalIncome ?? 0);
+    const savings = Number(spending.netSavings ?? totalIncome - totalSpent);
+    const savingsRate = Number(spending.savingsRate ?? 0);
+
+    const cmp = spending.comparisonToPrevious ?? {};
+    const spentChangePct = Number(cmp.spentChange ?? 0);
+    const savingsChangePct = Number(cmp.savingsChange ?? 0);
+
+    const prevSpent =
+      spentChangePct !== 0 ? totalSpent / (1 + spentChangePct / 100) : totalSpent;
+    const prevSavings =
+      savingsChangePct !== 0
+        ? savings / (1 + savingsChangePct / 100)
+        : savings;
+
+    const topMerchants = (spending.topMerchants ?? []).map((m: any) => ({
+      name: m.merchantName || m.name || 'Unknown',
+      amount: Number(m.amount ?? 0),
+      count: m.transactionCount ?? m.count ?? 0,
+    }));
+
+    const categories: CategorySpending[] = (spending.byCategory ?? []).map(
+      (c: any, idx: number) => ({
+        category: c.categoryId || c.category || 'Other',
+        icon: CATEGORY_ICON[c.categoryId || c.category] ?? '📦',
+        amount: Number(c.amount ?? 0),
+        percentage: Number(c.percentage ?? 0),
+        color: CATEGORY_COLORS[idx % CATEGORY_COLORS.length],
+        trend: 'stable',
+        changePercent: Number(c.changeFromPrevious ?? 0),
+      }),
+    );
+
+    const behavior = behaviorQuery.data;
+    const behavioralPatterns: BehavioralPattern[] = [];
+    if (behavior) {
+      const lateAmount = Number(
+        behavior.lateNightSpending ??
+          behavior.late_night_spending ??
+          behavior.lateNightAmount ??
+          0,
+      );
+      if (lateAmount > 0) {
+        behavioralPatterns.push({
+          type: 'late_night',
+          title: 'Late-Night Spending',
+          description: `You spent ₹${lateAmount.toLocaleString()} after 10 PM. These are often impulse purchases.`,
+          amount: lateAmount,
+          percentage: totalSpent ? (lateAmount / totalSpent) * 100 : 0,
+          severity: lateAmount > totalSpent * 0.05 ? 'high' : 'medium',
+          icon: '🌙',
+        });
+      }
+      const weekendAmount = Number(
+        behavior.weekendSpending ?? behavior.weekend_spending ?? 0,
+      );
+      if (weekendAmount > 0) {
+        behavioralPatterns.push({
+          type: 'weekend',
+          title: 'Weekend Spending',
+          description: `₹${weekendAmount.toLocaleString()} spent on weekends.`,
+          amount: weekendAmount,
+          percentage: totalSpent ? (weekendAmount / totalSpent) * 100 : 0,
+          severity: 'medium',
+          icon: '🎉',
+        });
+      }
+      const impulseAmount = Number(
+        behavior.impulseSpending ?? behavior.impulse_spending ?? 0,
+      );
+      if (impulseAmount > 0) {
+        behavioralPatterns.push({
+          type: 'impulse',
+          title: 'Impulse Purchases',
+          description: `₹${impulseAmount.toLocaleString()} flagged as impulse buys.`,
+          amount: impulseAmount,
+          percentage: totalSpent ? (impulseAmount / totalSpent) * 100 : 0,
+          severity: 'high',
+          icon: '🎯',
+        });
+      }
+    }
+
+    return {
+      totalSpent,
+      totalIncome,
+      savings,
+      savingsRate,
+      prevMonth: { spent: prevSpent, savings: prevSavings },
+      topMerchants,
+      categories,
+      dailySpending: EMPTY_DATA.dailySpending,
+      behavioralPatterns,
+    };
+  }, [insightsQuery.data, behaviorQuery.data]);
+
   const maxDaily = useMemo(
-    () => Math.max(...mockData.dailySpending.map((d) => d.amount)),
-    []
+    () => Math.max(1, ...data.dailySpending.map((d) => d.amount)),
+    [data.dailySpending],
   );
 
-  const spentChange =
-    ((mockData.totalSpent - mockData.prevMonth.spent) / mockData.prevMonth.spent) * 100;
+  const spentChange = data.prevMonth.spent
+    ? ((data.totalSpent - data.prevMonth.spent) / data.prevMonth.spent) * 100
+    : 0;
 
-  const savingsChange =
-    ((mockData.savings - mockData.prevMonth.savings) / mockData.prevMonth.savings) * 100;
+  const savingsChange = data.prevMonth.savings
+    ? ((data.savings - data.prevMonth.savings) / data.prevMonth.savings) * 100
+    : 0;
+
+  if (insightsQuery.isLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -155,14 +258,14 @@ export function InsightsScreen({ navigation }: any) {
         <View style={styles.summaryRow}>
           <SummaryCard
             label="Spent"
-            value={mockData.totalSpent}
+            value={data.totalSpent}
             change={spentChange}
             color={Colors.error}
             inverted
           />
           <SummaryCard
             label="Saved"
-            value={mockData.savings}
+            value={data.savings}
             change={savingsChange}
             color={Colors.success}
           />
@@ -173,7 +276,7 @@ export function InsightsScreen({ navigation }: any) {
           <Text style={styles.sectionTitle}>📊 Daily Spending</Text>
           <Text style={styles.sectionSubtitle}>Last 7 days</Text>
           <View style={styles.chart}>
-            {mockData.dailySpending.map((d, idx) => {
+            {data.dailySpending.map((d, idx) => {
               const heightRatio = d.amount / maxDaily;
               const isHighSpend = d.day === 'Sat' || d.day === 'Sun';
               return (
@@ -211,7 +314,7 @@ export function InsightsScreen({ navigation }: any) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>🧠 Behavioral Patterns</Text>
           <Text style={styles.sectionSubtitle}>How you spend matters</Text>
-          {mockData.behavioralPatterns.map((pattern) => (
+          {data.behavioralPatterns.map((pattern) => (
             <BehavioralCard key={pattern.type} pattern={pattern} />
           ))}
         </View>
@@ -227,7 +330,7 @@ export function InsightsScreen({ navigation }: any) {
             <View style={styles.donutContainer}>
               {/* Simplified donut: stacked colored bars */}
               <View style={styles.donut}>
-                {mockData.categories.map((cat, idx) => (
+                {data.categories.map((cat, idx) => (
                   <View
                     key={cat.category}
                     style={[
@@ -241,14 +344,14 @@ export function InsightsScreen({ navigation }: any) {
                 ))}
               </View>
               <Text style={styles.donutTotal}>
-                ₹{mockData.totalSpent.toLocaleString()}
+                ₹{data.totalSpent.toLocaleString()}
               </Text>
               <Text style={styles.donutLabel}>Total spent</Text>
             </View>
           </View>
 
           {/* Category list */}
-          {mockData.categories.map((cat) => (
+          {data.categories.map((cat) => (
             <CategoryRow key={cat.category} category={cat} />
           ))}
         </Card>
@@ -257,8 +360,8 @@ export function InsightsScreen({ navigation }: any) {
         <Card style={styles.section}>
           <Text style={styles.sectionTitle}>🏪 Top Merchants</Text>
           <Text style={styles.sectionSubtitle}>Where your money goes</Text>
-          {mockData.topMerchants.map((m, idx) => {
-            const maxAmount = mockData.topMerchants[0].amount;
+          {data.topMerchants.map((m: { name: string; amount: number; count: number }, idx: number) => {
+            const maxAmount = data.topMerchants[0]?.amount ?? 1;
             return (
               <View key={m.name} style={styles.merchantRow}>
                 <View style={styles.merchantRank}>

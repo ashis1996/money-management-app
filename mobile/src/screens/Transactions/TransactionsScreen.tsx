@@ -8,6 +8,7 @@ import {
   ScrollView,
   Modal,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, EmptyState } from '../../components/shared';
 import {
@@ -17,6 +18,7 @@ import {
   BorderRadius,
   Shadows,
 } from '../../styles/theme';
+import { useTransactions, useUpdateTransaction } from '../../hooks';
 
 type CaptureMode = 'AUTO' | 'MANUAL' | 'ASSISTED';
 type TransactionType = 'CREDIT' | 'DEBIT';
@@ -42,104 +44,7 @@ interface Transaction {
 }
 
 // Mock transactions data
-const mockTransactions: Transaction[] = [
-  {
-    id: '1',
-    amount: 549,
-    type: 'DEBIT',
-    category: 'Food',
-    merchant: 'Swiggy',
-    description: 'Order #45289',
-    date: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    source: 'UPI',
-    captureMode: 'ASSISTED',
-    isImpulse: true,
-    isLateNight: true,
-    aiSuggestedCategory: 'Food',
-    aiConfidence: 0.95,
-    isUserConfirmed: false,
-    account: 'HDFC ****4521',
-  },
-  {
-    id: '2',
-    amount: 75000,
-    type: 'CREDIT',
-    category: 'Salary',
-    merchant: 'Acme Corp',
-    description: 'Monthly Salary',
-    date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-    source: 'BANK_API',
-    captureMode: 'AUTO',
-    isUserConfirmed: true,
-    account: 'HDFC ****4521',
-  },
-  {
-    id: '3',
-    amount: 1299,
-    type: 'DEBIT',
-    category: 'Shopping',
-    merchant: 'Amazon',
-    description: 'Headphones',
-    date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-    source: 'SMS',
-    captureMode: 'AUTO',
-    isImpulse: false,
-    isUserConfirmed: true,
-    account: 'ICICI ****1234',
-  },
-  {
-    id: '4',
-    amount: 200,
-    type: 'DEBIT',
-    category: 'Food',
-    merchant: 'Tea stall',
-    description: 'Cash payment',
-    date: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-    source: 'MANUAL',
-    captureMode: 'MANUAL',
-    isUserConfirmed: true,
-  },
-  {
-    id: '5',
-    amount: 649,
-    type: 'DEBIT',
-    category: 'Entertainment',
-    merchant: 'Netflix',
-    description: 'Monthly subscription',
-    date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    source: 'SMS',
-    captureMode: 'AUTO',
-    isUserConfirmed: true,
-    account: 'HDFC ****4521',
-  },
-  {
-    id: '6',
-    amount: 350,
-    type: 'DEBIT',
-    category: 'Transport',
-    merchant: 'Uber',
-    description: 'Trip to airport',
-    date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    source: 'UPI',
-    captureMode: 'ASSISTED',
-    aiSuggestedCategory: 'Transport',
-    aiConfidence: 0.88,
-    isUserConfirmed: false,
-  },
-  {
-    id: '7',
-    amount: 4500,
-    type: 'DEBIT',
-    category: 'Bills',
-    merchant: 'Tata Power',
-    description: 'Electricity bill',
-    date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    source: 'EMAIL',
-    captureMode: 'AUTO',
-    isUserConfirmed: true,
-    account: 'HDFC ****4521',
-  },
-];
+const mockTransactions: Transaction[] = [];
 
 const CATEGORY_ICONS: Record<string, string> = {
   Food: '🍔',
@@ -173,7 +78,34 @@ export function TransactionsScreen({ navigation }: any) {
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'ALL' | TransactionType>('ALL');
-  const [transactions, setTransactions] = useState<Transaction[]>(mockTransactions);
+
+  const txQuery = useTransactions({
+    type: typeFilter === 'ALL' ? undefined : typeFilter,
+    search: search || undefined,
+  });
+  const updateTx = useUpdateTransaction();
+
+  const transactions: Transaction[] = useMemo(() => {
+    const list = txQuery.data || [];
+    return list.map((t: any) => ({
+      id: t.id,
+      amount: Number(t.amount),
+      type: t.type,
+      category: t.categoryId || 'Other',
+      merchant: t.merchantName || t.merchant || 'Unknown',
+      description: t.description || '',
+      date: t.transactionDate || t.date,
+      source: t.source || 'MANUAL',
+      captureMode: t.captureMode || 'MANUAL',
+      isImpulse: t.isImpulse,
+      isLateNight: t.isLateNight,
+      isWeekend: t.isWeekend,
+      isUserConfirmed: t.isUserConfirmed,
+      aiSuggestedCategory: t.aiSuggestedCategory,
+      aiConfidence: t.aiConfidence ? Number(t.aiConfidence) : undefined,
+      account: t.account?.accountName,
+    }));
+  }, [txQuery.data]);
 
   const pendingAICount = transactions.filter(
     (t) => t.captureMode === 'ASSISTED' && !t.isUserConfirmed
@@ -222,20 +154,12 @@ export function TransactionsScreen({ navigation }: any) {
   }, [filteredTransactions]);
 
   const handleConfirmAI = (id: string) => {
-    setTransactions((prev) =>
-      prev.map((tx) => (tx.id === id ? { ...tx, isUserConfirmed: true } : tx))
-    );
+    updateTx.mutate({ id, data: { isUserConfirmed: true } });
   };
 
   const handleRejectAI = (id: string) => {
     // In real app, would open category picker
-    setTransactions((prev) =>
-      prev.map((tx) =>
-        tx.id === id
-          ? { ...tx, isUserConfirmed: true, category: 'Other' }
-          : tx
-      )
-    );
+    updateTx.mutate({ id, data: { isUserConfirmed: true, categoryId: 'Other' } });
   };
 
   return (

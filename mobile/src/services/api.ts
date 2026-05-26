@@ -1,8 +1,21 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios';
 import * as SecureStore from 'expo-secure-store';
-import { AuthTokens } from '@/types';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:3000/api/v1';
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:3000/api/v1';
+
+/**
+ * NestJS wraps every successful response with the ResponseInterceptor:
+ *   { success: true, data: <payload>, message?, errors?, timestamp? }
+ * Hooks consume `data` directly so we type the wrapper here.
+ */
+export interface ApiEnvelope<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+  errors?: any;
+  timestamp?: string;
+}
 
 class ApiClient {
   private client: AxiosInstance;
@@ -11,9 +24,7 @@ class ApiClient {
   private constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       timeout: 30000,
     });
 
@@ -28,7 +39,7 @@ class ApiClient {
   }
 
   private setupInterceptors() {
-    // Request interceptor - add auth token
+    // Auth header
     this.client.interceptors.request.use(
       async (config) => {
         const token = await SecureStore.getItemAsync('accessToken');
@@ -37,37 +48,37 @@ class ApiClient {
         }
         return config;
       },
-      (error) => Promise.reject(error)
+      (error) => Promise.reject(error),
     );
 
-    // Response interceptor - handle token refresh
+    // Refresh on 401
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
-        const originalRequest = error.config;
+        const originalRequest: any = error.config;
 
-        if (error.response?.status === 401 && !originalRequest?.headers['X-Retry-Refresh']) {
+        if (
+          error.response?.status === 401 &&
+          originalRequest &&
+          !originalRequest.headers?.['X-Retry-Refresh']
+        ) {
           try {
             const refreshToken = await SecureStore.getItemAsync('refreshToken');
-            if (!refreshToken) {
-              throw new Error('No refresh token');
-            }
+            if (!refreshToken) throw new Error('No refresh token');
 
             const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
               refreshToken,
             });
-
-            const { accessToken, refreshToken: newRefreshToken } = response.data.data;
+            const { accessToken, refreshToken: newRefreshToken } =
+              response.data.data;
 
             await SecureStore.setItemAsync('accessToken', accessToken);
             await SecureStore.setItemAsync('refreshToken', newRefreshToken);
 
             originalRequest.headers['Authorization'] = `Bearer ${accessToken}`;
             originalRequest.headers['X-Retry-Refresh'] = 'true';
-
             return this.client(originalRequest);
           } catch (refreshError) {
-            // Clear tokens and redirect to login
             await SecureStore.deleteItemAsync('accessToken');
             await SecureStore.deleteItemAsync('refreshToken');
             return Promise.reject(refreshError);
@@ -75,7 +86,7 @@ class ApiClient {
         }
 
         return Promise.reject(error);
-      }
+      },
     );
   }
 
@@ -107,112 +118,310 @@ class ApiClient {
 
 export const api = ApiClient.getInstance();
 
-// Auth API
+// ============================================================
+// AUTH
+// ============================================================
 export const authApi = {
   login: (email: string, password: string) =>
-    api.post<{ success: boolean; data: { user: any; accessToken: string; refreshToken: string } }>('/auth/login', {
-      email,
-      password,
-    }),
+    api.post<ApiEnvelope<{ user: any; accessToken: string; refreshToken: string }>>(
+      '/auth/login',
+      { email, password },
+    ),
 
   register: (email: string, password: string, name?: string, phone?: string) =>
-    api.post<{ success: boolean; data: { user: any; accessToken: string; refreshToken: string } }>('/auth/register', {
-      email,
-      password,
-      name,
-      phone,
-    }),
+    api.post<ApiEnvelope<{ user: any; accessToken: string; refreshToken: string }>>(
+      '/auth/register',
+      { email, password, name, phone },
+    ),
 
   logout: (refreshToken?: string) =>
-    api.post('/auth/logout', { refreshToken }),
+    api.post<ApiEnvelope<any>>('/auth/logout', { refreshToken }),
 
-  getProfile: () => api.get('/users/me'),
+  getProfile: () => api.get<ApiEnvelope<any>>('/users/me'),
 
-  updateProfile: (data: any) => api.put('/users/me', data),
+  updateProfile: (data: any) =>
+    api.put<ApiEnvelope<any>>('/users/me', data),
 };
 
-// Transactions API
+// ============================================================
+// TRANSACTIONS
+// ============================================================
 export const transactionsApi = {
-  getAll: (params?: { from?: string; to?: string; category?: string; search?: string }) =>
-    api.get('/transactions', { params }),
+  getAll: (params?: {
+    from?: string;
+    to?: string;
+    category?: string;
+    search?: string;
+    type?: 'CREDIT' | 'DEBIT';
+  }) => api.get<ApiEnvelope<any[]>>('/transactions', { params }),
 
-  getById: (id: string) => api.get(`/transactions/${id}`),
+  getById: (id: string) =>
+    api.get<ApiEnvelope<any>>(`/transactions/${id}`),
 
-  create: (data: any) => api.post('/transactions', data),
+  create: (data: any) => api.post<ApiEnvelope<any>>('/transactions', data),
 
-  update: (id: string, data: any) => api.put(`/transactions/${id}`, data),
+  update: (id: string, data: any) =>
+    api.put<ApiEnvelope<any>>(`/transactions/${id}`, data),
 
-  delete: (id: string) => api.delete(`/transactions/${id}`),
+  delete: (id: string) =>
+    api.delete<ApiEnvelope<any>>(`/transactions/${id}`),
 
   getCategories: (from?: string, to?: string) =>
-    api.get('/transactions/analytics/categories', { params: { from, to } }),
+    api.get<ApiEnvelope<any[]>>('/transactions/analytics/categories', {
+      params: { from, to },
+    }),
 
-  search: (query: string) => api.get('/transactions/search', { params: { q: query } }),
+  getMonthlyStats: (year: number, month: number) =>
+    api.get<ApiEnvelope<any>>('/transactions/analytics/monthly', {
+      params: { year, month },
+    }),
+
+  search: (query: string) =>
+    api.get<ApiEnvelope<any[]>>('/transactions/search', { params: { q: query } }),
 };
 
-// SMS API
+// ============================================================
+// SMS
+// ============================================================
 export const smsApi = {
   ingest: (body: string, sender: string, timestamp: string, phoneNumber?: string) =>
-    api.post('/sms/ingest', { body, sender, timestamp, phoneNumber }),
+    api.post<ApiEnvelope<any>>('/sms/ingest', { body, sender, timestamp, phoneNumber }),
 
-  ingestBatch: (messages: Array<{ body: string; sender: string; timestamp: string; phoneNumber?: string }>) =>
-    api.post('/sms/ingest/batch', { messages }),
+  ingestBatch: (
+    messages: Array<{ body: string; sender: string; timestamp: string; phoneNumber?: string }>,
+  ) => api.post<ApiEnvelope<any>>('/sms/ingest/batch', { messages }),
 
   getHistory: (page?: number, limit?: number) =>
-    api.get('/sms/history', { params: { page, limit } }),
+    api.get<ApiEnvelope<any>>('/sms/history', { params: { page, limit } }),
 
   getUnprocessed: (limit?: number) =>
-    api.get('/sms/unprocessed', { params: { limit } }),
+    api.get<ApiEnvelope<any[]>>('/sms/unprocessed', { params: { limit } }),
 };
 
-// Subscriptions API
+// ============================================================
+// SUBSCRIPTIONS
+// ============================================================
 export const subscriptionsApi = {
-  getAll: (status?: string) => api.get('/subscriptions', { params: { status } }),
+  getAll: (status?: string) =>
+    api.get<ApiEnvelope<any[]>>('/subscriptions', { params: { status } }),
 
-  getById: (id: string) => api.get(`/subscriptions/${id}`),
+  getById: (id: string) =>
+    api.get<ApiEnvelope<any>>(`/subscriptions/${id}`),
 
-  create: (data: any) => api.post('/subscriptions', data),
+  create: (data: any) =>
+    api.post<ApiEnvelope<any>>('/subscriptions', data),
 
-  update: (id: string, data: any) => api.put(`/subscriptions/${id}`, data),
+  update: (id: string, data: any) =>
+    api.put<ApiEnvelope<any>>(`/subscriptions/${id}`, data),
 
-  delete: (id: string) => api.delete(`/subscriptions/${id}`),
+  delete: (id: string) =>
+    api.delete<ApiEnvelope<any>>(`/subscriptions/${id}`),
 
-  detect: () => api.post('/subscriptions/detect'),
+  detect: () => api.post<ApiEnvelope<any>>('/subscriptions/detect'),
 
-  getSummary: () => api.get('/subscriptions/summary'),
+  getSummary: () => api.get<ApiEnvelope<any>>('/subscriptions/summary'),
 
-  getUpcoming: (days?: number) => api.get('/subscriptions/upcoming', { params: { days } }),
+  getUpcoming: (days?: number) =>
+    api.get<ApiEnvelope<any[]>>('/subscriptions/upcoming', { params: { days } }),
 
-  cancel: (id: string) => api.post(`/subscriptions/${id}/cancel`),
+  cancel: (id: string) =>
+    api.post<ApiEnvelope<any>>(`/subscriptions/${id}/cancel`),
+
+  pause: (id: string) =>
+    api.post<ApiEnvelope<any>>(`/subscriptions/${id}/pause`),
+
+  resume: (id: string) =>
+    api.post<ApiEnvelope<any>>(`/subscriptions/${id}/resume`),
 };
 
-// Insights API
+// ============================================================
+// INSIGHTS
+// ============================================================
 export const insightsApi = {
-  getAll: () => api.get('/insights'),
+  getAll: () => api.get<ApiEnvelope<any>>('/insights'),
 
-  getSpending: (period?: string) => api.get('/insights/spending', { params: { period } }),
+  getSpending: (period?: string) =>
+    api.get<ApiEnvelope<any>>('/insights/spending', { params: { period } }),
 
-  getRecommendations: () => api.get('/insights/recommendations'),
+  getRecommendations: () =>
+    api.get<ApiEnvelope<any[]>>('/insights/recommendations'),
 
-  getPredictions: () => api.get('/insights/predictions'),
+  getPredictions: () => api.get<ApiEnvelope<any>>('/insights/predictions'),
+
+  getAnomalies: () => api.get<ApiEnvelope<any[]>>('/insights/anomalies'),
 };
 
-// Notifications API
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
 export const notificationsApi = {
-  getAll: (unread?: boolean) => api.get('/notifications', { params: { unread } }),
+  getAll: (unread?: boolean) =>
+    api.get<ApiEnvelope<any[]>>('/notifications', { params: { unread } }),
 
-  getUnreadCount: () => api.get('/notifications/unread/count'),
+  getUnreadCount: () =>
+    api.get<ApiEnvelope<{ count: number }>>('/notifications/unread/count'),
 
-  markAsRead: (id: string) => api.put(`/notifications/${id}/read`),
+  markAsRead: (id: string) =>
+    api.put<ApiEnvelope<any>>(`/notifications/${id}/read`),
 
-  markAllAsRead: () => api.post('/notifications/read-all'),
+  markAllAsRead: () =>
+    api.post<ApiEnvelope<any>>('/notifications/read-all'),
 
-  getPreferences: () => api.get('/notifications/preferences'),
+  getPreferences: () =>
+    api.get<ApiEnvelope<any>>('/notifications/preferences'),
 
-  updatePreferences: (data: any) => api.put('/notifications/preferences', data),
+  updatePreferences: (data: any) =>
+    api.put<ApiEnvelope<any>>('/notifications/preferences', data),
 };
 
-// Dashboard API
+// ============================================================
+// DASHBOARD (user/dashboard summary)
+// ============================================================
 export const dashboardApi = {
-  getStats: () => api.get('/users/dashboard'),
+  getStats: () => api.get<ApiEnvelope<any>>('/users/dashboard'),
+};
+
+// ============================================================
+// GOALS
+// ============================================================
+export const goalsApi = {
+  getAll: (params?: { isCompleted?: boolean; category?: string }) =>
+    api.get<ApiEnvelope<any[]>>('/goals', { params }),
+
+  getById: (id: string) => api.get<ApiEnvelope<any>>(`/goals/${id}`),
+
+  getSummary: () => api.get<ApiEnvelope<any>>('/goals/summary'),
+
+  create: (data: any) => api.post<ApiEnvelope<any>>('/goals', data),
+
+  update: (id: string, data: any) =>
+    api.put<ApiEnvelope<any>>(`/goals/${id}`, data),
+
+  delete: (id: string) => api.delete<ApiEnvelope<any>>(`/goals/${id}`),
+
+  contribute: (id: string, amount: number, note?: string) =>
+    api.post<ApiEnvelope<any>>(`/goals/${id}/contribute`, { amount, note }),
+};
+
+// ============================================================
+// BUDGETS
+// ============================================================
+export const budgetsApi = {
+  getAll: (params?: { isActive?: boolean; period?: string }) =>
+    api.get<ApiEnvelope<any[]>>('/budgets', { params }),
+
+  getById: (id: string) => api.get<ApiEnvelope<any>>(`/budgets/${id}`),
+
+  getSummary: () => api.get<ApiEnvelope<any>>('/budgets/summary'),
+
+  create: (data: any) => api.post<ApiEnvelope<any>>('/budgets', data),
+
+  update: (id: string, data: any) =>
+    api.put<ApiEnvelope<any>>(`/budgets/${id}`, data),
+
+  delete: (id: string) => api.delete<ApiEnvelope<any>>(`/budgets/${id}`),
+};
+
+// ============================================================
+// ACCOUNTS
+// ============================================================
+export const accountsApi = {
+  getAll: (params?: { accountType?: string; isActive?: boolean }) =>
+    api.get<ApiEnvelope<any[]>>('/accounts', { params }),
+
+  getById: (id: string) => api.get<ApiEnvelope<any>>(`/accounts/${id}`),
+
+  getNetWorth: () => api.get<ApiEnvelope<any>>('/accounts/net-worth'),
+
+  create: (data: any) => api.post<ApiEnvelope<any>>('/accounts', data),
+
+  update: (id: string, data: any) =>
+    api.put<ApiEnvelope<any>>(`/accounts/${id}`, data),
+
+  delete: (id: string) => api.delete<ApiEnvelope<any>>(`/accounts/${id}`),
+
+  setPrimary: (id: string) =>
+    api.post<ApiEnvelope<any>>(`/accounts/${id}/set-primary`),
+
+  recompute: (id: string) =>
+    api.post<ApiEnvelope<any>>(`/accounts/${id}/recompute`),
+};
+
+// ============================================================
+// ACTION CARDS
+// ============================================================
+export const actionCardsApi = {
+  getAll: (params?: { status?: string; priority?: string; type?: string }) =>
+    api.get<ApiEnvelope<any[]>>('/action-cards', { params }),
+
+  getById: (id: string) =>
+    api.get<ApiEnvelope<any>>(`/action-cards/${id}`),
+
+  getSummary: () => api.get<ApiEnvelope<any>>('/action-cards/summary'),
+
+  create: (data: any) => api.post<ApiEnvelope<any>>('/action-cards', data),
+
+  update: (id: string, data: any) =>
+    api.put<ApiEnvelope<any>>(`/action-cards/${id}`, data),
+
+  delete: (id: string) =>
+    api.delete<ApiEnvelope<any>>(`/action-cards/${id}`),
+
+  dismiss: (id: string) =>
+    api.post<ApiEnvelope<any>>(`/action-cards/${id}/dismiss`),
+
+  complete: (id: string) =>
+    api.post<ApiEnvelope<any>>(`/action-cards/${id}/complete`),
+};
+
+// ============================================================
+// AI PROXY (FastAPI passthrough)
+// ============================================================
+export const aiApi = {
+  health: () => api.get<ApiEnvelope<any>>('/ai/health'),
+
+  analyzeBehavior: () =>
+    api.post<ApiEnvelope<any>>('/ai/behavior/analyze'),
+
+  tagTransactions: () =>
+    api.post<ApiEnvelope<any>>('/ai/behavior/tag-transactions'),
+
+  getHealthScore: () =>
+    api.post<ApiEnvelope<any>>('/ai/health-score/calculate'),
+
+  detectLeaks: () => api.post<ApiEnvelope<any>>('/ai/leaks/detect'),
+
+  ask: (query: string, context?: any) =>
+    api.post<ApiEnvelope<any>>('/ai/assistant/query', { query, context }),
+
+  determineArchetype: () =>
+    api.post<ApiEnvelope<any>>('/ai/profile/archetype'),
+
+  generateActionCards: () =>
+    api.post<ApiEnvelope<any>>('/ai/action-cards/generate'),
+
+  getPersonalizedDashboard: () =>
+    api.post<ApiEnvelope<any>>('/ai/dashboard/personalized'),
+};
+
+// ============================================================
+// WEEKLY SUMMARY
+// ============================================================
+export const weeklySummaryApi = {
+  getList: (limit?: number) =>
+    api.get<ApiEnvelope<any[]>>('/weekly-summary', { params: { limit } }),
+
+  getCurrent: () =>
+    api.get<ApiEnvelope<any>>('/weekly-summary/current'),
+
+  getById: (id: string) =>
+    api.get<ApiEnvelope<any>>(`/weekly-summary/${id}`),
+
+  generate: (forDate?: string) =>
+    api.post<ApiEnvelope<any>>('/weekly-summary/generate', null, {
+      params: { forDate },
+    }),
+
+  delete: (id: string) =>
+    api.delete<ApiEnvelope<any>>(`/weekly-summary/${id}`),
 };

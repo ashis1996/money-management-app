@@ -9,6 +9,7 @@ import {
   TextInput,
   PanResponder,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, ProgressBar, EmptyState, Header } from '../../components/shared';
 import {
@@ -17,6 +18,12 @@ import {
   Spacing,
   BorderRadius,
 } from '../../styles/theme';
+import {
+  useBudgets,
+  useCreateBudget,
+  useUpdateBudget,
+  useDeleteBudget,
+} from '../../hooks';
 
 interface Budget {
   id: string;
@@ -31,56 +38,7 @@ interface Budget {
   daysLeft: number;
 }
 
-const mockBudgets: Budget[] = [
-  {
-    id: '1',
-    name: 'Food & Dining',
-    category: 'food',
-    icon: '🍔',
-    color: Colors.error,
-    limit: 10000,
-    spent: 8500,
-    period: 'MONTHLY',
-    alertThreshold: 0.8,
-    daysLeft: 12,
-  },
-  {
-    id: '2',
-    name: 'Shopping',
-    category: 'shopping',
-    icon: '🛍️',
-    color: Colors.shopping,
-    limit: 5000,
-    spent: 6500,
-    period: 'MONTHLY',
-    alertThreshold: 0.8,
-    daysLeft: 12,
-  },
-  {
-    id: '3',
-    name: 'Transport',
-    category: 'transport',
-    icon: '🚗',
-    color: Colors.transport,
-    limit: 4000,
-    spent: 1800,
-    period: 'MONTHLY',
-    alertThreshold: 0.8,
-    daysLeft: 12,
-  },
-  {
-    id: '4',
-    name: 'Entertainment',
-    category: 'entertainment',
-    icon: '🎬',
-    color: Colors.entertainment,
-    limit: 3000,
-    spent: 850,
-    period: 'MONTHLY',
-    alertThreshold: 0.8,
-    daysLeft: 12,
-  },
-];
+const mockBudgets: Budget[] = [];
 
 const CATEGORIES_FOR_NEW = [
   { id: 'food', label: 'Food & Dining', icon: '🍔' },
@@ -93,7 +51,30 @@ const CATEGORIES_FOR_NEW = [
 ];
 
 export function BudgetsScreen({ navigation }: any) {
-  const [budgets, setBudgets] = useState<Budget[]>(mockBudgets);
+  const budgetsQuery = useBudgets();
+  const createBudget = useCreateBudget();
+  const updateBudget = useUpdateBudget();
+  const deleteBudget = useDeleteBudget();
+
+  const budgets: Budget[] = useMemo(() => {
+    const list = budgetsQuery.data || [];
+    return list.map((b: any) => {
+      const cat = CATEGORIES_FOR_NEW.find((c) => c.id === b.categoryId);
+      return {
+        id: b.id,
+        name: b.name,
+        category: b.categoryId || 'other',
+        icon: cat?.icon || '📦',
+        color: Colors.primary,
+        limit: Number(b.amountLimit),
+        spent: Number(b.amountSpent ?? 0),
+        period: b.period,
+        alertThreshold: Number(b.alertThreshold ?? 0.8),
+        daysLeft: b.daysLeft ?? 0,
+      };
+    });
+  }, [budgetsQuery.data]);
+
   const [showCreate, setShowCreate] = useState(false);
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
   const [newBudget, setNewBudget] = useState({
@@ -110,33 +91,27 @@ export function BudgetsScreen({ navigation }: any) {
     return { totalLimit, totalSpent, overBudget };
   }, [budgets]);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!newBudget.name || !newBudget.limit) {
       Alert.alert('Missing fields', 'Please fill all fields');
       return;
     }
-    const cat = CATEGORIES_FOR_NEW.find((c) => c.id === newBudget.category);
-    setBudgets([
-      ...budgets,
-      {
-        id: String(Date.now()),
+    try {
+      await createBudget.mutateAsync({
         name: newBudget.name,
-        category: newBudget.category,
-        icon: cat?.icon || '📦',
-        color: Colors.primary,
-        limit: parseFloat(newBudget.limit),
-        spent: 0,
+        categoryId: newBudget.category,
+        amountLimit: parseFloat(newBudget.limit),
         period: 'MONTHLY',
-        alertThreshold: 0.8,
-        daysLeft: 30,
-      },
-    ]);
-    setNewBudget({ name: '', category: 'food', icon: '🍔', limit: '5000' });
-    setShowCreate(false);
+      });
+      setNewBudget({ name: '', category: 'food', icon: '🍔', limit: '5000' });
+      setShowCreate(false);
+    } catch (e: any) {
+      Alert.alert('Could not create budget', e?.message ?? 'Unknown error');
+    }
   };
 
   const handleUpdateLimit = (id: string, newLimit: number) => {
-    setBudgets((prev) => prev.map((b) => (b.id === id ? { ...b, limit: newLimit } : b)));
+    updateBudget.mutate({ id, data: { amountLimit: newLimit } });
   };
 
   const handleDelete = (id: string) => {
@@ -145,10 +120,18 @@ export function BudgetsScreen({ navigation }: any) {
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => setBudgets((prev) => prev.filter((b) => b.id !== id)),
+        onPress: () => deleteBudget.mutate(id),
       },
     ]);
   };
+
+  if (budgetsQuery.isLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
