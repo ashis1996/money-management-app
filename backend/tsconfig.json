@@ -1,11 +1,13 @@
 {
   "compilerOptions": {
     "module": "commonjs",
+    "moduleResolution": "node",
     "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
     "target": "ES2021",
     "sourceMap": true,
     "outDir": "./dist",
@@ -21,10 +23,9 @@
       "@modules/*": ["src/modules/*"],
       "@common/*": ["src/common/*"],
       "@config/*": ["src/config/*"],
-      "@shared/*": ["../shared/dist/*"],
-      "@shared/dto": ["../shared/dist/dto/index"],
-      "@shared/constants": ["../shared/dist/constants/index"],
-      "@shared/types": ["../shared/dist/types/index"]
+      "@money-management/shared/dto": ["../node_modules/@money-management/shared/dist/dto/index"],
+      "@money-management/shared/constants": ["../node_modules/@money-management/shared/dist/constants/index"],
+      "@money-management/shared/types": ["../node_modules/@money-management/shared/dist/types/index"]
     }
   },
   "exclude": ["node_modules", "dist", "**/*.spec.ts", "test"]

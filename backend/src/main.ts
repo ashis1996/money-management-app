@@ -5,6 +5,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './modules/app.module';
 import { Logger } from './common/utils/logger';
+import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -21,14 +22,11 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Global prefix
+  // Global prefix - single v1 since URI versioning is disabled
   app.setGlobalPrefix('api/v1');
 
-  // API Versioning
-  app.enableVersioning({
-    type: VersioningType.URI,
-    defaultVersion: '1',
-  });
+  // (Versioning intentionally disabled to keep paths flat at /api/v1/...
+  //  Re-enable if/when v2 is needed.)
 
   // Validation
   app.useGlobalPipes(
@@ -41,6 +39,9 @@ async function bootstrap() {
       },
     }),
   );
+
+  // Wrap all responses in { success, data, message } envelope
+  app.useGlobalInterceptors(new ResponseInterceptor());
 
   // Swagger Documentation
   const config = new DocumentBuilder()

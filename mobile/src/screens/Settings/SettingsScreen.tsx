@@ -18,6 +18,7 @@ import {
   ArchetypeColors,
 } from '../../styles/theme';
 import { useHealthScore, useUnreadCount } from '../../hooks';
+import { api } from '../../services/api';
 
 interface MenuItem {
   icon: string;
@@ -140,6 +141,31 @@ export function SettingsScreen({ navigation }: any) {
           toggleValue={upiNotif}
           onToggle={setUpiNotif}
           enabled={autoCapture}
+        />
+        <Row
+          icon="📨"
+          label="Forward an SMS"
+          hint="Paste a bank SMS to capture it manually"
+          onPress={() => navigation.navigate('SmsForward')}
+        />
+        <Row
+          icon="🔔"
+          label="Send test push"
+          hint="Verify push notifications are working"
+          onPress={async () => {
+            try {
+              await api.post('/push/test', {
+                title: 'Test from MoneyMind 💰',
+                body: 'Push notifications are working',
+              });
+              Alert.alert('Sent', 'Check your notification tray.');
+            } catch (e: any) {
+              Alert.alert(
+                'Could not send',
+                e?.message ?? 'Make sure you registered a push token.',
+              );
+            }
+          }}
         />
       </Section>
 

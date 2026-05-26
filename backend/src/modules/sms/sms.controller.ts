@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { SmsService } from './sms.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { User } from '../../common/decorators/user.decorator';
-import { SmsIngestDto } from '@shared/dto';
+import { SmsIngestDto } from '@money-management/shared/dto';
 
 @ApiTags('sms')
 @Controller('sms')

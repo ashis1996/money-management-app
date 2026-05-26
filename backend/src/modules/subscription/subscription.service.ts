@@ -6,8 +6,8 @@ import {
   UpdateSubscriptionDto,
   DetectedSubscriptionDto,
   SubscriptionFrequency,
-} from '@shared/dto';
-import { SUBSCRIPTION_DEFAULTS } from '@shared/constants';
+} from '@money-management/shared/dto';
+import { SUBSCRIPTION_DEFAULTS } from '@money-management/shared/constants';
 import { Logger } from '../../common/utils/logger';
 
 type FrequencyValue = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY';

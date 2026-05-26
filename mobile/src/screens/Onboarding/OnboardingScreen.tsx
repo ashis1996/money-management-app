@@ -18,6 +18,8 @@ import {
   Spacing,
   BorderRadius,
 } from '../../styles/theme';
+import { registerForPushNotifications } from '../../services/push';
+import { smsReadingAvailability } from '../../services/sms';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -170,8 +172,35 @@ export function OnboardingScreen({ navigation }: any) {
     );
   };
 
-  const handleComplete = () => {
-    // In production: save permissions, mark onboarding complete in storage
+  const handleComplete = async () => {
+    // Actually request the OS permissions the user toggled on.
+    const enabledIds = permissions.filter((p) => p.enabled).map((p) => p.id);
+
+    if (enabledIds.includes('notif')) {
+      try {
+        const result = await registerForPushNotifications();
+        if (!result.granted) {
+          // User denied permission; still proceed but flag it
+          console.info(`[onboarding] Notif permission: ${result.reason}`);
+        }
+      } catch (err) {
+        console.warn('[onboarding] Push registration failed', err);
+      }
+    }
+
+    // SMS permission cannot be requested from JS in Expo Go;
+    // we only inform the user about it.
+    if (enabledIds.includes('sms')) {
+      const sms = smsReadingAvailability();
+      if (!sms.available) {
+        Alert.alert(
+          'SMS auto-capture',
+          `${sms.message}\n\n${sms.fallback ?? ''}`,
+          [{ text: 'Got it' }],
+        );
+      }
+    }
+
     Alert.alert(
       'All set! 🎉',
       "Let's create your account",

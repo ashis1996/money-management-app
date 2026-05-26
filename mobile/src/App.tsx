@@ -1,5 +1,8 @@
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useEffect, useRef } from 'react';
+import {
+  NavigationContainer,
+  NavigationContainerRef,
+} from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -8,6 +11,8 @@ import { Text, View, StyleSheet, ActivityIndicator } from 'react-native';
 
 import { useAuthStore } from './store/auth.store';
 import { Colors, Typography, Spacing } from './styles/theme';
+import { addNotificationListeners } from './services/push';
+import { startSmsAutoCapture } from './services/sms';
 import {
   // Auth
   LoginScreen,
@@ -31,6 +36,7 @@ import {
   WeeklySummaryScreen,
   AccountsScreen,
   SplitExpenseScreen,
+  SmsForwardScreen,
 } from './screens';
 
 const queryClient = new QueryClient({
@@ -45,6 +51,34 @@ const queryClient = new QueryClient({
 const RootStack = createStackNavigator<any>();
 const AuthStackNav = createStackNavigator<any>();
 const Tab = createBottomTabNavigator<any>();
+
+/**
+ * Map a notification's `data.type` to a route + params.
+ * Backend's notification.service stores actionRoute/actionParams in `data`,
+ * so we honour that when present, otherwise fall back to a sensible default.
+ */
+function notificationDataToRoute(data: any): { route: string; params?: any } | null {
+  if (!data) return null;
+  if (data.actionRoute && typeof data.actionRoute === 'string') {
+    return { route: data.actionRoute, params: data.actionParams };
+  }
+  switch (data.type) {
+    case 'TRANSACTION':
+      return data.transactionId
+        ? { route: 'TransactionDetail', params: { id: data.transactionId } }
+        : { route: 'Transactions' };
+    case 'SUBSCRIPTION':
+      return { route: 'Subscriptions' };
+    case 'BUDGET_ALERT':
+      return { route: 'Budgets' };
+    case 'INSIGHT':
+      return { route: 'Insights' };
+    case 'SECURITY':
+      return { route: 'Notifications' };
+    default:
+      return { route: 'Notifications' };
+  }
+}
 
 function TabIcon({ label, focused }: { label: string; focused: boolean }) {
   const icons: Record<string, string> = {
@@ -121,6 +155,7 @@ function MainStack() {
       <RootStack.Screen name="AIAssistant" component={AIAssistantScreen} />
       <RootStack.Screen name="MoneyLeaks" component={MoneyLeaksScreen} />
       <RootStack.Screen name="HealthScore" component={HealthScoreScreen} />
+      <RootStack.Screen name="SmsForward" component={SmsForwardScreen} />
     </RootStack.Navigator>
   );
 }
@@ -143,6 +178,37 @@ function AuthStack() {
 
 export default function App() {
   const { isAuthenticated, isLoading } = useAuthStore();
+  const navigationRef =
+    useRef<NavigationContainerRef<any>>(null);
+
+  // Push notification taps: navigate to the right screen.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const unsubscribe = addNotificationListeners({
+      onResponse: (response) => {
+        const data = response.notification.request.content.data;
+        const target = notificationDataToRoute(data);
+        if (target && navigationRef.current?.isReady()) {
+          navigationRef.current.navigate(target.route, target.params);
+        }
+      },
+      onReceived: () => {
+        // Foreground: rely on React Query refetch on focus + the
+        // notification banner shown by the system.
+        queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      },
+    });
+
+    return unsubscribe;
+  }, [isAuthenticated]);
+
+  // SMS auto-capture (no-op in Expo Go and on iOS).
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const stop = startSmsAutoCapture();
+    return stop;
+  }, [isAuthenticated]);
 
   if (isLoading) {
     return (
@@ -160,7 +226,7 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef}>
         <StatusBar style="auto" />
         {isAuthenticated ? <MainStack /> : <AuthStack />}
       </NavigationContainer>

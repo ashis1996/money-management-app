@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { HashUtils } from '../../common/utils/hash';
-import { CreateUserDto, UserResponseDto } from '@shared/dto';
+import { CreateUserDto, UserResponseDto } from '@money-management/shared/dto';
 
 @Injectable()
 export class UserService {

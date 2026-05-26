@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { NotificationService } from './notification.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { User } from '../../common/decorators/user.decorator';
-import { CreateNotificationDto, UpdateNotificationPreferencesDto } from '@shared/dto';
+import { CreateNotificationDto, UpdateNotificationPreferencesDto } from '@money-management/shared/dto';
 
 @ApiTags('notifications')
 @Controller('notifications')

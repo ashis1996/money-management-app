@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { of, throwError } from 'rxjs';
 import { InsightsService } from './insights.service';
 import { PrismaService } from '../../config/prisma.service';
-import { InsightPeriod } from '@shared/dto';
+import { InsightPeriod } from '@money-management/shared/dto';
 
 describe('InsightsService', () => {
   let service: InsightsService;

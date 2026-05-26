@@ -7,7 +7,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import { HashUtils } from '../../common/utils/hash';
-import { LoginDto, AuthResponseDto, UserResponseDto } from '@shared/dto';
+import { LoginDto, AuthResponseDto, UserResponseDto } from '@money-management/shared/dto';
 
 @Injectable()
 export class AuthService {

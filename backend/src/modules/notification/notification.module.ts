@@ -2,9 +2,10 @@ import { Module } from '@nestjs/common';
 import { NotificationController } from './notification.controller';
 import { NotificationService } from './notification.service';
 import { RabbitMQModule } from '../../config/rabbitmq.module';
+import { PushModule } from '../push/push.module';
 
 @Module({
-  imports: [RabbitMQModule],
+  imports: [RabbitMQModule, PushModule],
   controllers: [NotificationController],
   providers: [NotificationService],
   exports: [NotificationService],

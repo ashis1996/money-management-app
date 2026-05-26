@@ -3,6 +3,10 @@ import { persist } from 'zustand/middleware';
 import * as SecureStore from 'expo-secure-store';
 import { User } from '@/types';
 import { authApi } from '@/services/api';
+import {
+  registerForPushNotifications,
+  unregisterPushToken,
+} from '@/services/push';
 
 interface AuthState {
   user: User | null;
@@ -47,6 +51,10 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             isLoading: false,
           });
+
+          // Fire-and-forget push registration so a permission prompt /
+          // network blip never blocks login.
+          registerForPushNotifications().catch(() => undefined);
         } catch (error: any) {
           set({
             error: error.response?.data?.message || 'Login failed',
@@ -72,6 +80,8 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             isLoading: false,
           });
+
+          registerForPushNotifications().catch(() => undefined);
         } catch (error: any) {
           set({
             error: error.response?.data?.message || 'Registration failed',
@@ -83,6 +93,8 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         try {
+          // Unregister this device's push token before tearing down auth.
+          await unregisterPushToken().catch(() => undefined);
           const { refreshToken } = get();
           if (refreshToken) {
             await authApi.logout(refreshToken).catch(() => {});

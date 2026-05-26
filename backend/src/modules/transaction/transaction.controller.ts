@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { TransactionService } from './transaction.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { User } from '../../common/decorators/user.decorator';
-import { CreateTransactionDto, UpdateTransactionDto, TransactionsFilterDto } from '@shared/dto';
+import { CreateTransactionDto, UpdateTransactionDto, TransactionsFilterDto } from '@money-management/shared/dto';
 
 @ApiTags('transactions')
 @Controller('transactions')

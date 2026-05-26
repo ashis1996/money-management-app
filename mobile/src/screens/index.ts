@@ -22,3 +22,4 @@ export { NotificationsScreen } from './Notifications/NotificationsScreen';
 export { WeeklySummaryScreen } from './WeeklySummary/WeeklySummaryScreen';
 export { AccountsScreen } from './Accounts/AccountsScreen';
 export { SplitExpenseScreen } from './SplitExpense/SplitExpenseScreen';
+export { SmsForwardScreen } from './SmsForward/SmsForwardScreen';

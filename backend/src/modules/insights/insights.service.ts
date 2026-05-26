@@ -4,7 +4,7 @@ import { PrismaService } from '../../config/prisma.service';
 import { HttpService } from '@nestjs/axios';
 import { Logger } from '../../common/utils/logger';
 import { firstValueFrom } from 'rxjs';
-import { InsightPeriod } from '@shared/dto';
+import { InsightPeriod } from '@money-management/shared/dto';
 
 export interface CategoryBreakdown {
   categoryId: string;

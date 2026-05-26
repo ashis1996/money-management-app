@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { RabbitMQService } from '../../config/rabbitmq.service';
+import { PushService } from '../push/push.service';
 import {
   CreateNotificationDto,
   NotificationPreferencesDto,
   NotificationType,
   NotificationPriority,
   NotificationChannel,
-} from '@shared/dto';
+} from '@money-management/shared/dto';
 import { Logger } from '../../common/utils/logger';
 
 @Injectable()
@@ -17,6 +18,7 @@ export class NotificationService {
   constructor(
     private prisma: PrismaService,
     private rabbitMQ: RabbitMQService,
+    private pushService: PushService,
   ) {}
 
   async create(userId: string, dto: CreateNotificationDto) {
@@ -129,6 +131,18 @@ export class NotificationService {
 
   private async sendPushNotification(userId: string, notification: any) {
     try {
+      // Direct push delivery via Expo service (works in Expo Go and standalone).
+      await this.pushService.sendToUser(userId, {
+        title: notification.title,
+        body: notification.message,
+        data: {
+          notificationId: notification.id,
+          type: notification.type,
+          ...((notification.data as any) ?? {}),
+        },
+      });
+
+      // Also publish to RabbitMQ for any downstream consumers (analytics etc.)
       await this.rabbitMQ.publishNotificationRequest({
         userId,
         type: notification.type,

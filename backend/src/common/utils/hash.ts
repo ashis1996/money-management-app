@@ -1,4 +1,4 @@
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 export class HashUtils {
   private static readonly SALT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '10', 10);

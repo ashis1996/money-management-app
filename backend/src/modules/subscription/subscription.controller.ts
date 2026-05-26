@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SubscriptionService } from './subscription.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { User } from '../../common/decorators/user.decorator';
-import { CreateSubscriptionDto, UpdateSubscriptionDto } from '@shared/dto';
+import { CreateSubscriptionDto, UpdateSubscriptionDto } from '@money-management/shared/dto';
 
 @ApiTags('subscriptions')
 @Controller('subscriptions')

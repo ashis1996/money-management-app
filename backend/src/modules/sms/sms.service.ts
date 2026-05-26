@@ -7,13 +7,13 @@ import {
   SmsParseResponseDto,
   ParsedSmsDto,
   TransactionType,
-} from '@shared/dto';
+} from '@money-management/shared/dto';
 import { Logger } from '../../common/utils/logger';
 import {
   TRANSACTION_KEYWORDS,
   CATEGORY_MAPPINGS,
   BANK_SENDER_MAPPING,
-} from '@shared/constants';
+} from '@money-management/shared/constants';
 
 @Injectable()
 export class SmsService {

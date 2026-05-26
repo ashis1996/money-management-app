@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { RabbitMQService } from '../../config/rabbitmq.service';
-import { CreateTransactionDto, UpdateTransactionDto, TransactionsFilterDto } from '@shared/dto';
+import { CreateTransactionDto, UpdateTransactionDto, TransactionsFilterDto } from '@money-management/shared/dto';
 
 @Injectable()
 export class TransactionService {
