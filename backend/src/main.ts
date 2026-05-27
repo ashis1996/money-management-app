@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './modules/app.module';
@@ -61,11 +62,50 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document);
 
+  // ------------------------------------------------------------------
+  // Attach RabbitMQ microservice listener so @MessagePattern handlers
+  // (RabbitMQConsumer) actually receive published events. Without this,
+  // every publishTransactionCreated / publishSmsReceived was a no-op
+  // because there was no consumer subscribed to the queue.
+  // ------------------------------------------------------------------
+  const rabbitUrl = configService.get<string>(
+    'RABBITMQ_URL',
+    'amqp://guest:guest@localhost:5672',
+  );
+  const queue = configService.get<string>('RABBITMQ_SMS_QUEUE', 'sms.processing');
+
+  app.connectMicroservice<MicroserviceOptions>(
+    {
+      transport: Transport.RMQ,
+      options: {
+        urls: [rabbitUrl],
+        queue,
+        queueOptions: { durable: true },
+        // noAck:false (default) so failed handlers can be requeued.
+        // prefetchCount keeps the worker from gulping a backlog at once.
+        prefetchCount: 10,
+      },
+    },
+    { inheritAppConfig: true },
+  );
+
+  try {
+    await app.startAllMicroservices();
+    logger.log(`RabbitMQ consumer listening on queue '${queue}'`);
+  } catch (error: any) {
+    // Don't crash the HTTP server if the broker is briefly unavailable.
+    logger.warn(
+      `Could not start RabbitMQ microservice: ${error?.message ?? error}. ` +
+        `HTTP API will still serve, but async event handlers are disabled until the broker is reachable.`,
+    );
+  }
+
   const port = configService.get<number>('PORT', 3000);
   await app.listen(port);
 
   logger.log(`Application running on port ${port}`);
   logger.log(`Swagger docs available at http://localhost:${port}/docs`);
+  logger.log(`Health check at http://localhost:${port}/api/v1/health`);
 }
 
 bootstrap().catch((error) => {

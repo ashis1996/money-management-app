@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import { RabbitMQService } from '../../config/rabbitmq.service';
+import { AiProxyService } from '../ai-proxy/ai-proxy.service';
 import {
   SmsIngestDto,
   SmsParseResponseDto,
@@ -19,13 +20,17 @@ import {
 export class SmsService {
   private readonly logger = new Logger(SmsService.name);
   private readonly aiServiceUrl: string;
+  private readonly useAiParser: boolean;
 
   constructor(
     private prisma: PrismaService,
     private rabbitMQ: RabbitMQService,
     private configService: ConfigService,
+    private aiProxy: AiProxyService,
   ) {
-    this.aiServiceUrl = this.configService.get<string>('AI_SERVICE_URL', 'http://localhost:8000');
+    this.aiServiceUrl = this.configService.get<string>('AI_SERVICE_URL', 'http://localhost:8000/api/v1');
+    // Allow ops to disable the AI parser via env without redeploy.
+    this.useAiParser = this.configService.get<string>('SMS_USE_AI_PARSER', 'true') !== 'false';
   }
 
   async ingestSms(userId: string, dto: SmsIngestDto): Promise<SmsParseResponseDto> {
@@ -41,6 +46,8 @@ export class SmsService {
       },
     });
 
+    // Best-effort: tell downstream consumers about the new SMS. Failures
+    // here must not block transaction creation below.
     await this.rabbitMQ.publishSmsReceived({
       smsId: smsLog.id,
       body: dto.body,
@@ -74,6 +81,10 @@ export class SmsService {
             rawSmsText: dto.body,
             smsSenderId: dto.sender,
             source: 'SMS',
+            // Preserve AI parse hints for the auto-actions consumer to refine.
+            aiSuggestedCategory: parsed.category ?? null,
+            aiSuggestedMerchant: parsed.merchant ?? null,
+            aiConfidence: parsed.confidence ?? null,
           },
         });
 
@@ -104,7 +115,85 @@ export class SmsService {
     };
   }
 
+  /**
+   * Parse a single SMS. Tries the AI service first (better extraction via
+   * spaCy + bank-specific patterns) and falls back to the local regex parser
+   * if the AI service is unreachable, slow, or returns insufficient data.
+   *
+   * The fallback is silent — ops can flip SMS_USE_AI_PARSER=false to skip
+   * the AI hop entirely if the service is misbehaving.
+   */
   async parseSms(body: string, sender: string, timestamp: Date): Promise<ParsedSmsDto> {
+    if (this.useAiParser) {
+      try {
+        const aiResponse = (await this.aiProxy.parseSms(
+          body,
+          sender,
+          timestamp.toISOString(),
+        )) as any;
+
+        const aiParsed = this.adaptAiParsedResponse(aiResponse, body, sender, timestamp);
+        // Only trust the AI parse if it actually pulled out the core fields.
+        if (aiParsed.amount && aiParsed.transactionType) {
+          return aiParsed;
+        }
+        this.logger.debug(
+          `AI parse incomplete (amount=${aiParsed.amount} type=${aiParsed.transactionType}); falling back to regex.`,
+        );
+      } catch (error: any) {
+        this.logger.debug(
+          `AI SMS parse unavailable, using regex fallback: ${error?.message ?? error}`,
+        );
+      }
+    }
+    return this.parseSmsLocal(body, sender, timestamp);
+  }
+
+  /**
+   * Translate the snake_case shape returned by the FastAPI service into the
+   * camelCase ParsedSmsDto the rest of the backend expects.
+   */
+  private adaptAiParsedResponse(
+    response: any,
+    body: string,
+    sender: string,
+    timestamp: Date,
+  ): ParsedSmsDto {
+    const inner = response?.parsed ?? response?.data?.parsed ?? response?.data ?? response ?? {};
+    const txType = inner.transaction_type ?? inner.transactionType;
+    return {
+      rawSms: body,
+      sender,
+      timestamp,
+      amount: typeof inner.amount === 'number' ? inner.amount : undefined,
+      merchant: inner.merchant ?? inner.merchantName ?? undefined,
+      transactionType:
+        txType === 'CREDIT'
+          ? TransactionType.CREDIT
+          : txType === 'DEBIT'
+            ? TransactionType.DEBIT
+            : undefined,
+      category: inner.category ?? this.categorizeTransaction(body, inner.merchant),
+      balance: typeof inner.balance === 'number' ? inner.balance : undefined,
+      accountLast4: inner.account_last_4 ?? inner.accountLast4 ?? undefined,
+      confidence:
+        typeof response?.confidence === 'number'
+          ? response.confidence
+          : typeof inner.confidence === 'number'
+            ? inner.confidence
+            : 0,
+    };
+  }
+
+  /**
+   * Local regex parser. Used as a fallback when the AI service is unreachable
+   * and as the primary path when SMS_USE_AI_PARSER=false.
+   */
+  private async parseSmsLocal(
+    body: string,
+    sender: string,
+    timestamp: Date,
+  ): Promise<ParsedSmsDto> {
     const parsed: ParsedSmsDto = {
       rawSms: body,
       sender,

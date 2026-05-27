@@ -4,6 +4,7 @@ import { PrismaService } from '../../config/prisma.service';
 import { SmsService } from '../../modules/sms/sms.service';
 import { SubscriptionService } from '../../modules/subscription/subscription.service';
 import { NotificationService } from '../../modules/notification/notification.service';
+import { TransactionEnrichmentService } from '../../modules/ai-proxy/transaction-enrichment.service';
 import { Logger } from '../utils/logger';
 
 interface RabbitMQMessage<T> {
@@ -21,6 +22,7 @@ export class RabbitMQConsumer implements OnModuleInit {
     private smsService: SmsService,
     private subscriptionService: SubscriptionService,
     private notificationService: NotificationService,
+    private enrichment: TransactionEnrichmentService,
     private prisma: PrismaService,
   ) {}
 
@@ -58,6 +60,16 @@ export class RabbitMQConsumer implements OnModuleInit {
         });
 
         if (smsLog) {
+          // Avoid double-creating: SmsService.ingestSms already creates the
+          // transaction and links it. The legacy publish path lands here too;
+          // skip if a transaction is already attached.
+          if (smsLog.transactionId) {
+            this.logger.debug(
+              `SMS ${smsId} already has transaction ${smsLog.transactionId}, skipping consumer create.`,
+            );
+            return;
+          }
+
           const transaction = await this.prisma.transaction.create({
             data: {
               userId: smsLog.userId,
@@ -69,6 +81,9 @@ export class RabbitMQConsumer implements OnModuleInit {
               rawSmsText: body,
               smsSenderId: sender,
               source: 'SMS',
+              aiSuggestedCategory: parsed.category ?? null,
+              aiSuggestedMerchant: parsed.merchant ?? null,
+              aiConfidence: parsed.confidence ?? null,
             },
           });
 
@@ -91,43 +106,77 @@ export class RabbitMQConsumer implements OnModuleInit {
           }
         }
       }
-    } catch (error) {
-      this.logger.error(`Failed to process SMS ${message.data.smsId}: ${error.message}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to process SMS ${message.data.smsId}: ${error?.message ?? error}`);
     }
   }
 
   /**
-   * Consumes TRANSACTION_CREATED events
-   * Triggers subscription detection and notifications
+   * Consumes TRANSACTION_CREATED events.
+   *
+   * Fans out three concerns, each independent:
+   *   1. Transaction notification (existing behavior)
+   *   2. Subscription pattern detection (existing behavior)
+   *   3. AI enrichment — behavior tagging, health-score recompute,
+   *      action card regeneration. See TransactionEnrichmentService.
    */
   @MessagePattern('transaction.created')
-  async handleTransactionCreated(@Payload() message: RabbitMQMessage<{ transactionId: string; userId: string; amount: number; category: string }>) {
+  async handleTransactionCreated(
+    @Payload()
+    message: RabbitMQMessage<{
+      transactionId: string;
+      userId: string;
+      amount: number;
+      category: string;
+    }>,
+  ) {
     this.logger.log(`Processing transaction: ${message.data.transactionId}`);
 
-    try {
-      const { transactionId, userId, amount, category } = message.data;
+    const { transactionId, userId } = message.data;
 
-      // Send notification for this transaction
-      const transaction = await this.prisma.transaction.findUnique({
-        where: { id: transactionId },
-      });
+    // Fan out in parallel; failures in one branch must not break the others.
+    const transactionPromise = this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+    });
 
-      if (transaction) {
-        await this.notificationService.sendTransactionNotification(userId, {
-          amount: Number(transaction.amount),
-          merchant: transaction.merchantName || undefined,
-          type: transaction.type,
-          category: transaction.categoryId || undefined,
-        });
+    const tasks: Promise<unknown>[] = [
+      // Branch A: notifications + subscription pattern detection
+      transactionPromise.then(async (transaction) => {
+        if (!transaction) return;
 
-        // Check for subscription pattern if it's a debit
-        if (transaction.type === 'DEBIT' && transaction.merchantName) {
-          await this.checkForSubscriptionPattern(userId, transaction.merchantName);
+        try {
+          await this.notificationService.sendTransactionNotification(userId, {
+            amount: Number(transaction.amount),
+            merchant: transaction.merchantName || undefined,
+            type: transaction.type,
+            category: transaction.categoryId || undefined,
+          });
+        } catch (err: any) {
+          this.logger.warn(
+            `Notification failed for tx=${transactionId}: ${err?.message ?? err}`,
+          );
         }
-      }
-    } catch (error) {
-      this.logger.error(`Failed to process transaction ${message.data.transactionId}: ${error.message}`);
-    }
+
+        if (transaction.type === 'DEBIT' && transaction.merchantName) {
+          try {
+            await this.checkForSubscriptionPattern(userId, transaction.merchantName);
+          } catch (err: any) {
+            this.logger.warn(
+              `Subscription pattern check failed for tx=${transactionId}: ${err?.message ?? err}`,
+            );
+          }
+        }
+      }),
+
+      // Branch B: AI enrichment (behavior tag + heavy recompute, debounced)
+      this.enrichment.enrich(userId, transactionId).catch((err: any) =>
+        this.logger.warn(
+          `AI enrichment failed for tx=${transactionId}: ${err?.message ?? err}`,
+        ),
+      ),
+    ];
+
+    await Promise.allSettled(tasks);
   }
 
   /**
@@ -139,7 +188,7 @@ export class RabbitMQConsumer implements OnModuleInit {
     this.logger.log(`Processing subscription detection: ${message.data.subscriptionId}`);
 
     try {
-      const { subscriptionId, userId, merchant, amount } = message.data;
+      const { subscriptionId, userId } = message.data;
 
       const subscription = await this.prisma.subscription.findUnique({
         where: { id: subscriptionId },
@@ -152,8 +201,10 @@ export class RabbitMQConsumer implements OnModuleInit {
           nextBillingDate: subscription.nextBillingDate || new Date(),
         });
       }
-    } catch (error) {
-      this.logger.error(`Failed to process subscription detection ${message.data.subscriptionId}: ${error.message}`);
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to process subscription detection ${message.data.subscriptionId}: ${error?.message ?? error}`,
+      );
     }
   }
 
@@ -179,8 +230,8 @@ export class RabbitMQConsumer implements OnModuleInit {
           sentAt: new Date(),
         },
       });
-    } catch (error) {
-      this.logger.error(`Failed to create notification: ${error.message}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to create notification: ${error?.message ?? error}`);
     }
   }
 

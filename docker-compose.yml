@@ -66,24 +66,23 @@ services:
       dockerfile: infra/docker/Dockerfile.backend
     container_name: money_backend
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       PORT: 3000
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/money_management?schema=public
       REDIS_HOST: redis
       REDIS_PORT: 6379
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      RABBITMQ_SMS_QUEUE: sms.processing
       JWT_SECRET: development-jwt-secret-change-in-production
       JWT_EXPIRES_IN: 15m
       REFRESH_TOKEN_SECRET: development-refresh-secret
       REFRESH_TOKEN_EXPIRES_IN: 7d
       BCRYPT_ROUNDS: 10
-      AI_SERVICE_URL: http://ai-service:8000
+      AI_SERVICE_URL: http://ai-service:8000/api/v1
+      AI_TIMEOUT_MS: 30000
       LOG_LEVEL: debug
     ports:
       - "3000:3000"
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,7 +90,12 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    command: sh -c "npm run db:generate && npm run db:migrate && npm run dev"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3000/api/v1/health >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
     networks:
       - money-network
 
@@ -108,9 +112,12 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
       - "8000:8000"
-    volumes:
-      - ./ai-service:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     networks:
       - money-network
 

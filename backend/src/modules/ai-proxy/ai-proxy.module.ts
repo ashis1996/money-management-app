@@ -3,6 +3,8 @@ import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { AiProxyController } from './ai-proxy.controller';
 import { AiProxyService } from './ai-proxy.service';
+import { TransactionEnrichmentService } from './transaction-enrichment.service';
+import { ActionCardModule } from '../action-card/action-card.module';
 
 @Module({
   imports: [
@@ -11,9 +13,10 @@ import { AiProxyService } from './ai-proxy.service';
       timeout: 30000,
       maxRedirects: 2,
     }),
+    ActionCardModule,
   ],
   controllers: [AiProxyController],
-  providers: [AiProxyService],
-  exports: [AiProxyService],
+  providers: [AiProxyService, TransactionEnrichmentService],
+  exports: [AiProxyService, TransactionEnrichmentService],
 })
 export class AiProxyModule {}
