@@ -1,5 +1,6 @@
 import { Injectable, Inject, OnModuleInit } from '@nestjs/common';
 import { Client, ClientProxy } from '@nestjs/microservices';
+import { firstValueFrom } from 'rxjs';
 import { Logger } from '../common/utils/logger';
 
 export interface RabbitMQMessage<T> {
@@ -17,17 +18,35 @@ export class RabbitMQService implements OnModuleInit {
   private client: ClientProxy;
 
   async onModuleInit() {
-    await this.client.connect();
-    this.logger.log('RabbitMQ connection established');
+    try {
+      await this.client.connect();
+      this.logger.log('RabbitMQ connection established');
+    } catch (error: any) {
+      // Don't crash the app on startup if RabbitMQ is briefly unavailable —
+      // the publish methods below already swallow errors so the API stays up.
+      this.logger.warn(
+        `RabbitMQ connection failed at startup, will retry on first publish: ${error?.message ?? error}`,
+      );
+    }
   }
 
+  /**
+   * Fire-and-forget publish. We use `emit` (event/pub-sub) rather than `send`
+   * (request/response) so the publisher does not block waiting for a reply
+   * that no consumer would produce.
+   *
+   * Failures are logged but never thrown — RabbitMQ being temporarily down
+   * must not break the user-facing request that triggered the event.
+   */
   async publish<T>(pattern: string, message: T): Promise<void> {
     try {
-      await this.client.send(pattern, message).toPromise();
-      this.logger.debug(`Message published to ${pattern}`);
-    } catch (error) {
-      this.logger.error(`Failed to publish message to ${pattern}:`, error);
-      throw error;
+      await firstValueFrom(this.client.emit(pattern, message));
+      this.logger.debug(`Message emitted to ${pattern}`);
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to emit message to ${pattern}: ${error?.message ?? error}`,
+      );
+      // Intentionally swallow — best-effort delivery.
     }
   }
 

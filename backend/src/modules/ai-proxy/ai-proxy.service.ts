@@ -23,8 +23,23 @@ export class AiProxyService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
   ) {
-    this.aiBaseUrl = this.config.get<string>('AI_SERVICE_URL') ?? 'http://localhost:8000/api/v1';
+    const rawUrl = this.config.get<string>('AI_SERVICE_URL') ?? 'http://localhost:8000/api/v1';
+    this.aiBaseUrl = this.normalizeBaseUrl(rawUrl);
     this.requestTimeoutMs = parseInt(this.config.get<string>('AI_TIMEOUT_MS') ?? '30000', 10);
+  }
+
+  /**
+   * Tolerate older env values that pointed at just the host (e.g.
+   * `http://ai-service:8000`) by appending the AI service's `/api/v1`
+   * prefix when it's missing. Trailing slashes are stripped so callers
+   * can pass `/dashboard/personalized` without doubling separators.
+   */
+  private normalizeBaseUrl(raw: string): string {
+    let url = raw.trim().replace(/\/+$/, '');
+    if (!/\/api\/v\d+/i.test(url)) {
+      url = `${url}/api/v1`;
+    }
+    return url;
   }
 
   /**

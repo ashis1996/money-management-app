@@ -15,6 +15,7 @@ import { ActionCardModule } from './action-card/action-card.module';
 import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
 import { AiProxyModule } from './ai-proxy/ai-proxy.module';
 import { PushModule } from './push/push.module';
+import { HealthModule } from './health/health.module';
 import { PrismaModule } from '../config/prisma.module';
 import { RabbitMQModule } from '../config/rabbitmq.module';
 import { ConsumersModule } from '../common/consumers/consumers.module';
@@ -60,6 +61,7 @@ import { ConsumersModule } from '../common/consumers/consumers.module';
     AiProxyModule,
     WeeklySummaryModule,
     PushModule,
+    HealthModule,
 
     // Event Consumers
     ConsumersModule,

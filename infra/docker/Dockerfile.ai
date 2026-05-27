@@ -1,50 +1,59 @@
-# Build stage
+# =====================================================================
+# Money Management — AI Service image (FastAPI + ML libs)
+#
+# Build context MUST be the repo root so the build can see ai-service/.
+# =====================================================================
+
+# ---------- Build stage ----------
 FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
-# Install build dependencies
+# Build deps for compiling wheels (torch, spacy etc. ship binaries, but
+# some transitive packages still need a compiler).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
 COPY ai-service/requirements.txt .
 
-# Install Python dependencies
+# Install into a user-local path so we can copy just what we need into
+# the production stage (keeps the final image smaller).
 RUN pip install --no-cache-dir --user -r requirements.txt
 
-# Production stage
+
+# ---------- Production stage ----------
 FROM python:3.11-slim AS production
 
 WORKDIR /app
 
-# Install runtime dependencies
+# `wget` is used by the docker-compose healthcheck fallback; no other
+# system libs are required at runtime.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libspacy-dev \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy installed packages from builder
+# Copy installed Python packages from the builder.
 COPY --from=builder /root/.local /root/.local
 
-# Copy application code
+# App code.
 COPY ai-service/ ./
 
-# Add installed packages to PATH
-ENV PATH=/root/.local/bin:$PATH
-ENV PYTHONUNBUFFERED=1
+ENV PATH=/root/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
-# Create non-root user
+# Drop privileges. `/root/.local` was used during install; copy it to the
+# user's home so the appuser can read it.
 RUN adduser --disabled-password --gecos '' appuser && \
-    chown -R appuser:appuser /app
+    cp -r /root/.local /home/appuser/.local && \
+    chown -R appuser:appuser /home/appuser /app
 USER appuser
+ENV PATH=/home/appuser/.local/bin:$PATH
 
-# Expose port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=10 \
+  CMD wget -q -O- http://localhost:8000/health >/dev/null 2>&1 || exit 1
 
-# Start the application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

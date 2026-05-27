@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { SmsService } from './sms.service';
 import { PrismaService } from '../../config/prisma.service';
 import { RabbitMQService } from '../../config/rabbitmq.service';
+import { AiProxyService } from '../ai-proxy/ai-proxy.service';
 
 jest.mock('../../common/utils/logger');
 
@@ -55,7 +56,18 @@ describe('SmsService', () => {
   };
 
   const mockConfigService = {
-    get: jest.fn().mockReturnValue('http://localhost:8000'),
+    // Default to disabling the AI parser in unit tests so we exercise the
+    // local regex path that the existing assertions are written against.
+    get: jest.fn().mockImplementation((key: string, fallback?: any) => {
+      if (key === 'SMS_USE_AI_PARSER') return 'false';
+      if (key === 'AI_SERVICE_URL') return 'http://localhost:8000/api/v1';
+      return fallback;
+    }),
+  };
+
+  const mockAiProxyService = {
+    parseSms: jest.fn().mockRejectedValue(new Error('AI disabled in tests')),
+    callAi: jest.fn().mockRejectedValue(new Error('AI disabled in tests')),
   };
 
   beforeEach(async () => {
@@ -65,6 +77,7 @@ describe('SmsService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: RabbitMQService, useValue: mockRabbitMQService },
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: AiProxyService, useValue: mockAiProxyService },
       ],
     }).compile();
 

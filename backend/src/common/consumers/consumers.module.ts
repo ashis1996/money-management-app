@@ -3,10 +3,18 @@ import { RabbitMQConsumer } from './rabbitmq.consumer';
 import { SmsModule } from '../../modules/sms/sms.module';
 import { SubscriptionModule } from '../../modules/subscription/subscription.module';
 import { NotificationModule } from '../../modules/notification/notification.module';
+import { AiProxyModule } from '../../modules/ai-proxy/ai-proxy.module';
 import { PrismaModule } from '../../config/prisma.module';
 
 @Module({
-  imports: [SmsModule, SubscriptionModule, NotificationModule, PrismaModule],
-  providers: [RabbitMQConsumer],
+  imports: [
+    SmsModule,
+    SubscriptionModule,
+    NotificationModule,
+    AiProxyModule,
+    PrismaModule,
+  ],
+  controllers: [RabbitMQConsumer],
+  providers: [],
 })
 export class ConsumersModule {}
