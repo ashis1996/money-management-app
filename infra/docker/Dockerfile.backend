@@ -32,7 +32,9 @@ COPY shared ./shared
 COPY backend ./backend
 
 # Generate the Prisma client (needs schema.prisma to be present).
-RUN npx --workspace=backend prisma generate
+# We use `npm run` rather than `npx` because npm has first-class workspace
+# resolution; `npx --workspace=...` is not a real flag and silently no-ops.
+RUN npm run db:generate --workspace=backend
 
 # Build shared first so the backend can import its compiled output.
 RUN npm run build --workspace=shared
