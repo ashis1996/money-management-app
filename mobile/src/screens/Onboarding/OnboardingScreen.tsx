@@ -19,7 +19,15 @@ import {
   BorderRadius,
 } from '../../styles/theme';
 import { registerForPushNotifications } from '../../services/push';
-import { smsReadingAvailability } from '../../services/sms';
+import {
+  smsReadingAvailability,
+  requestSmsRuntimePermission,
+} from '../../services/sms';
+import {
+  upiCaptureAvailability,
+  openUpiPermissionSettings,
+  isUpiListenerAvailable,
+} from '../../services/upi-listener';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -118,6 +126,14 @@ export function OnboardingScreen({ navigation }: any) {
       required: false,
     },
     {
+      id: 'upi',
+      icon: '📱',
+      title: 'UPI notifications',
+      description: 'Capture GPay, PhonePe, Paytm transactions automatically',
+      enabled: true,
+      required: false,
+    },
+    {
       id: 'notif',
       icon: '🔔',
       title: 'Notifications',
@@ -188,14 +204,45 @@ export function OnboardingScreen({ navigation }: any) {
       }
     }
 
-    // SMS permission cannot be requested from JS in Expo Go;
-    // we only inform the user about it.
+    // SMS: in a prebuild dev build we can call PermissionsAndroid directly.
+    // In Expo Go that no-ops, so we fall back to an explainer.
     if (enabledIds.includes('sms')) {
       const sms = smsReadingAvailability();
-      if (!sms.available) {
+      if (sms.available) {
+        const granted = await requestSmsRuntimePermission();
+        if (!granted) {
+          Alert.alert(
+            'SMS permission denied',
+            'You can grant it later in Settings → Capture Modes → SMS parsing.',
+          );
+        }
+      } else {
         Alert.alert(
           'SMS auto-capture',
           `${sms.message}\n\n${sms.fallback ?? ''}`,
+          [{ text: 'Got it' }],
+        );
+      }
+    }
+
+    // UPI: notification-listener access cannot be granted in-app. We
+    // remember the intent and open system settings — the user toggles
+    // MoneyMind on and is bounced back to us with capture live.
+    if (enabledIds.includes('upi')) {
+      const upi = upiCaptureAvailability();
+      if (upi.available && isUpiListenerAvailable()) {
+        await new Promise<void>((resolve) => {
+          Alert.alert(
+            'Enable UPI capture',
+            'We will open Notification Access settings. Find MoneyMind in the list and turn it on.',
+            [{ text: 'Open settings', onPress: () => resolve() }],
+          );
+        });
+        await openUpiPermissionSettings();
+      } else {
+        Alert.alert(
+          'UPI auto-capture',
+          `${upi.message}\n\n${upi.fallback ?? ''}`,
           [{ text: 'Got it' }],
         );
       }

@@ -35,6 +35,16 @@ export class SmsService {
 
   async ingestSms(userId: string, dto: SmsIngestDto): Promise<SmsParseResponseDto> {
     const receivedAt = dto.timestamp ?? dto.receivedAt ?? new Date();
+
+    // Translate the wire-format source into the Prisma TransactionSource enum.
+    const ingestSource = dto.source ?? 'SMS';
+    const txSource: 'SMS' | 'UPI' | 'MANUAL' =
+      ingestSource === 'UPI_NOTIFICATION'
+        ? 'UPI'
+        : ingestSource === 'MANUAL'
+          ? 'MANUAL'
+          : 'SMS';
+
     const smsLog = await this.prisma.smsLog.create({
       data: {
         userId,
@@ -43,6 +53,12 @@ export class SmsService {
         phoneNumber: dto.phoneNumber,
         receivedAt: new Date(receivedAt as any),
         isProcessed: false,
+        // Stash the wire-source + originating package on the log row for
+        // forensics — the SmsLog model doesn't have dedicated columns yet.
+        parsedData: {
+          ingestSource,
+          packageName: dto.packageName ?? null,
+        } as any,
       },
     });
 
@@ -61,7 +77,11 @@ export class SmsService {
       where: { id: smsLog.id },
       data: {
         isProcessed: true,
-        parsedData: parsed as any,
+        parsedData: {
+          ingestSource,
+          packageName: dto.packageName ?? null,
+          ...(parsed as any),
+        } as any,
       },
     });
 
@@ -69,6 +89,55 @@ export class SmsService {
     let transactionId: string | undefined;
 
     if (parsed.amount && parsed.transactionType) {
+      // ----- Dedup against same payment arriving via two channels -----
+      // Bank SMS and UPI app notification often fire within seconds of
+      // each other for the same payment. Match on userId + amount + type
+      // within a ±2 min window — conservative enough to avoid false
+      // merges of unrelated payments of the same value.
+      const matchWindowMs = 2 * 60 * 1000;
+      const dedupTimestamp = parsed.timestamp ?? new Date(receivedAt as any);
+      const existing = await this.prisma.transaction.findFirst({
+        where: {
+          userId,
+          type: parsed.transactionType as any,
+          amount: parsed.amount,
+          deletedAt: null,
+          transactionDate: {
+            gte: new Date(dedupTimestamp.getTime() - matchWindowMs),
+            lte: new Date(dedupTimestamp.getTime() + matchWindowMs),
+          },
+        },
+        orderBy: { transactionDate: 'desc' },
+      });
+
+      if (existing) {
+        // Link this SmsLog to the canonical transaction and bail.
+        await this.prisma.smsLog.update({
+          where: { id: smsLog.id },
+          data: { transactionId: existing.id },
+        });
+
+        // If the new ingest provided a richer merchant name and the
+        // existing row didn't have one, fill it in. Cheap improvement.
+        if (parsed.merchant && !existing.merchantName) {
+          await this.prisma.transaction.update({
+            where: { id: existing.id },
+            data: { merchantName: parsed.merchant },
+          });
+        }
+
+        this.logger.debug(
+          `Dedup: ingest from ${ingestSource} matched existing tx ${existing.id}`,
+        );
+
+        return {
+          success: true,
+          parsed: { ...parsed, duplicate: true } as ParsedSmsDto,
+          transactionCreated: false,
+          transactionId: existing.id,
+        };
+      }
+
       try {
         const transaction = await this.prisma.transaction.create({
           data: {
@@ -80,7 +149,7 @@ export class SmsService {
             transactionDate: parsed.timestamp,
             rawSmsText: dto.body,
             smsSenderId: dto.sender,
-            source: 'SMS',
+            source: txSource,
             // Preserve AI parse hints for the auto-actions consumer to refine.
             aiSuggestedCategory: parsed.category ?? null,
             aiSuggestedMerchant: parsed.merchant ?? null,

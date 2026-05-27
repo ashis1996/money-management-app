@@ -26,6 +26,15 @@ export interface SmsIngestPayload {
   sender: string;
   timestamp?: string;
   phoneNumber?: string;
+  /**
+   * Where this ingest came from. Defaults to 'SMS' on the backend.
+   * UPI listener payloads send 'UPI_NOTIFICATION' so the backend can:
+   *   - label the resulting Transaction with source = UPI,
+   *   - dedup against any concurrent bank SMS for the same payment.
+   */
+  source?: 'SMS' | 'UPI_NOTIFICATION' | 'MANUAL';
+  /** Originating app package for UPI notifications (e.g. com.phonepe.app). */
+  packageName?: string;
 }
 
 export interface SmsIngestResult {
@@ -52,8 +61,15 @@ export async function ingestSms(
       sender: payload.sender,
       timestamp: payload.timestamp ?? new Date().toISOString(),
       phoneNumber: payload.phoneNumber,
+      source: payload.source,
+      packageName: payload.packageName,
     });
-    return res.data;
+    // Surface .data fields directly to keep callers compatible with the
+    // legacy non-enveloped shape this function used to return.
+    return {
+      success: res.success,
+      ...(res.data ?? {}),
+    };
   } catch (err: any) {
     return {
       success: false,
@@ -148,13 +164,60 @@ export function startSmsAutoCapture(): () => void {
     // Skip likely OTP/verification short codes (length 6 numeric)
     if (sms.body.length < 30) return;
 
-    const result = await ingestSms(sms);
+    const result = await ingestSms({ ...sms, source: 'SMS' });
     if (result.transactionCreated) {
       console.info(
         `[sms] Auto-captured transaction ${result.transactionId} from ${sms.sender}`,
       );
     }
   });
+}
+
+/**
+ * Request RECEIVE_SMS / READ_SMS at runtime via PermissionsAndroid.
+ * Must be called from a user-initiated context — Android shows the OS
+ * permission dialog. Returns true iff the user grants both.
+ *
+ * No-op + returns false on iOS or in Expo Go.
+ */
+export async function requestSmsRuntimePermission(): Promise<boolean> {
+  if (Platform.OS !== 'android' || isExpoGo) return false;
+
+  // Lazy require so the import resolves even if a future Expo SDK bump
+  // moves PermissionsAndroid (it lives in core RN today).
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { PermissionsAndroid } = require('react-native');
+  try {
+    const result = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
+      PermissionsAndroid.PERMISSIONS.READ_SMS,
+    ]);
+    return (
+      result[PermissionsAndroid.PERMISSIONS.RECEIVE_SMS] ===
+        PermissionsAndroid.RESULTS.GRANTED &&
+      result[PermissionsAndroid.PERMISSIONS.READ_SMS] ===
+        PermissionsAndroid.RESULTS.GRANTED
+    );
+  } catch (err) {
+    console.warn('[sms] permission request failed', err);
+    return false;
+  }
+}
+
+/** Whether RECEIVE_SMS + READ_SMS are currently granted. */
+export async function hasSmsRuntimePermission(): Promise<boolean> {
+  if (Platform.OS !== 'android' || isExpoGo) return false;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { PermissionsAndroid } = require('react-native');
+  try {
+    const [recv, read] = await Promise.all([
+      PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECEIVE_SMS),
+      PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS),
+    ]);
+    return recv && read;
+  } catch {
+    return false;
+  }
 }
 
 /**

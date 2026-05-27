@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   Alert,
   Switch,
+  AppState,
+  Linking,
 } from 'react-native';
 import { useAuthStore } from '../../store/auth.store';
 import { Card, Badge, Button } from '../../components/shared';
@@ -19,6 +21,17 @@ import {
 } from '../../styles/theme';
 import { useHealthScore, useUnreadCount } from '../../hooks';
 import { api } from '../../services/api';
+import {
+  hasSmsRuntimePermission,
+  requestSmsRuntimePermission,
+  smsReadingAvailability,
+} from '../../services/sms';
+import {
+  getUpiListenerStatus,
+  isUpiListenerAvailable,
+  openUpiPermissionSettings,
+  upiCaptureAvailability,
+} from '../../services/upi-listener';
 
 interface MenuItem {
   icon: string;
@@ -53,6 +66,90 @@ export function SettingsScreen({ navigation }: any) {
   const [weeklyDigest, setWeeklyDigest] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
+
+  // Real native-permission state for capture sources. Polled on mount and
+  // every time the app foregrounds, so the toggle reflects whatever the
+  // user did in system Settings while the app was in the background.
+  const [smsPermissionGranted, setSmsPermissionGranted] = useState(false);
+  const [upiPermissionGranted, setUpiPermissionGranted] = useState(false);
+  const [upiBufferedCount, setUpiBufferedCount] = useState(0);
+  const [upiAvailable] = useState(() => isUpiListenerAvailable());
+  const smsAvailability = smsReadingAvailability();
+
+  const refreshNativeStatus = useCallback(async () => {
+    setSmsPermissionGranted(await hasSmsRuntimePermission());
+    const upi = await getUpiListenerStatus();
+    setUpiPermissionGranted(upi.permissionGranted);
+    setUpiBufferedCount(upi.bufferedCount);
+  }, []);
+
+  useEffect(() => {
+    refreshNativeStatus();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshNativeStatus();
+    });
+    return () => sub.remove();
+  }, [refreshNativeStatus]);
+
+  /** Toggle handler for the SMS row: requests OS permission when turning on,
+   *  shows guidance when not available. We can't programmatically *revoke*
+   *  permission so turning off sends the user to system settings. */
+  const handleSmsToggle = async (next: boolean) => {
+    if (!smsAvailability.available) {
+      Alert.alert(
+        'SMS auto-capture unavailable',
+        `${smsAvailability.message}\n\n${smsAvailability.fallback ?? ''}`,
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+    if (next) {
+      const granted = await requestSmsRuntimePermission();
+      setSmsPermissionGranted(granted);
+      setSmsParse(granted);
+      if (!granted) {
+        Alert.alert(
+          'Permission needed',
+          'Open Settings → Apps → MoneyMind → Permissions → SMS to enable.',
+        );
+      }
+    } else {
+      Alert.alert(
+        'Disable SMS capture?',
+        'Android only lets you revoke this from system Settings. We can take you there.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Open Settings',
+            onPress: () => {
+              Linking.openSettings();
+            },
+          },
+        ],
+      );
+    }
+  };
+
+  /** Notification Access cannot be requested in-app — it must be enabled
+   *  from system settings. We deep-link there and re-poll on resume. */
+  const handleUpiToggle = async (next: boolean) => {
+    const avail = upiCaptureAvailability();
+    if (!avail.available) {
+      Alert.alert(
+        'UPI auto-capture unavailable',
+        `${avail.message}\n\n${avail.fallback ?? ''}`,
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+    setUpiNotif(next);
+    await openUpiPermissionSettings();
+    Alert.alert(
+      'Enable Notification Access',
+      'Find MoneyMind in the list and turn it on. We will start capturing UPI notifications immediately.',
+      [{ text: 'Got it' }],
+    );
+  };
 
   const archetype = (user as any)?.archetype || 'BALANCED';
   const archetypeColor = ArchetypeColors[archetype] || Colors.primary;
@@ -118,11 +215,17 @@ export function SettingsScreen({ navigation }: any) {
         <Row
           icon="📩"
           label="SMS parsing"
-          hint="HDFC, ICICI, SBI, Axis, more"
+          hint={
+            smsAvailability.available
+              ? smsPermissionGranted
+                ? 'HDFC, ICICI, SBI, Axis — granted'
+                : 'Tap to grant SMS permission'
+              : smsAvailability.message
+          }
           toggle
-          toggleValue={smsParse}
-          onToggle={setSmsParse}
-          enabled={autoCapture}
+          toggleValue={smsParse && smsPermissionGranted}
+          onToggle={handleSmsToggle}
+          enabled={autoCapture && smsAvailability.available}
         />
         <Row
           icon="✉️"
@@ -136,11 +239,21 @@ export function SettingsScreen({ navigation }: any) {
         <Row
           icon="📱"
           label="UPI notifications"
-          hint="GPay, PhonePe, Paytm"
+          hint={
+            !upiAvailable
+              ? 'Custom build required'
+              : upiPermissionGranted
+                ? `GPay, PhonePe, Paytm — listening${
+                    upiBufferedCount > 0
+                      ? ` · ${upiBufferedCount} buffered`
+                      : ''
+                  }`
+                : 'Tap to grant Notification Access'
+          }
           toggle
-          toggleValue={upiNotif}
-          onToggle={setUpiNotif}
-          enabled={autoCapture}
+          toggleValue={upiNotif && upiPermissionGranted}
+          onToggle={handleUpiToggle}
+          enabled={autoCapture && upiAvailable}
         />
         <Row
           icon="📨"

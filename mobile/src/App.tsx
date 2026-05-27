@@ -13,6 +13,7 @@ import { useAuthStore } from './store/auth.store';
 import { Colors, Typography, Spacing } from './styles/theme';
 import { addNotificationListeners } from './services/push';
 import { startSmsAutoCapture } from './services/sms';
+import { startUpiAutoCapture } from './services/upi-listener';
 import {
   // Auth
   LoginScreen,
@@ -208,6 +209,26 @@ export default function App() {
     if (!isAuthenticated) return;
     const stop = startSmsAutoCapture();
     return stop;
+  }, [isAuthenticated]);
+
+  // UPI notification auto-capture (Android prebuild only — no-op in Expo Go
+  // and on iOS). Drains anything the OS-managed listener captured while the
+  // JS layer was dead, then subscribes to live events.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let stop: (() => void) | undefined;
+    let cancelled = false;
+    startUpiAutoCapture().then((s) => {
+      if (cancelled) {
+        s();
+      } else {
+        stop = s;
+      }
+    });
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
   }, [isAuthenticated]);
 
   if (isLoading) {
