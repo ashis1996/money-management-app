@@ -188,7 +188,7 @@ export class SubscriptionService {
       const existing = await this.prisma.subscription.findFirst({
         where: {
           userId,
-          merchantName: { contains: sub.merchant, mode: 'insensitive' },
+          merchantName: { contains: sub.merchant, mode: 'insensitive' as const },
           deletedAt: null,
         },
       });

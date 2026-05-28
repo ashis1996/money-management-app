@@ -17,9 +17,8 @@ describe('NotificationService', () => {
     data: null,
     channel: 'IN_APP',
     priority: 'NORMAL',
-    read: false,
+    isRead: false,
     readAt: null,
-    sent: false,
     sentAt: null,
     createdAt: new Date(),
   };
@@ -73,12 +72,12 @@ describe('NotificationService', () => {
 
       expect(result).toBeDefined();
       expect(result.type).toBe('TRANSACTION');
-      expect(result.sent).toBe(false);
+      expect(result.sentAt).toBeNull();
     });
 
     it('should send push notification when sendPush is true', async () => {
       mockPrismaService.notification.create.mockResolvedValue(mockNotification);
-      mockPrismaService.notification.update.mockResolvedValue({ ...mockNotification, sent: true });
+      mockPrismaService.notification.update.mockResolvedValue({ ...mockNotification, sentAt: new Date() });
 
       await service.create('user-1', {
         type: 'TRANSACTION',
@@ -134,7 +133,7 @@ describe('NotificationService', () => {
       await service.findAll('user-1', true);
 
       expect(mockPrismaService.notification.findMany).toHaveBeenCalledWith({
-        where: { userId: 'user-1', read: false },
+        where: { userId: 'user-1', deletedAt: null, isRead: false },
         orderBy: { createdAt: 'desc' },
         take: 50,
       });
@@ -155,15 +154,15 @@ describe('NotificationService', () => {
   describe('markAsRead', () => {
     it('should mark notification as read', async () => {
       mockPrismaService.notification.findFirst.mockResolvedValue(mockNotification);
-      mockPrismaService.notification.update.mockResolvedValue({ ...mockNotification, read: true });
+      mockPrismaService.notification.update.mockResolvedValue({ ...mockNotification, isRead: true });
 
       const result = await service.markAsRead('user-1', 'notif-1');
 
-      expect(result.read).toBe(true);
+      expect(result.isRead).toBe(true);
       expect(mockPrismaService.notification.update).toHaveBeenCalledWith({
         where: { id: 'notif-1' },
         data: {
-          read: true,
+          isRead: true,
           readAt: expect.any(Date),
         },
       });
@@ -186,9 +185,9 @@ describe('NotificationService', () => {
 
       expect(result.message).toBe('All notifications marked as read');
       expect(mockPrismaService.notification.updateMany).toHaveBeenCalledWith({
-        where: { userId: 'user-1', read: false },
+        where: { userId: 'user-1', isRead: false },
         data: {
-          read: true,
+          isRead: true,
           readAt: expect.any(Date),
         },
       });
@@ -222,7 +221,7 @@ describe('NotificationService', () => {
 
       expect(result.count).toBe(5);
       expect(mockPrismaService.notification.count).toHaveBeenCalledWith({
-        where: { userId: 'user-1', read: false },
+        where: { userId: 'user-1', isRead: false },
       });
     });
   });

@@ -15,6 +15,7 @@ import {
   CATEGORY_MAPPINGS,
   BANK_SENDER_MAPPING,
 } from '@money-management/shared/constants';
+import { SmsLog, Transaction } from '@prisma/client';
 
 @Injectable()
 export class SmsService {

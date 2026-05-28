@@ -248,12 +248,12 @@ describe('TransactionService', () => {
 
     it('should handle null categories', async () => {
       mockPrismaService.transaction.groupBy.mockResolvedValue([
-        { category: null, _sum: { amount: 1000 }, _count: { id: 2 } },
+        { categoryId: null, _sum: { amount: 1000 }, _count: { id: 2 } },
       ]);
 
       const result = await service.getCategories('user-1');
 
-      expect(result[0].category).toBe('Uncategorized');
+      expect(result[0].categoryId).toBe('Uncategorized');
     });
   });
 

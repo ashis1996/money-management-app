@@ -30,12 +30,11 @@
     "dev": "tsc --watch",
     "lint": "eslint src/**/*.ts"
   },
-  "peerDependencies": {
-    "class-validator": "*"
+  "dependencies": {
+    "class-validator": "^0.14.4"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
-    "class-validator": "^0.14.4",
     "typescript": "^5.3.3"
   }
 }

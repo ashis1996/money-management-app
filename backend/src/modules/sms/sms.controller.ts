@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { SmsService } from './sms.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { User } from '../../common/decorators/user.decorator';
-import { SmsIngestDto } from '@money-management/shared/dto';
+import { SmsIngestDto, SmsParseResponseDto } from '@money-management/shared/dto';
 
 @ApiTags('sms')
 @Controller('sms')
@@ -28,8 +28,8 @@ export class SmsController {
     return {
       success: true,
       total: results.length,
-      processed: results.filter((r) => r.success).length,
-      transactionsCreated: results.filter((r) => r.transactionCreated).length,
+      processed: results.filter((r: SmsParseResponseDto) => r.success).length,
+      transactionsCreated: results.filter((r: SmsParseResponseDto) => r.transactionCreated).length,
       results,
     };
   }
