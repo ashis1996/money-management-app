@@ -287,6 +287,11 @@ model Transaction {
   category     Category?     @relation("TransactionCategory", fields: [categoryId], references: [id], onDelete: SetNull)
   subcategory  Category?     @relation("TransactionSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
   subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+  /// Inverse of SmsLog.transaction. Optional — many transactions are
+  /// MANUAL or imported and never had a parent SMS. The unique constraint
+  /// lives on SmsLog.transactionId so this side stays a plain reverse
+  /// relation; Prisma maps it as Transaction.smsLog?.
+  smsLog       SmsLog?
 
   @@index([userId, transactionDate(sort: Desc)])
   @@index([userId, categoryId])
@@ -449,10 +454,16 @@ model SmsLog {
   receivedAt    DateTime
   isProcessed   Boolean   @default(false)
   parsedData    Json?
+  /// FK back to the Transaction this SMS produced (or null if the SMS
+  /// didn't trigger a transaction — e.g. OTP, balance alert). The
+  /// reverse side lives on Transaction via the `smsLog` field added in
+  /// the same migration; the unique index above guarantees one SMS
+  /// maps to at most one Transaction.
   transactionId String?     @unique
   createdAt     DateTime    @default(now())
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([sender])

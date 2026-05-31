@@ -1,0 +1,13 @@
+node_modules/
+**/node_modules/
+**/dist/
+**/build/
+**/coverage/
+**/coverage-e2e/
+**/.next/
+mobile/.expo/
+mobile/android/
+mobile/ios/
+backend/node_modules/.prisma/
+package-lock.json
+*.lock

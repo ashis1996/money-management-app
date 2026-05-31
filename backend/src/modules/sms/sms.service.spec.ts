@@ -256,7 +256,7 @@ describe('SmsService', () => {
         new Date(),
       );
 
-      expect(result.amount).toBe(1234.50);
+      expect(result.amount).toBe(1234.5);
       expect(result.confidence).toBeGreaterThan(0);
     });
 
@@ -301,11 +301,7 @@ describe('SmsService', () => {
     });
 
     it('should categorize FOOD_DINING transactions', async () => {
-      const result = await service.parseSms(
-        'Debited INR 200 at Pizza Hut.',
-        'SBIBNK',
-        new Date(),
-      );
+      const result = await service.parseSms('Debited INR 200 at Pizza Hut.', 'SBIBNK', new Date());
 
       expect(result.category).toBe('FOOD_DINING');
     });
@@ -357,7 +353,7 @@ describe('SmsService', () => {
         new Date(),
       );
 
-      expect(result.balance).toBe(9500.50);
+      expect(result.balance).toBe(9500.5);
     });
 
     it('should identify bank from sender', async () => {
@@ -416,9 +412,13 @@ describe('SmsService', () => {
         skip: 0,
         take: 10,
         orderBy: { receivedAt: 'desc' },
+        // The linked Transaction is selected so the SMS history view
+        // can render amount + category without an N+1 query. Field
+        // names match the Prisma column (categoryId, not the legacy
+        // shorthand `category`).
         include: {
           transaction: {
-            select: { id: true, amount: true, category: true },
+            select: { id: true, amount: true, categoryId: true },
           },
         },
       });

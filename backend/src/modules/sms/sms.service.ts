@@ -29,7 +29,10 @@ export class SmsService {
     private configService: ConfigService,
     private aiProxy: AiProxyService,
   ) {
-    this.aiServiceUrl = this.configService.get<string>('AI_SERVICE_URL', 'http://localhost:8000/api/v1');
+    this.aiServiceUrl = this.configService.get<string>(
+      'AI_SERVICE_URL',
+      'http://localhost:8000/api/v1',
+    );
     // Allow ops to disable the AI parser via env without redeploy.
     this.useAiParser = this.configService.get<string>('SMS_USE_AI_PARSER', 'true') !== 'false';
   }
@@ -45,12 +48,7 @@ export class SmsService {
    * Timestamp is normalized to whole seconds so device-clock jitter on
    * retry doesn't break the match.
    */
-  private computeDedupHash(
-    userId: string,
-    sender: string,
-    body: string,
-    receivedAt: Date,
-  ): string {
+  private computeDedupHash(userId: string, sender: string, body: string, receivedAt: Date): string {
     const stableTimestamp = Math.floor(receivedAt.getTime() / 1000);
     return createHash('sha256')
       .update(`${userId}|${sender}|${body}|${stableTimestamp}`)
@@ -361,6 +359,15 @@ export class SmsService {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { receivedAt: 'desc' },
+        // Include the linked transaction (when one was created) so the
+        // SMS history view can show amount + category without a second
+        // round-trip per row. The relation is declared in schema.prisma;
+        // see migration 20260531000003.
+        include: {
+          transaction: {
+            select: { id: true, amount: true, categoryId: true },
+          },
+        },
       }),
     ]);
 

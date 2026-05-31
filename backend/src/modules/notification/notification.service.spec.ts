@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationService } from './notification.service';
 import { PrismaService } from '../../config/prisma.service';
 import { RabbitMQService } from '../../config/rabbitmq.service';
+import { PushService } from '../push/push.service';
 
 describe('NotificationService', () => {
   let service: NotificationService;
@@ -13,6 +14,11 @@ describe('NotificationService', () => {
     userId: 'user-1',
     type: 'TRANSACTION',
     title: 'Money Debited',
+    // The Prisma column is `message` (the DTO's `body` is mapped to it
+    // by the service). The push-notification path reads
+    // notification.message, so the mock has to have it for the
+    // publishNotificationRequest assertion to see a real string.
+    message: '₹500 at Amazon',
     body: '₹500 at Amazon',
     data: null,
     channel: 'IN_APP',
@@ -43,12 +49,21 @@ describe('NotificationService', () => {
     publishNotificationRequest: jest.fn().mockResolvedValue(undefined),
   };
 
+  // The push surface area NotificationService actually uses is
+  // `pushService.sendToUser`. Stubbing the wrong method made every
+  // sendPushNotification call throw inside its try/catch, which masked
+  // the publishNotificationRequest assertion downstream of it.
+  const mockPushService = {
+    sendToUser: jest.fn().mockResolvedValue({ sent: 0, failed: 0 }),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         NotificationService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: RabbitMQService, useValue: mockRabbitMQService },
+        { provide: PushService, useValue: mockPushService },
       ],
     }).compile();
 
@@ -77,7 +92,10 @@ describe('NotificationService', () => {
 
     it('should send push notification when sendPush is true', async () => {
       mockPrismaService.notification.create.mockResolvedValue(mockNotification);
-      mockPrismaService.notification.update.mockResolvedValue({ ...mockNotification, sentAt: new Date() });
+      mockPrismaService.notification.update.mockResolvedValue({
+        ...mockNotification,
+        sentAt: new Date(),
+      });
 
       await service.create('user-1', {
         type: 'TRANSACTION',
@@ -121,7 +139,9 @@ describe('NotificationService', () => {
 
       expect(result).toHaveLength(1);
       expect(mockPrismaService.notification.findMany).toHaveBeenCalledWith({
-        where: { userId: 'user-1' },
+        // Soft-delete is enforced at the service level; the call always
+        // includes deletedAt: null so tombstoned rows can't leak.
+        where: { userId: 'user-1', deletedAt: null },
         orderBy: { createdAt: 'desc' },
         take: 50,
       });
@@ -154,7 +174,10 @@ describe('NotificationService', () => {
   describe('markAsRead', () => {
     it('should mark notification as read', async () => {
       mockPrismaService.notification.findFirst.mockResolvedValue(mockNotification);
-      mockPrismaService.notification.update.mockResolvedValue({ ...mockNotification, isRead: true });
+      mockPrismaService.notification.update.mockResolvedValue({
+        ...mockNotification,
+        isRead: true,
+      });
 
       const result = await service.markAsRead('user-1', 'notif-1');
 
@@ -304,7 +327,8 @@ describe('NotificationService', () => {
         data: expect.objectContaining({
           type: 'TRANSACTION',
           title: 'Money Debited',
-          body: '-₹500 at Amazon',
+          // Persisted column name is `message`, not the DTO's `body`.
+          message: '-₹500 at Amazon',
         }),
       });
     });
@@ -323,7 +347,9 @@ describe('NotificationService', () => {
       expect(mockPrismaService.notification.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           title: 'Money Credited',
-          body: '₹5000 ',
+          // No merchant → no trailing " at <merchant>" segment in the
+          // template, so the value is just `₹5000`.
+          message: '₹5000',
         }),
       });
     });

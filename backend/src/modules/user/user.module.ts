@@ -7,6 +7,7 @@ import { UserService } from './user.service';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from '../../config/jwt.config';
+import { JwtRefreshStrategy } from '../../config/jwt-refresh.strategy';
 import { LocalStrategy } from '../../config/local.strategy';
 import { requireSecret } from '../../config/secret-validation';
 
@@ -28,7 +29,10 @@ import { requireSecret } from '../../config/secret-validation';
     }),
   ],
   controllers: [UserController, AuthController],
-  providers: [UserService, AuthService, JwtStrategy, LocalStrategy],
+  // JwtRefreshStrategy registers the 'jwt-refresh' Passport strategy that
+  // RefreshTokenGuard depends on. Without this provider, every call to
+  // POST /auth/refresh returned 401 before the route handler ran.
+  providers: [UserService, AuthService, JwtStrategy, JwtRefreshStrategy, LocalStrategy],
   exports: [UserService, AuthService],
 })
 export class UserModule {}

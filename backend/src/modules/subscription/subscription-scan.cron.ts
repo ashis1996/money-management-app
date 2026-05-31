@@ -60,6 +60,7 @@ export class SubscriptionScanCron {
     // middleware for this cron path — paged users only need the id.
     // findMany with our middleware filters deletedAt: null automatically,
     // which is what we want.
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       const users = await this.prisma.user.findMany({
         where: { isActive: true },
@@ -77,9 +78,7 @@ export class SubscriptionScanCron {
           processed += 1;
           detected += detectedForUser;
         } catch (err: any) {
-          this.logger.warn(
-            `Subscription scan failed for user=${u.id}: ${err?.message ?? err}`,
-          );
+          this.logger.warn(`Subscription scan failed for user=${u.id}: ${err?.message ?? err}`);
         }
       }
 
