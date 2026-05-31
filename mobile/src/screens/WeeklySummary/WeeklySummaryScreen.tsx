@@ -4,13 +4,32 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   Share,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
-import { Card, Badge, Button, ProgressBar, Header, EmptyState } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import {
+  Sparkles,
+  Trophy,
+  AlertTriangle,
+  TrendingUp,
+  TrendingDown,
+  Lightbulb,
+  Share2,
+  Flame,
+} from 'lucide-react-native';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Header,
+  ProgressBar,
+  Section,
+} from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
 import { useCurrentWeeklySummary, useGenerateWeeklySummary } from '../../hooks';
+import { formatCurrency } from '../../utils';
 
 interface WeekData {
   weekStart: string;
@@ -19,25 +38,17 @@ interface WeekData {
   totalIncome: number;
   netSavings: number;
   savingsRate: number;
-  // vs prev week
   spendChange: number;
   savingsChange: number;
-  // top categories
-  topCategories: { category: string; icon: string; amount: number; trend: number }[];
-  // top merchants
-  topMerchants: { name: string; amount: number; transactions: number }[];
-  // daily breakdown
-  daily: { day: string; amount: number }[];
-  // wins & insights
-  wins: { icon: string; title: string; description: string }[];
-  improvements: { icon: string; title: string; description: string; amount?: number }[];
-  unusual: { merchant: string; amount: number; reason: string }[];
-  // AI summary
+  topCategories: Array<{ category: string; amount: number; trend: number }>;
+  topMerchants: Array<{ name: string; amount: number; transactions: number }>;
+  daily: Array<{ day: string; amount: number }>;
+  wins: Array<{ title: string; description: string }>;
+  improvements: Array<{ title: string; description: string; amount?: number }>;
+  unusual: Array<{ merchant: string; amount: number; reason: string }>;
   aiSummary: string;
-  recommendations: { icon: string; text: string; impact: number }[];
-  // streak
+  recommendations: Array<{ text: string; impact: number }>;
   streak: { days: number; type: string };
-  // healthScore change
   healthScore: { current: number; change: number };
 }
 
@@ -70,84 +81,36 @@ const EMPTY_WEEK: WeekData = {
   healthScore: { current: 0, change: 0 },
 };
 
-const CATEGORY_ICON: Record<string, string> = {
-  'Food & Dining': '🍔',
-  Food: '🍔',
-  Shopping: '🛍️',
-  Transport: '🚗',
-  Bills: '⚡',
-  Entertainment: '🎬',
-  Health: '💊',
-  Travel: '✈️',
-  Subscription: '🔄',
-  Income: '💰',
-};
-
-/**
- * Map the backend WeeklySummary record + behaviorInsights into the UI shape.
- */
 function backendToWeekData(summary: any): WeekData {
   if (!summary) return EMPTY_WEEK;
-
-  const insights = summary.behaviorInsights ?? {};
-  const aiStats = insights.aiStats ?? {};
-  const wins = insights.winsAndImprovements?.wins ?? [];
-  const improvements = insights.winsAndImprovements?.improvements ?? [];
-  const prevWeek = aiStats?.previousWeek ?? {};
-
-  const topCategories = (summary.topCategories ?? []).slice(0, 5).map((c: any) => ({
-    category: c.name || c.categoryId || 'Other',
-    icon: CATEGORY_ICON[c.name] ?? '📦',
-    amount: Number(c.amount || 0),
-    trend: 0,
-  }));
-
-  const topMerchants = (summary.topMerchants ?? []).slice(0, 3).map((m: any) => ({
-    name: m.name || m.merchant || 'Unknown',
-    amount: Number(m.amount || 0),
-    transactions: Number(m.count || 0),
-  }));
-
-  const unusual = (summary.unusualSpending?.items ?? summary.unusualSpending ?? []).map(
-    (u: any) => ({
-      merchant: u.merchant || 'Unknown',
-      amount: Number(u.amount || 0),
-      reason: u.reason || 'Unusually large',
-    }),
-  );
-
+  const stats = summary.stats || summary;
   return {
-    weekStart: summary.weekStartDate || new Date().toISOString(),
-    weekEnd: summary.weekEndDate || new Date().toISOString(),
-    totalSpent: Number(summary.totalSpent || 0),
-    totalIncome: Number(summary.totalIncome || 0),
-    netSavings: Number(summary.savingsAmount || 0),
-    savingsRate: Number(summary.savingsRate || 0) * 100,
-    spendChange: Number(prevWeek.spentDeltaPercent ?? 0),
-    savingsChange: Number(prevWeek.incomeDeltaPercent ?? 0),
-    topCategories,
-    topMerchants,
-    daily: EMPTY_WEEK.daily,
-    wins: wins.map((w: string) => ({
-      icon: '🏆',
-      title: w,
-      description: '',
-    })),
-    improvements: improvements.map((m: string) => ({
-      icon: '⚠️',
-      title: m,
-      description: '',
-    })),
-    unusual,
-    aiSummary: summary.aiSummary || '',
-    recommendations: (summary.recommendations ?? []).map((r: any) => ({
-      icon: '💡',
-      text: typeof r === 'string' ? r : r.text || r.title || '',
-      impact: Number(r.impact || r.potentialSavings || 0),
-    })),
-    streak: { days: 0, type: 'Tracking' },
-    healthScore: { current: 0, change: 0 },
+    weekStart: summary.weekStart || summary.weekStartDate || new Date().toISOString(),
+    weekEnd: summary.weekEnd || summary.weekEndDate || new Date().toISOString(),
+    totalSpent: Number(stats.totalSpent ?? 0),
+    totalIncome: Number(stats.totalIncome ?? 0),
+    netSavings: Number(stats.netSavings ?? 0),
+    savingsRate: Number(stats.savingsRate ?? 0),
+    spendChange: Number(stats.spendChange ?? 0),
+    savingsChange: Number(stats.savingsChange ?? 0),
+    topCategories: stats.topCategories ?? summary.topCategories ?? [],
+    topMerchants: stats.topMerchants ?? summary.topMerchants ?? [],
+    daily: stats.daily ?? EMPTY_WEEK.daily,
+    wins: summary.wins ?? [],
+    improvements: summary.improvements ?? [],
+    unusual: summary.unusual ?? [],
+    aiSummary: summary.aiSummary ?? summary.summary ?? '',
+    recommendations: summary.recommendations ?? [],
+    streak: summary.streak ?? EMPTY_WEEK.streak,
+    healthScore: summary.healthScore ?? EMPTY_WEEK.healthScore,
   };
+}
+
+function formatRange(start: string, end: string): string {
+  const s = new Date(start);
+  const e = new Date(end);
+  const f = (d: Date) => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  return `${f(s)} – ${f(e)}`;
 }
 
 export function WeeklySummaryScreen({ navigation }: any) {
@@ -163,15 +126,17 @@ export function WeeklySummaryScreen({ navigation }: any) {
     try {
       const winsTitle = week.wins[0]?.title ?? '';
       await Share.share({
-        message: `My week of ${dateRange}:\n💰 Saved ₹${week.netSavings.toLocaleString()} (${week.savingsRate.toFixed(1)}%)\n📊 Spent ₹${week.totalSpent.toLocaleString()}\n${winsTitle ? winsTitle + ' 🎉\n' : ''}\nTracked with MoneyMind`,
+        message: `My week of ${dateRange}:\nSaved ${formatCurrency(week.netSavings)} (${week.savingsRate.toFixed(1)}%)\nSpent ${formatCurrency(week.totalSpent)}\n${winsTitle ? winsTitle + '\n' : ''}\nTracked with MoneyMind`,
       });
-    } catch {}
+    } catch {
+      /* user cancelled */
+    }
   };
 
   if (summaryQuery.isLoading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color={Colors.accentAi} />
       </View>
     );
   }
@@ -183,7 +148,7 @@ export function WeeklySummaryScreen({ navigation }: any) {
         <EmptyState
           icon="📊"
           title="No summary yet"
-          message="Generate your first weekly summary to see how you're doing"
+          message="Generate your first weekly summary to see how you\u2019re doing."
           actionLabel={generateSummary.isPending ? 'Generating…' : 'Generate now'}
           onAction={() => generateSummary.mutate(undefined)}
         />
@@ -197,292 +162,241 @@ export function WeeklySummaryScreen({ navigation }: any) {
         title="Weekly Summary"
         subtitle={dateRange}
         onBack={() => navigation.goBack()}
-        rightIcon="📤"
-        onRightPress={handleShare}
+        rightContent={
+          <TouchableOpacity
+            onPress={handleShare}
+            accessibilityRole="button"
+            accessibilityLabel="Share"
+            hitSlop={8}
+            style={styles.shareBtn}
+          >
+            <Share2 size={16} color={Colors.textPrimary} strokeWidth={1.75} />
+          </TouchableOpacity>
+        }
       />
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* AI Summary hero */}
-        <Card style={styles.heroCard}>
-          <View style={styles.heroHeader}>
-            <Text style={styles.heroIcon}>✨</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.heroLabel}>AI Summary</Text>
-              <Text style={styles.heroDate}>Week of {dateRange}</Text>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* AI summary hero */}
+        {!!week.aiSummary && (
+          <Card variant="ai" padding="xl">
+            <View style={styles.aiSummaryHeader}>
+              <View style={styles.aiSummaryIcon}>
+                <Sparkles size={16} color={Colors.accentAi} strokeWidth={1.75} />
+              </View>
+              <Text style={styles.aiSummaryHeaderText}>AI summary</Text>
+            </View>
+            <Text style={styles.aiSummaryBody}>{week.aiSummary}</Text>
+          </Card>
+        )}
+
+        {/* Hero stats */}
+        <Card variant="hero" padding="xl" style={{ marginTop: Spacing.lg }}>
+          <View style={styles.heroRow}>
+            <View style={styles.heroCol}>
+              <Text style={styles.heroLabel}>SAVED</Text>
+              <Text
+                style={[
+                  styles.heroValue,
+                  {
+                    color: week.netSavings >= 0 ? Colors.accentSuccess : Colors.accentError,
+                  },
+                ]}
+              >
+                {formatCurrency(week.netSavings, { compact: true })}
+              </Text>
+              <Text style={styles.heroDelta}>
+                {week.savingsChange >= 0 ? '+' : ''}
+                {week.savingsChange.toFixed(0)}% vs last week
+              </Text>
+            </View>
+            <View style={styles.heroDivider} />
+            <View style={styles.heroCol}>
+              <Text style={styles.heroLabel}>SPENT</Text>
+              <Text style={styles.heroValue}>
+                {formatCurrency(week.totalSpent, { compact: true })}
+              </Text>
+              <Text style={styles.heroDelta}>
+                {week.spendChange >= 0 ? '+' : ''}
+                {week.spendChange.toFixed(0)}% vs last week
+              </Text>
             </View>
           </View>
-          <Text style={styles.heroSummary}>{week.aiSummary}</Text>
-        </Card>
 
-        {/* Big numbers */}
-        <View style={styles.bigNumbers}>
-          <NumberCard
-            label="Saved"
-            value={week.netSavings}
-            change={week.savingsChange}
-            color={Colors.success}
-            invertSign={false}
-          />
-          <NumberCard
-            label="Spent"
-            value={week.totalSpent}
-            change={week.spendChange}
-            color={Colors.error}
-            invertSign
-          />
-        </View>
-
-        {/* Savings rate progress */}
-        <Card style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>💪 Savings Rate</Text>
-            <Text style={styles.savingsRate}>{week.savingsRate}%</Text>
+          <View style={styles.heroRateRow}>
+            <Text style={styles.heroRateLabel}>SAVINGS RATE</Text>
+            <Text style={styles.heroRateValue}>{week.savingsRate.toFixed(1)}%</Text>
           </View>
-          <ProgressBar progress={week.savingsRate} color={Colors.success} height={10} />
-          <Text style={styles.sectionHint}>Target: 20%+ • You're crushing it!</Text>
+          <ProgressBar progress={week.savingsRate} color={Colors.accentSuccess} />
         </Card>
 
-        {/* Daily chart */}
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>📊 Daily Spending</Text>
-          <View style={styles.chart}>
-            {week.daily.map((d) => {
-              const heightPct = (d.amount / maxDaily) * 100;
-              return (
-                <View key={d.day} style={styles.chartBar}>
-                  <Text style={styles.chartAmount}>₹{(d.amount / 1000).toFixed(1)}k</Text>
-                  <View style={styles.chartTrack}>
+        {/* Daily breakdown */}
+        <Section title="Daily spend" style={{ marginTop: Spacing.lg }}>
+          <Card padding="base">
+            <View style={styles.dailyChart}>
+              {week.daily.map((d) => {
+                const h = Math.max(4, (d.amount / maxDaily) * 80);
+                return (
+                  <View key={d.day} style={styles.dailyCol}>
                     <View
-                      style={[
-                        styles.chartFill,
-                        {
-                          height: `${heightPct}%`,
-                          backgroundColor:
-                            d.amount < 200
-                              ? Colors.success
-                              : d.amount > 2000
-                                ? Colors.warning
-                                : Colors.primary,
-                        },
-                      ]}
+                      style={{
+                        width: '60%',
+                        height: h,
+                        borderRadius: 4,
+                        backgroundColor:
+                          d.amount > 0 ? Colors.accentPrimary : Colors.surfaceContainerHigh,
+                      }}
                     />
+                    <Text style={styles.dailyDay}>{d.day}</Text>
                   </View>
-                  <Text style={styles.chartLabel}>{d.day}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </Card>
+                );
+              })}
+            </View>
+          </Card>
+        </Section>
+
+        {/* Health score */}
+        {week.healthScore.current > 0 && (
+          <Card padding="base" style={{ marginTop: Spacing.sm }}>
+            <View style={styles.healthRow}>
+              <View style={styles.healthIcon}>
+                <Flame size={18} color={Colors.accentAi} strokeWidth={1.75} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.metaLabel}>HEALTH SCORE</Text>
+                <Text style={styles.metaValue}>
+                  {Math.round(week.healthScore.current)}
+                  <Text style={styles.healthDelta}>
+                    {' '}
+                    ({week.healthScore.change >= 0 ? '+' : ''}
+                    {week.healthScore.change} vs last week)
+                  </Text>
+                </Text>
+              </View>
+              {week.streak.days > 0 && (
+                <Badge text={`${week.streak.days}-day streak`} variant="warning" size="sm" />
+              )}
+            </View>
+          </Card>
+        )}
 
         {/* Wins */}
         {week.wins.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🎉 Wins this week</Text>
-            {week.wins.map((win, idx) => (
-              <Card key={idx} style={styles.winCard}>
-                <View style={styles.winRow}>
-                  <Text style={styles.winIcon}>{win.icon}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.winTitle}>{win.title}</Text>
-                    <Text style={styles.winDescription}>{win.description}</Text>
+          <Section title="Wins this week" style={{ marginTop: Spacing.lg }}>
+            <View>
+              {week.wins.map((w, i) => (
+                <Card key={i} padding="base" style={[styles.winCard, { marginBottom: Spacing.sm }]}>
+                  <View style={styles.winRow}>
+                    <View style={styles.winIcon}>
+                      <Trophy size={18} color={Colors.accentSuccess} strokeWidth={1.75} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.winTitle}>{w.title}</Text>
+                      <Text style={styles.winDescription}>{w.description}</Text>
+                    </View>
                   </View>
-                </View>
-              </Card>
-            ))}
-          </View>
+                </Card>
+              ))}
+            </View>
+          </Section>
         )}
 
         {/* Improvements */}
         {week.improvements.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>📈 Areas to improve</Text>
-            {week.improvements.map((imp, idx) => (
-              <Card key={idx} style={styles.improveCard}>
-                <View style={styles.winRow}>
-                  <Text style={styles.winIcon}>{imp.icon}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.winTitle}>{imp.title}</Text>
-                    <Text style={styles.winDescription}>{imp.description}</Text>
+          <Section title="Areas to improve" style={{ marginTop: Spacing.lg }}>
+            <View>
+              {week.improvements.map((imp, i) => (
+                <Card key={i} padding="base" style={{ marginBottom: Spacing.sm }}>
+                  <View style={styles.improvementRow}>
+                    <View style={styles.improvementIcon}>
+                      <TrendingDown size={18} color={Colors.accentWarning} strokeWidth={1.75} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.winTitle}>{imp.title}</Text>
+                      <Text style={styles.winDescription}>{imp.description}</Text>
+                    </View>
+                    {imp.amount !== undefined && (
+                      <Text style={styles.improvementAmount}>
+                        {formatCurrency(imp.amount, { compact: true })}
+                      </Text>
+                    )}
                   </View>
-                  {imp.amount && <Text style={styles.impAmount}>+₹{imp.amount}</Text>}
-                </View>
-              </Card>
-            ))}
-          </View>
+                </Card>
+              ))}
+            </View>
+          </Section>
         )}
 
         {/* Unusual */}
         {week.unusual.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>⚠️ Unusual transactions</Text>
-            {week.unusual.map((u, idx) => (
-              <Card key={idx} style={styles.unusualCard}>
-                <View style={styles.winRow}>
-                  <Text style={styles.winIcon}>🔍</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.winTitle}>{u.merchant}</Text>
-                    <Text style={styles.winDescription}>{u.reason}</Text>
+          <Section title="Unusual spending" style={{ marginTop: Spacing.lg }}>
+            <Card padding="base">
+              {week.unusual.map((u, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.unusualRow,
+                    i === week.unusual.length - 1 && { borderBottomWidth: 0 },
+                  ]}
+                >
+                  <AlertTriangle size={14} color={Colors.accentError} strokeWidth={2} />
+                  <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+                    <Text style={styles.unusualMerchant} numberOfLines={1}>
+                      {u.merchant}
+                    </Text>
+                    <Text style={styles.unusualReason} numberOfLines={1}>
+                      {u.reason}
+                    </Text>
                   </View>
-                  <Text style={styles.unusualAmount}>₹{u.amount.toLocaleString()}</Text>
+                  <Text style={styles.unusualAmount}>{formatCurrency(u.amount)}</Text>
                 </View>
-              </Card>
-            ))}
-          </View>
+              ))}
+            </Card>
+          </Section>
         )}
 
-        {/* Top Categories */}
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>📁 Top Categories</Text>
-          {week.topCategories.map((cat) => (
-            <View key={cat.category} style={styles.catRow}>
-              <Text style={styles.catIcon}>{cat.icon}</Text>
-              <View style={{ flex: 1 }}>
-                <View style={styles.catTopRow}>
-                  <Text style={styles.catName}>{cat.category}</Text>
-                  <Text style={styles.catAmount}>₹{cat.amount.toLocaleString()}</Text>
-                </View>
-                <View style={styles.catBottomRow}>
-                  <View style={{ flex: 1, marginRight: Spacing.sm }}>
-                    <ProgressBar
-                      progress={(cat.amount / week.totalSpent) * 100}
-                      color={Colors.primary}
-                      height={4}
-                    />
+        {/* AI Recommendations */}
+        {week.recommendations.length > 0 && (
+          <Section
+            title="Recommendations for next week"
+            highlightTitle
+            style={{ marginTop: Spacing.lg }}
+          >
+            <View>
+              {week.recommendations.map((r, i) => (
+                <Card key={i} variant="ai" padding="base" style={{ marginBottom: Spacing.sm }}>
+                  <View style={styles.recRow}>
+                    <View style={styles.recIcon}>
+                      <Lightbulb size={16} color={Colors.accentAi} strokeWidth={1.75} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.recText}>{r.text}</Text>
+                      {!!r.impact && (
+                        <Text style={styles.recImpact}>
+                          Save {formatCurrency(r.impact, { compact: true })}/wk
+                        </Text>
+                      )}
+                    </View>
                   </View>
-                  <Text
-                    style={[
-                      styles.catTrend,
-                      {
-                        color:
-                          cat.trend > 10
-                            ? Colors.error
-                            : cat.trend < -10
-                              ? Colors.success
-                              : Colors.textSecondary,
-                      },
-                    ]}
-                  >
-                    {cat.trend > 0 ? '↑' : cat.trend < 0 ? '↓' : '→'} {Math.abs(cat.trend)}%
-                  </Text>
-                </View>
-              </View>
+                </Card>
+              ))}
             </View>
-          ))}
-        </Card>
+          </Section>
+        )}
 
-        {/* Top Merchants */}
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>🏪 Top Merchants</Text>
-          {week.topMerchants.map((m, idx) => (
-            <View key={m.name} style={styles.merchRow}>
-              <View style={styles.merchRank}>
-                <Text style={styles.merchRankText}>{idx + 1}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.merchName}>{m.name}</Text>
-                <Text style={styles.merchMeta}>{m.transactions} transactions</Text>
-              </View>
-              <Text style={styles.merchAmount}>₹{m.amount.toLocaleString()}</Text>
-            </View>
-          ))}
-        </Card>
-
-        {/* Recommendations */}
-        <Card style={styles.recCard}>
-          <Text style={styles.recTitle}>🎯 Next week's plan</Text>
-          {week.recommendations.map((rec, idx) => (
-            <View key={idx} style={styles.recRow}>
-              <Text style={styles.recIcon}>{rec.icon}</Text>
-              <Text style={styles.recText}>{rec.text}</Text>
-              <Text style={styles.recImpact}>+₹{rec.impact}</Text>
-            </View>
-          ))}
-          <View style={styles.recTotal}>
-            <Text style={styles.recTotalLabel}>Potential weekly savings</Text>
-            <Text style={styles.recTotalValue}>
-              ₹{week.recommendations.reduce((s, r) => s + r.impact, 0)}
-            </Text>
-          </View>
-        </Card>
-
-        {/* Health score change */}
-        <Card style={styles.scoreCard}>
-          <View style={styles.scoreRow}>
-            <View style={styles.scoreInfo}>
-              <Text style={styles.scoreLabel}>Health Score</Text>
-              <Text style={styles.scoreValue}>{week.healthScore.current}</Text>
-              <Text
-                style={[
-                  styles.scoreChange,
-                  {
-                    color: week.healthScore.change >= 0 ? Colors.success : Colors.error,
-                  },
-                ]}
-              >
-                {week.healthScore.change > 0 ? '+' : ''}
-                {week.healthScore.change} this week
-              </Text>
-            </View>
-            <Button
-              title="View Details"
-              onPress={() => navigation.navigate('HealthScore')}
-              variant="outline"
-              size="sm"
-            />
-          </View>
-        </Card>
-
-        {/* Share / Done */}
-        <View style={styles.actions}>
-          <Button title="📤 Share" onPress={handleShare} variant="outline" style={{ flex: 1 }} />
+        <View style={styles.footerActions}>
           <Button
-            title="Got it"
-            onPress={() => navigation.goBack()}
-            variant="primary"
-            style={{ flex: 1, marginLeft: Spacing.sm }}
+            title="Share summary"
+            onPress={handleShare}
+            variant="secondary"
+            fullWidth
+            leadingIcon={<Share2 size={16} color={Colors.textPrimary} strokeWidth={2} />}
           />
         </View>
 
-        <View style={{ height: Spacing['2xl'] }} />
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
     </View>
   );
-}
-
-function NumberCard({
-  label,
-  value,
-  change,
-  color,
-  invertSign,
-}: {
-  label: string;
-  value: number;
-  change: number;
-  color: string;
-  invertSign: boolean;
-}) {
-  // For "Spent", down is good. For "Saved", up is good.
-  const positive = invertSign ? change < 0 : change > 0;
-  return (
-    <Card style={styles.numCard}>
-      <Text style={styles.numLabel}>{label}</Text>
-      <Text style={[styles.numValue, { color }]}>₹{value.toLocaleString()}</Text>
-      <View style={styles.numChange}>
-        <Text style={[styles.numChangeText, { color: positive ? Colors.success : Colors.error }]}>
-          {change > 0 ? '↑' : '↓'} {Math.abs(change)}%
-        </Text>
-        <Text style={styles.numChangeMeta}> vs last week</Text>
-      </View>
-    </Card>
-  );
-}
-
-function formatRange(start: string, end: string): string {
-  const s = new Date(start);
-  const e = new Date(end);
-  const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
-  return `${s.toLocaleDateString('en-IN', opts)} - ${e.toLocaleDateString('en-IN', opts)}`;
 }
 
 const styles = StyleSheet.create({
@@ -490,337 +404,283 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
-  // Hero
-  heroCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-    backgroundColor: Colors.primary,
+  center: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  heroHeader: {
+  shareBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scroll: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+  },
+
+  // AI summary
+  aiSummaryHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: Spacing.sm,
   },
-  heroIcon: {
-    fontSize: 28,
+  aiSummaryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.sm,
+  },
+  aiSummaryHeaderText: {
+    fontSize: Typography.sizes.lg,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.accentAi,
+    letterSpacing: -0.2,
+  },
+  aiSummaryBody: {
+    fontSize: Typography.sizes.base,
+    color: Colors.textPrimary,
+    lineHeight: Typography.sizes.base * 1.5,
+  },
+
+  // Hero
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  heroCol: {
+    flex: 1,
   },
   heroLabel: {
     fontSize: Typography.sizes.xs,
-    color: 'rgba(255,255,255,0.8)',
-    textTransform: 'uppercase',
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 1.2,
+    fontWeight: Typography.weights.medium,
+  },
+  heroValue: {
+    marginTop: 4,
+    fontSize: 32,
+    lineHeight: 36,
     fontWeight: Typography.weights.bold,
-    letterSpacing: 0.5,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.8,
   },
-  heroDate: {
-    fontSize: Typography.sizes.sm,
-    color: 'rgba(255,255,255,0.9)',
-    marginTop: 2,
-  },
-  heroSummary: {
-    fontSize: Typography.sizes.base,
-    color: Colors.white,
-    lineHeight: Typography.sizes.base * 1.6,
-  },
-  // Big numbers
-  bigNumbers: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.lg,
-    gap: Spacing.sm,
-    marginBottom: Spacing.base,
-  },
-  numCard: {
-    flex: 1,
-  },
-  numLabel: {
-    fontSize: Typography.sizes.sm,
+  heroDelta: {
+    marginTop: 4,
+    fontSize: Typography.sizes.xs,
     color: Colors.textSecondary,
+    fontVariant: ['tabular-nums'] as any,
   },
-  numValue: {
-    fontSize: Typography.sizes.xl,
-    fontWeight: Typography.weights.bold,
-    marginVertical: 4,
+  heroDivider: {
+    width: 1,
+    height: 60,
+    backgroundColor: Colors.borderDefault,
+    marginHorizontal: Spacing.base,
   },
-  numChange: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  numChangeText: {
-    fontSize: Typography.sizes.xs,
-    fontWeight: Typography.weights.semiBold,
-  },
-  numChangeMeta: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textTertiary,
-  },
-  // Section
-  section: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-  },
-  sectionHeader: {
+  heroRateRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.xs,
   },
-  sectionTitle: {
+  heroRateLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 1.2,
+    fontWeight: Typography.weights.medium,
+  },
+  heroRateValue: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.accentSuccess,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+  },
+
+  // Daily
+  dailyChart: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    height: 100,
+  },
+  dailyCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  dailyDay: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.textSecondary,
+    marginTop: Spacing.xs,
+    letterSpacing: 0.6,
+  },
+
+  // Health
+  healthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  healthIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  metaLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    fontWeight: Typography.weights.medium,
+  },
+  metaValue: {
+    marginTop: 2,
     fontSize: Typography.sizes.lg,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
-    marginBottom: Spacing.sm,
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.4,
   },
-  sectionHint: {
+  healthDelta: {
     fontSize: Typography.sizes.xs,
     color: Colors.textSecondary,
-    marginTop: 4,
+    fontWeight: Typography.weights.regular,
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: 0,
   },
-  savingsRate: {
-    fontSize: Typography.sizes['2xl'],
-    fontWeight: Typography.weights.bold,
-    color: Colors.success,
-  },
-  // Chart
-  chart: {
-    flexDirection: 'row',
-    height: 140,
-    paddingVertical: Spacing.sm,
-    justifyContent: 'space-between',
-    gap: 4,
-  },
-  chartBar: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  chartAmount: {
-    fontSize: 9,
-    color: Colors.textSecondary,
-    marginBottom: 4,
-  },
-  chartTrack: {
-    flex: 1,
-    width: '70%',
-    backgroundColor: Colors.gray100,
-    borderRadius: 4,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  chartFill: {
-    width: '100%',
-    borderRadius: 4,
-  },
-  chartLabel: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  // Wins/Improvements
+
+  // Win
   winCard: {
-    marginBottom: Spacing.sm,
-    backgroundColor: Tints.successBg,
-    borderColor: Tints.successBorder,
-    borderWidth: 1,
-  },
-  improveCard: {
-    marginBottom: Spacing.sm,
-    backgroundColor: Tints.warningBg,
-    borderColor: Tints.warningBorder,
-    borderWidth: 1,
-  },
-  unusualCard: {
-    marginBottom: Spacing.sm,
-    backgroundColor: Tints.errorBg,
-    borderColor: Tints.errorBorder,
-    borderWidth: 1,
+    backgroundColor: 'rgba(16,185,129,0.06)',
+    borderColor: 'rgba(16,185,129,0.30)',
   },
   winRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   winIcon: {
-    fontSize: 28,
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(16,185,129,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(16,185,129,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.sm,
   },
   winTitle: {
     fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
+    fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
   },
   winDescription: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
     marginTop: 2,
-    lineHeight: Typography.sizes.sm * 1.5,
+    lineHeight: Typography.sizes.sm * 1.4,
   },
-  impAmount: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.warning,
-    marginLeft: Spacing.sm,
-  },
-  unusualAmount: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.error,
-    marginLeft: Spacing.sm,
-  },
-  // Categories
-  catRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
-  },
-  catIcon: {
-    fontSize: 22,
-    marginRight: Spacing.sm,
-    width: 28,
-  },
-  catTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  catName: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-  },
-  catAmount: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  catBottomRow: {
+
+  // Improvements
+  improvementRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  catTrend: {
-    fontSize: Typography.sizes.xs,
-    fontWeight: Typography.weights.semiBold,
-    minWidth: 50,
-    textAlign: 'right',
-  },
-  // Merchants
-  merchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
-  },
-  merchRank: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.primary + '15',
+  improvementIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(251,191,36,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.30)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.sm,
   },
-  merchRankText: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.bold,
-    color: Colors.primary,
-  },
-  merchName: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-  },
-  merchMeta: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  merchAmount: {
+  improvementAmount: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.accentWarning,
+    fontVariant: ['tabular-nums'] as any,
+    marginLeft: Spacing.sm,
   },
-  // Recommendations
-  recCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-    backgroundColor: Tints.primaryBg,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight,
-  },
-  recTitle: {
-    fontSize: Typography.sizes.lg,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.sm,
-  },
-  recRow: {
+
+  // Unusual
+  unusualRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderDefault,
   },
-  recIcon: {
-    fontSize: 22,
-    marginRight: Spacing.sm,
-    width: 28,
-  },
-  recText: {
-    flex: 1,
-    fontSize: Typography.sizes.sm,
-    color: Colors.textPrimary,
-  },
-  recImpact: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.bold,
-    color: Colors.success,
-  },
-  recTotal: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: Spacing.sm,
-    marginTop: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.primaryLight,
-  },
-  recTotalLabel: {
+  unusualMerchant: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.semiBold,
     color: Colors.textPrimary,
   },
-  recTotalValue: {
-    fontSize: Typography.sizes.lg,
-    fontWeight: Typography.weights.bold,
-    color: Colors.success,
-  },
-  // Score
-  scoreCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-  },
-  scoreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  scoreInfo: {
-    flex: 1,
-  },
-  scoreLabel: {
-    fontSize: Typography.sizes.sm,
+  unusualReason: {
+    marginTop: 2,
+    fontSize: Typography.sizes.xs,
     color: Colors.textSecondary,
   },
-  scoreValue: {
-    fontSize: Typography.sizes['2xl'],
+  unusualAmount: {
+    fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-    marginVertical: 2,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.accentError,
+    fontVariant: ['tabular-nums'] as any,
   },
-  scoreChange: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-  },
-  // Actions
-  actions: {
+
+  // Recommendations
+  recRow: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.lg,
-    marginVertical: Spacing.base,
+    alignItems: 'flex-start',
+  },
+  recIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  recText: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.textPrimary,
+    lineHeight: Typography.sizes.sm * 1.5,
+  },
+  recImpact: {
+    marginTop: 4,
+    fontSize: Typography.sizes.xs,
+    color: Colors.accentSuccess,
+    fontWeight: Typography.weights.bold,
+    fontVariant: ['tabular-nums'] as any,
+  },
+
+  footerActions: {
+    marginTop: Spacing.xl,
   },
 });
