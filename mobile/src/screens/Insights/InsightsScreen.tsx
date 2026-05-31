@@ -5,110 +5,87 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
   ActivityIndicator,
 } from 'react-native';
-import { Card, Badge, ProgressBar, EmptyState } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
-import { useSpendingInsights, useBehaviorAnalysis, useCategoryBreakdown } from '../../hooks';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import {
+  Sparkles,
+  TrendingUp,
+  TrendingDown,
+  Moon,
+  PartyPopper,
+  Zap,
+  Tag,
+  type LucideIcon,
+} from 'lucide-react-native';
+import { Badge, Card, ProgressBar, Section } from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
+import { useSpendingInsights, useBehaviorAnalysis } from '../../hooks';
+import { formatCurrency } from '../../utils';
 
 type Period = 'week' | 'month' | 'quarter' | 'year';
 
 interface CategorySpending {
   category: string;
-  icon: string;
   amount: number;
   percentage: number;
   color: string;
-  trend: 'up' | 'down' | 'stable';
-  changePercent: number;
-}
-
-interface DailySpending {
-  day: string;
-  amount: number;
 }
 
 interface BehavioralPattern {
-  type: 'late_night' | 'weekend' | 'impulse' | 'stress';
+  type: 'late_night' | 'weekend' | 'impulse';
   title: string;
   description: string;
   amount: number;
   percentage: number;
   severity: 'high' | 'medium' | 'low';
-  icon: string;
+  icon: LucideIcon;
 }
 
-const EMPTY_DATA = {
-  totalSpent: 0,
-  totalIncome: 0,
-  savings: 0,
-  savingsRate: 0,
-  prevMonth: { spent: 0, savings: 0 },
-  topMerchants: [] as { name: string; amount: number; count: number }[],
-  categories: [] as CategorySpending[],
-  dailySpending: [
-    { day: 'Mon', amount: 0 },
-    { day: 'Tue', amount: 0 },
-    { day: 'Wed', amount: 0 },
-    { day: 'Thu', amount: 0 },
-    { day: 'Fri', amount: 0 },
-    { day: 'Sat', amount: 0 },
-    { day: 'Sun', amount: 0 },
-  ] as DailySpending[],
-  behavioralPatterns: [] as BehavioralPattern[],
-};
-
-const CATEGORY_COLORS = [
+const CATEGORY_PALETTE = [
   '#EF4444',
-  '#8B5CF6',
-  '#3B82F6',
-  '#F59E0B',
-  '#EC4899',
-  '#10B981',
-  '#6B7280',
-  '#06B6D4',
+  '#A78BFA',
+  Colors.accentPrimary,
+  Colors.accentWarning,
+  '#F472B6',
+  Colors.accentSuccess,
+  Colors.outline,
+  Colors.accentAi,
   '#F97316',
 ];
-const CATEGORY_ICON: Record<string, string> = {
-  'Food & Dining': '🍔',
-  Food: '🍔',
-  Shopping: '🛍️',
-  Transport: '🚗',
-  Bills: '⚡',
-  Entertainment: '🎬',
-  Health: '💊',
-  Other: '📦',
-  Subscription: '🔄',
-};
 
-const CHART_HEIGHT = 160;
+const PERIODS: Array<{ key: Period; label: string }> = [
+  { key: 'week', label: 'Week' },
+  { key: 'month', label: 'Month' },
+  { key: 'quarter', label: 'Quarter' },
+  { key: 'year', label: 'Year' },
+];
 
-export function InsightsScreen({ navigation }: any) {
+export function InsightsScreen({ navigation: _navigation }: any) {
   const [period, setPeriod] = useState<Period>('month');
-
   const insightsQuery = useSpendingInsights(period);
   const behaviorQuery = useBehaviorAnalysis();
-  const categoryQuery = useCategoryBreakdown();
 
   const data = useMemo(() => {
-    const insights = insightsQuery.data;
-    if (!insights) return EMPTY_DATA;
+    const insights: any = insightsQuery.data;
+    const empty = {
+      totalSpent: 0,
+      totalIncome: 0,
+      savings: 0,
+      savingsRate: 0,
+      spentChange: 0,
+      savingsChange: 0,
+      topMerchants: [] as Array<{ name: string; amount: number; count: number }>,
+      categories: [] as CategorySpending[],
+      patterns: [] as BehavioralPattern[],
+    };
+    if (!insights) return empty;
 
-    const spending: any = (insights as any).spending ?? insights;
+    const spending: any = insights.spending ?? insights;
     const totalSpent = Number(spending.totalSpent ?? 0);
     const totalIncome = Number(spending.totalIncome ?? 0);
     const savings = Number(spending.netSavings ?? totalIncome - totalSpent);
     const savingsRate = Number(spending.savingsRate ?? 0);
-
     const cmp: any = spending.comparisonToPrevious ?? {};
-    const spentChangePct = Number(cmp.spentChange ?? 0);
-    const savingsChangePct = Number(cmp.savingsChange ?? 0);
-
-    const prevSpent = spentChangePct !== 0 ? totalSpent / (1 + spentChangePct / 100) : totalSpent;
-    const prevSavings = savingsChangePct !== 0 ? savings / (1 + savingsChangePct / 100) : savings;
 
     const topMerchants = (spending.topMerchants ?? []).map((m: any) => ({
       name: m.merchantName || m.name || 'Unknown',
@@ -119,56 +96,52 @@ export function InsightsScreen({ navigation }: any) {
     const categories: CategorySpending[] = (spending.byCategory ?? []).map(
       (c: any, idx: number) => ({
         category: c.categoryId || c.category || 'Other',
-        icon: CATEGORY_ICON[c.categoryId || c.category] ?? '📦',
         amount: Number(c.amount ?? 0),
         percentage: Number(c.percentage ?? 0),
-        color: CATEGORY_COLORS[idx % CATEGORY_COLORS.length],
-        trend: 'stable',
-        changePercent: Number(c.changeFromPrevious ?? 0),
+        color: CATEGORY_PALETTE[idx % CATEGORY_PALETTE.length],
       }),
     );
 
-    const behavior = behaviorQuery.data;
-    const behavioralPatterns: BehavioralPattern[] = [];
+    const behavior: any = behaviorQuery.data;
+    const patterns: BehavioralPattern[] = [];
     if (behavior) {
-      const lateAmount = Number(
+      const late = Number(
         behavior.lateNightSpending ?? behavior.late_night_spending ?? behavior.lateNightAmount ?? 0,
       );
-      if (lateAmount > 0) {
-        behavioralPatterns.push({
+      if (late > 0)
+        patterns.push({
           type: 'late_night',
-          title: 'Late-Night Spending',
-          description: `You spent ₹${lateAmount.toLocaleString()} after 10 PM. These are often impulse purchases.`,
-          amount: lateAmount,
-          percentage: totalSpent ? (lateAmount / totalSpent) * 100 : 0,
-          severity: lateAmount > totalSpent * 0.05 ? 'high' : 'medium',
-          icon: '🌙',
+          title: 'Late-night spending',
+          description: `${formatCurrency(late)} after 10 PM. Often impulse purchases.`,
+          amount: late,
+          percentage: totalSpent ? (late / totalSpent) * 100 : 0,
+          severity: late > totalSpent * 0.05 ? 'high' : 'medium',
+          icon: Moon,
         });
-      }
-      const weekendAmount = Number(behavior.weekendSpending ?? behavior.weekend_spending ?? 0);
-      if (weekendAmount > 0) {
-        behavioralPatterns.push({
+
+      const weekend = Number(behavior.weekendSpending ?? behavior.weekend_spending ?? 0);
+      if (weekend > 0)
+        patterns.push({
           type: 'weekend',
-          title: 'Weekend Spending',
-          description: `₹${weekendAmount.toLocaleString()} spent on weekends.`,
-          amount: weekendAmount,
-          percentage: totalSpent ? (weekendAmount / totalSpent) * 100 : 0,
+          title: 'Weekend spending',
+          description: `${formatCurrency(weekend)} spent on weekends.`,
+          amount: weekend,
+          percentage: totalSpent ? (weekend / totalSpent) * 100 : 0,
           severity: 'medium',
-          icon: '🎉',
+          icon: PartyPopper,
         });
-      }
-      const impulseAmount = Number(behavior.impulseSpending ?? behavior.impulse_spending ?? 0);
-      if (impulseAmount > 0) {
-        behavioralPatterns.push({
+
+      const impulse = Number(behavior.impulseSpending ?? behavior.impulse_spending ?? 0);
+      if (impulse > 0)
+        patterns.push({
           type: 'impulse',
-          title: 'Impulse Purchases',
-          description: `₹${impulseAmount.toLocaleString()} flagged as impulse buys.`,
-          amount: impulseAmount,
-          percentage: totalSpent ? (impulseAmount / totalSpent) * 100 : 0,
+          title: 'Impulse purchases',
+          description: `${formatCurrency(impulse)} flagged as impulse buys.`,
+          amount: impulse,
+          percentage: totalSpent ? (impulse / totalSpent) * 100 : 0,
           severity: 'high',
-          icon: '🎯',
+          icon: Zap,
         });
-      }
     }
 
     return {
@@ -176,309 +149,254 @@ export function InsightsScreen({ navigation }: any) {
       totalIncome,
       savings,
       savingsRate,
-      prevMonth: { spent: prevSpent, savings: prevSavings },
+      spentChange: Number(cmp.spentChange ?? 0),
+      savingsChange: Number(cmp.savingsChange ?? 0),
       topMerchants,
       categories,
-      dailySpending: EMPTY_DATA.dailySpending,
-      behavioralPatterns,
+      patterns,
     };
   }, [insightsQuery.data, behaviorQuery.data]);
 
-  const maxDaily = useMemo(
-    () => Math.max(1, ...data.dailySpending.map((d) => d.amount)),
-    [data.dailySpending],
-  );
-
-  const spentChange = data.prevMonth.spent
-    ? ((data.totalSpent - data.prevMonth.spent) / data.prevMonth.spent) * 100
-    : 0;
-
-  const savingsChange = data.prevMonth.savings
-    ? ((data.savings - data.prevMonth.savings) / data.prevMonth.savings) * 100
-    : 0;
-
   if (insightsQuery.isLoading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color={Colors.accentAi} />
+        <Text style={styles.loadingText}>Analysing your spending…</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={styles.headerRow}>
           <Text style={styles.title}>Insights</Text>
-          <Text style={styles.subtitle}>Understand your money behavior</Text>
         </View>
 
-        {/* Period Selector */}
-        <View style={styles.periodTabs}>
-          {(['week', 'month', 'quarter', 'year'] as Period[]).map((p) => (
-            <TouchableOpacity
-              key={p}
-              style={[styles.periodTab, period === p && styles.periodTabActive]}
-              onPress={() => setPeriod(p)}
-            >
-              <Text style={[styles.periodTabText, period === p && styles.periodTabTextActive]}>
-                {p[0].toUpperCase() + p.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* Period chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.periodTabs}
+        >
+          {PERIODS.map((p) => {
+            const active = period === p.key;
+            return (
+              <TouchableOpacity
+                key={p.key}
+                onPress={() => setPeriod(p.key)}
+                accessibilityRole="button"
+                accessibilityLabel={p.label}
+                style={[styles.chip, active && styles.chipActive]}
+              >
+                <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>{p.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
-        {/* Summary Cards */}
-        <View style={styles.summaryRow}>
-          <SummaryCard
-            label="Spent"
-            value={data.totalSpent}
-            change={spentChange}
-            color={Colors.error}
-            inverted
-          />
-          <SummaryCard
-            label="Saved"
-            value={data.savings}
-            change={savingsChange}
-            color={Colors.success}
-          />
-        </View>
-
-        {/* Daily Spending Chart */}
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>📊 Daily Spending</Text>
-          <Text style={styles.sectionSubtitle}>Last 7 days</Text>
-          <View style={styles.chart}>
-            {data.dailySpending.map((d, idx) => {
-              const heightRatio = d.amount / maxDaily;
-              const isHighSpend = d.day === 'Sat' || d.day === 'Sun';
-              return (
-                <View key={idx} style={styles.chartBarContainer}>
-                  <Text style={styles.chartAmount}>₹{(d.amount / 1000).toFixed(1)}k</Text>
-                  <View style={styles.chartBarTrack}>
-                    <View
-                      style={[
-                        styles.chartBar,
-                        {
-                          height: `${heightRatio * 100}%`,
-                          backgroundColor: isHighSpend ? Colors.warning : Colors.primary,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <Text style={styles.chartLabel}>{d.day}</Text>
-                </View>
-              );
-            })}
+        {/* AI summary hero */}
+        <Card variant="ai" padding="xl">
+          <View style={styles.aiHeaderRow}>
+            <View style={styles.aiHeaderIcon}>
+              <Sparkles size={16} color={Colors.accentAi} strokeWidth={1.75} />
+            </View>
+            <Text style={styles.aiHeader}>AI summary</Text>
           </View>
-          <View style={styles.chartLegend}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: Colors.warning }]} />
-              <Text style={styles.legendText}>Weekend (40% higher)</Text>
+
+          <View style={styles.heroFigures}>
+            <View style={styles.heroFigure}>
+              <Text style={styles.heroLabel}>SPENT</Text>
+              <Text style={styles.heroValue}>
+                {formatCurrency(data.totalSpent, { compact: true })}
+              </Text>
+              <DeltaPill value={-data.spentChange} invert />
+            </View>
+            <View style={styles.heroDivider} />
+            <View style={styles.heroFigure}>
+              <Text style={styles.heroLabel}>SAVED</Text>
+              <Text style={[styles.heroValue, { color: Colors.accentSuccess }]}>
+                {formatCurrency(data.savings, { compact: true })}
+              </Text>
+              <DeltaPill value={data.savingsChange} />
             </View>
           </View>
+
+          <View style={styles.savingsRateRow}>
+            <Text style={styles.savingsRateLabel}>SAVINGS RATE</Text>
+            <Text style={styles.savingsRateValue}>{Math.round(data.savingsRate)}%</Text>
+          </View>
+          <ProgressBar progress={data.savingsRate} color={Colors.accentSuccess} />
         </Card>
 
-        {/* Behavioral Patterns */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🧠 Behavioral Patterns</Text>
-          <Text style={styles.sectionSubtitle}>How you spend matters</Text>
-          {data.behavioralPatterns.map((pattern) => (
-            <BehavioralCard key={pattern.type} pattern={pattern} />
-          ))}
-        </View>
-
-        {/* Category Breakdown */}
-        <Card style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>📁 Spending by Category</Text>
-          </View>
-
-          {/* Donut visualization */}
-          <View style={styles.categoryViz}>
-            <View style={styles.donutContainer}>
-              {/* Simplified donut: stacked colored bars */}
-              <View style={styles.donut}>
-                {data.categories.map((cat, idx) => (
+        {/* Categories */}
+        {data.categories.length > 0 && (
+          <Section
+            title="By category"
+            subtitle={`${period === 'week' ? 'This week' : period === 'month' ? 'This month' : period === 'quarter' ? 'This quarter' : 'This year'} — top categories driving your spend`}
+            style={{ marginTop: Spacing.lg }}
+          >
+            <Card padding="base">
+              {/* Stacked-bar visualization (no chart lib needed) */}
+              <View style={styles.stackedBar}>
+                {data.categories.slice(0, 6).map((c, i) => (
                   <View
-                    key={cat.category}
-                    style={[
-                      styles.donutSegment,
-                      {
-                        flex: cat.percentage,
-                        backgroundColor: cat.color,
-                      },
-                    ]}
+                    key={c.category + i}
+                    style={{
+                      flex: c.percentage,
+                      backgroundColor: c.color,
+                    }}
                   />
                 ))}
               </View>
-              <Text style={styles.donutTotal}>₹{data.totalSpent.toLocaleString()}</Text>
-              <Text style={styles.donutLabel}>Total spent</Text>
-            </View>
-          </View>
 
-          {/* Category list */}
-          {data.categories.map((cat) => (
-            <CategoryRow key={cat.category} category={cat} />
-          ))}
-        </Card>
-
-        {/* Top Merchants */}
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>🏪 Top Merchants</Text>
-          <Text style={styles.sectionSubtitle}>Where your money goes</Text>
-          {data.topMerchants.map(
-            (m: { name: string; amount: number; count: number }, idx: number) => {
-              const maxAmount = data.topMerchants[0]?.amount ?? 1;
-              return (
-                <View key={m.name} style={styles.merchantRow}>
-                  <View style={styles.merchantRank}>
-                    <Text style={styles.merchantRankText}>{idx + 1}</Text>
+              <View style={{ marginTop: Spacing.base }}>
+                {data.categories.slice(0, 6).map((c) => (
+                  <View key={c.category} style={styles.categoryRow}>
+                    <View style={[styles.categoryDot, { backgroundColor: c.color }]} />
+                    <Text style={styles.categoryName} numberOfLines={1}>
+                      {c.category}
+                    </Text>
+                    <Text style={styles.categoryAmount}>
+                      {formatCurrency(c.amount, { compact: true })}
+                    </Text>
+                    <Text style={styles.categoryPercent}>{Math.round(c.percentage)}%</Text>
                   </View>
-                  <View style={styles.merchantInfo}>
-                    <View style={styles.merchantTop}>
-                      <Text style={styles.merchantName}>{m.name}</Text>
-                      <Text style={styles.merchantAmount}>₹{m.amount.toLocaleString()}</Text>
+                ))}
+              </View>
+            </Card>
+          </Section>
+        )}
+
+        {/* Behavioural patterns */}
+        {data.patterns.length > 0 && (
+          <Section
+            title="Behavioural patterns"
+            subtitle="When and how you tend to spend"
+            highlightTitle
+            style={{ marginTop: Spacing.lg }}
+          >
+            <View>
+              {data.patterns.map((p) => (
+                <PatternCard key={p.type} pattern={p} />
+              ))}
+            </View>
+          </Section>
+        )}
+
+        {/* Top merchants */}
+        {data.topMerchants.length > 0 && (
+          <Section title="Top merchants" style={{ marginTop: Spacing.lg }}>
+            <Card padding="base">
+              {data.topMerchants
+                .slice(0, 5)
+                .map((m: { name: string; amount: number; count: number }, i: number) => (
+                  <View
+                    key={m.name + i}
+                    style={[
+                      styles.merchantRow,
+                      i === Math.min(4, data.topMerchants.length - 1) && { borderBottomWidth: 0 },
+                    ]}
+                  >
+                    <View style={styles.merchantRank}>
+                      <Text style={styles.merchantRankText}>{i + 1}</Text>
                     </View>
-                    <ProgressBar
-                      progress={(m.amount / maxAmount) * 100}
-                      color={Colors.primary}
-                      height={4}
-                      style={{ marginTop: 4 }}
-                    />
-                    <Text style={styles.merchantMeta}>
-                      {m.count} transactions • Avg ₹
-                      {Math.round(m.amount / m.count).toLocaleString()}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.merchantName} numberOfLines={1}>
+                        {m.name}
+                      </Text>
+                      <Text style={styles.merchantCount}>
+                        {m.count} {m.count === 1 ? 'transaction' : 'transactions'}
+                      </Text>
+                    </View>
+                    <Text style={styles.merchantAmount}>
+                      {formatCurrency(m.amount, { compact: true })}
                     </Text>
                   </View>
-                </View>
-              );
-            },
-          )}
-        </Card>
+                ))}
+            </Card>
+          </Section>
+        )}
 
-        {/* Lifestyle Insights */}
-        <Card style={[styles.section, styles.lifestyleCard]}>
-          <Text style={styles.lifestyleTitle}>💡 Lifestyle Insights</Text>
-          <Text style={styles.lifestyleText}>
-            You spend <Text style={styles.lifestyleHighlight}>32% more on food delivery</Text> than
-            similar users in your income bracket.
-          </Text>
-          <Text style={styles.lifestyleText}>
-            Your <Text style={styles.lifestyleHighlight}>savings rate of 40%</Text> is in the top
-            25% — keep it up!
-          </Text>
-          <Text style={styles.lifestyleText}>
-            Cut <Text style={styles.lifestyleHighlight}>₹3,200/month</Text> in small purchases under
-            ₹100 that you might not notice.
-          </Text>
-        </Card>
+        {data.categories.length === 0 && data.totalSpent === 0 && (
+          <Card style={{ marginTop: Spacing.lg }} padding="xl">
+            <View style={{ alignItems: 'center' }}>
+              <Tag size={32} color={Colors.outline} strokeWidth={1.5} />
+              <Text
+                style={{
+                  marginTop: Spacing.base,
+                  fontSize: Typography.sizes.lg,
+                  fontWeight: Typography.weights.semiBold,
+                  fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+                  color: Colors.textPrimary,
+                }}
+              >
+                Nothing to insight yet
+              </Text>
+              <Text
+                style={{
+                  marginTop: 4,
+                  fontSize: Typography.sizes.sm,
+                  color: Colors.textSecondary,
+                  textAlign: 'center',
+                }}
+              >
+                Add transactions or wait for SMS auto-capture to fill in.
+              </Text>
+            </View>
+          </Card>
+        )}
 
-        <View style={{ height: Spacing['2xl'] }} />
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
     </View>
   );
 }
 
-function SummaryCard({
-  label,
-  value,
-  change,
-  color,
-  inverted = false,
-}: {
-  label: string;
-  value: number;
-  change: number;
-  color: string;
-  inverted?: boolean;
-}) {
-  // For "Spent", up is bad (red); for "Saved", up is good (green)
-  const isPositiveDirection = inverted ? change < 0 : change > 0;
-  const arrow = change > 0 ? '↑' : change < 0 ? '↓' : '→';
-
+// =============================================================
+// Helpers
+// =============================================================
+function DeltaPill({ value, invert }: { value: number; invert?: boolean }) {
+  if (Math.abs(value) < 0.5) {
+    return null;
+  }
+  const positive = invert ? value < 0 : value > 0;
+  const Icon = positive ? TrendingUp : TrendingDown;
+  const color = positive ? Colors.accentSuccess : Colors.accentError;
   return (
-    <View style={styles.summaryCard}>
-      <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={[styles.summaryValue, { color }]}>₹{value.toLocaleString()}</Text>
-      <View style={styles.summaryChange}>
-        <Text
-          style={[
-            styles.summaryChangeText,
-            { color: isPositiveDirection ? Colors.success : Colors.error },
-          ]}
-        >
-          {arrow} {Math.abs(change).toFixed(1)}%
-        </Text>
-        <Text style={styles.summaryChangeMeta}> vs last month</Text>
-      </View>
+    <View style={styles.deltaPill}>
+      <Icon size={12} color={color} strokeWidth={2} />
+      <Text style={[styles.deltaText, { color }]}>{Math.abs(value).toFixed(0)}%</Text>
     </View>
   );
 }
 
-function CategoryRow({ category }: { category: CategorySpending }) {
-  const trendIcon = category.trend === 'up' ? '↑' : category.trend === 'down' ? '↓' : '→';
-  const trendColor =
-    category.trend === 'up' && category.changePercent > 10
-      ? Colors.error
-      : category.trend === 'down'
-        ? Colors.success
-        : Colors.textSecondary;
-
+function PatternCard({ pattern }: { pattern: BehavioralPattern }) {
+  const tone =
+    pattern.severity === 'high'
+      ? Colors.accentError
+      : pattern.severity === 'medium'
+        ? Colors.accentWarning
+        : Colors.outline;
+  const Icon = pattern.icon;
   return (
-    <TouchableOpacity style={styles.categoryRow}>
-      <View style={[styles.categoryIcon, { backgroundColor: category.color + '20' }]}>
-        <Text style={styles.categoryIconText}>{category.icon}</Text>
-      </View>
-      <View style={styles.categoryInfo}>
-        <View style={styles.categoryTop}>
-          <Text style={styles.categoryName}>{category.category}</Text>
-          <Text style={styles.categoryAmount}>₹{category.amount.toLocaleString()}</Text>
+    <Card padding="base" style={{ marginBottom: Spacing.sm }}>
+      <View style={styles.patternRow}>
+        <View
+          style={[styles.patternIcon, { backgroundColor: tone + '22', borderColor: tone + '44' }]}
+        >
+          <Icon size={18} color={tone} strokeWidth={1.75} />
         </View>
-        <View style={styles.categoryBottom}>
-          <View style={styles.categoryProgressContainer}>
-            <ProgressBar progress={category.percentage} color={category.color} height={4} />
-          </View>
-          <Text style={[styles.categoryTrend, { color: trendColor }]}>
-            {trendIcon} {Math.abs(category.changePercent)}%
-          </Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function BehavioralCard({ pattern }: { pattern: BehavioralPattern }) {
-  return (
-    <Card style={[styles.behaviorCard, pattern.severity === 'high' && styles.behaviorCardHigh]}>
-      <View style={styles.behaviorHeader}>
-        <Text style={styles.behaviorIcon}>{pattern.icon}</Text>
         <View style={{ flex: 1 }}>
-          <Text style={styles.behaviorTitle}>{pattern.title}</Text>
-          <Text style={styles.behaviorDescription}>{pattern.description}</Text>
-        </View>
-        <Badge
-          text={pattern.severity}
-          variant={
-            pattern.severity === 'high'
-              ? 'error'
-              : pattern.severity === 'medium'
-                ? 'warning'
-                : 'info'
-          }
-          size="sm"
-        />
-      </View>
-      <View style={styles.behaviorStats}>
-        <View style={styles.behaviorStat}>
-          <Text style={styles.behaviorStatLabel}>Amount</Text>
-          <Text style={styles.behaviorStatValue}>₹{pattern.amount.toLocaleString()}</Text>
-        </View>
-        <View style={styles.behaviorStat}>
-          <Text style={styles.behaviorStatLabel}>% of spending</Text>
-          <Text style={styles.behaviorStatValue}>{pattern.percentage}%</Text>
+          <View style={styles.patternHeader}>
+            <Text style={styles.patternTitle}>{pattern.title}</Text>
+            <Badge
+              text={`${Math.round(pattern.percentage)}%`}
+              variant={pattern.severity === 'high' ? 'error' : 'warning'}
+              size="sm"
+            />
+          </View>
+          <Text style={styles.patternDescription}>{pattern.description}</Text>
         </View>
       </View>
     </Card>
@@ -490,297 +408,239 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
-  header: {
+  center: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: Spacing.base,
+    fontSize: Typography.sizes.base,
+    color: Colors.textSecondary,
+  },
+  scroll: {
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing['3xl'] + Spacing.lg,
-    paddingBottom: Spacing.base,
+    paddingBottom: Spacing['3xl'],
+  },
+
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.base,
   },
   title: {
-    fontSize: Typography.sizes['2xl'],
+    fontSize: Typography.sizes['3xl'],
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
+    letterSpacing: -0.6,
   },
-  subtitle: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  // Period
+
   periodTabs: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-    gap: 4,
-    backgroundColor: Colors.card,
-    marginHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.md,
-    padding: 4,
-  },
-  periodTab: {
-    flex: 1,
     paddingVertical: Spacing.sm,
-    alignItems: 'center',
-    borderRadius: BorderRadius.base,
+    gap: Spacing.sm,
+    marginBottom: Spacing.base,
   },
-  periodTabActive: {
-    backgroundColor: Colors.primary,
+  chip: {
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    marginRight: Spacing.sm,
   },
-  periodTabText: {
+  chipActive: {
+    backgroundColor: Colors.accentPrimary,
+    borderColor: Colors.accentPrimary,
+  },
+  chipLabel: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.medium,
     color: Colors.textSecondary,
   },
-  periodTabTextActive: {
+  chipLabelActive: {
     color: Colors.white,
   },
-  // Summary
-  summaryRow: {
+
+  // AI hero
+  aiHeaderRow: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.lg,
-    gap: Spacing.sm,
+    alignItems: 'center',
     marginBottom: Spacing.base,
   },
-  summaryCard: {
-    flex: 1,
-    backgroundColor: Colors.card,
-    padding: Spacing.base,
-    borderRadius: BorderRadius.lg,
-  },
-  summaryLabel: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-  },
-  summaryValue: {
-    fontSize: Typography.sizes.xl,
-    fontWeight: Typography.weights.bold,
-    marginVertical: 4,
-  },
-  summaryChange: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  summaryChangeText: {
-    fontSize: Typography.sizes.xs,
-    fontWeight: Typography.weights.semiBold,
-  },
-  summaryChangeMeta: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textTertiary,
-  },
-  // Section
-  section: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    fontSize: Typography.sizes.lg,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  sectionSubtitle: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    marginTop: 2,
-    marginBottom: Spacing.base,
-  },
-  // Chart
-  chart: {
-    flexDirection: 'row',
-    height: CHART_HEIGHT,
-    paddingVertical: Spacing.sm,
-    justifyContent: 'space-between',
-  },
-  chartBarContainer: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 2,
-  },
-  chartAmount: {
-    fontSize: 9,
-    color: Colors.textSecondary,
-    marginBottom: 4,
-  },
-  chartBarTrack: {
-    flex: 1,
-    width: '70%',
-    backgroundColor: Colors.gray100,
-    borderRadius: 4,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  chartBar: {
-    width: '100%',
-    borderRadius: 4,
-  },
-  chartLabel: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  chartLegend: {
-    flexDirection: 'row',
-    marginTop: Spacing.sm,
-    gap: Spacing.base,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 4,
-  },
-  legendText: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-  },
-  // Donut
-  categoryViz: {
-    alignItems: 'center',
-    marginBottom: Spacing.lg,
-  },
-  donutContainer: {
-    width: '100%',
-    alignItems: 'center',
-  },
-  donut: {
-    flexDirection: 'row',
-    height: 16,
-    width: '100%',
-    borderRadius: 8,
-    overflow: 'hidden',
-    marginBottom: Spacing.sm,
-  },
-  donutSegment: {
-    height: '100%',
-  },
-  donutTotal: {
-    fontSize: Typography.sizes['2xl'],
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  donutLabel: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-  },
-  // Category row
-  categoryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
-  },
-  categoryIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.md,
+  aiHeaderIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.30)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.sm,
   },
-  categoryIconText: {
-    fontSize: 18,
-  },
-  categoryInfo: {
-    flex: 1,
-  },
-  categoryTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  categoryName: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-  },
-  categoryAmount: {
-    fontSize: Typography.sizes.base,
+  aiHeader: {
+    fontSize: Typography.sizes.lg,
     fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.accentAi,
+    letterSpacing: -0.2,
   },
-  categoryBottom: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  categoryProgressContainer: {
-    flex: 1,
-    marginRight: Spacing.sm,
-  },
-  categoryTrend: {
-    fontSize: Typography.sizes.xs,
-    fontWeight: Typography.weights.semiBold,
-    minWidth: 50,
-    textAlign: 'right',
-  },
-  // Behavioral
-  behaviorCard: {
-    marginBottom: Spacing.sm,
-  },
-  behaviorCardHigh: {
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.error,
-  },
-  behaviorHeader: {
+
+  heroFigures: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: Spacing.sm,
   },
-  behaviorIcon: {
-    fontSize: 28,
-    marginRight: Spacing.sm,
-  },
-  behaviorTitle: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  behaviorDescription: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    marginTop: 2,
-    lineHeight: Typography.sizes.sm * 1.4,
-  },
-  behaviorStats: {
-    flexDirection: 'row',
-    paddingTop: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.gray100,
-  },
-  behaviorStat: {
+  heroFigure: {
     flex: 1,
   },
-  behaviorStatLabel: {
+  heroLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 1.2,
+    fontWeight: Typography.weights.medium,
+  },
+  heroValue: {
+    marginTop: 4,
+    fontSize: 32,
+    lineHeight: 36,
+    color: Colors.textPrimary,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.8,
+  },
+  heroDivider: {
+    width: 1,
+    height: 56,
+    backgroundColor: Colors.borderDefault,
+    marginHorizontal: Spacing.base,
+  },
+
+  deltaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 4,
+  },
+  deltaText: {
+    fontSize: Typography.sizes.xs,
+    fontWeight: Typography.weights.bold,
+    fontVariant: ['tabular-nums'] as any,
+  },
+
+  savingsRateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.xs,
+  },
+  savingsRateLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 1.2,
+    fontWeight: Typography.weights.medium,
+  },
+  savingsRateValue: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.accentSuccess,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+  },
+
+  // Stacked bar viz
+  stackedBar: {
+    flexDirection: 'row',
+    height: 12,
+    borderRadius: 6,
+    overflow: 'hidden',
+    backgroundColor: Colors.surfaceContainerHigh,
+  },
+
+  // Category row
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.xs,
+  },
+  categoryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: Spacing.sm,
+  },
+  categoryName: {
+    flex: 1,
+    fontSize: Typography.sizes.sm,
+    color: Colors.textPrimary,
+    paddingRight: Spacing.sm,
+  },
+  categoryAmount: {
+    fontSize: Typography.sizes.sm,
+    fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+    color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
+    marginRight: Spacing.sm,
+  },
+  categoryPercent: {
     fontSize: Typography.sizes.xs,
     color: Colors.textSecondary,
+    fontVariant: ['tabular-nums'] as any,
+    width: 36,
+    textAlign: 'right',
   },
-  behaviorStatValue: {
+
+  // Patterns
+  patternRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  patternIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  patternHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  patternTitle: {
+    flex: 1,
     fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
+    fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
-    marginTop: 2,
+    paddingRight: Spacing.sm,
   },
+  patternDescription: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.textSecondary,
+    lineHeight: Typography.sizes.sm * 1.4,
+  },
+
   // Merchants
   merchantRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
+    borderBottomColor: Colors.borderDefault,
   },
   merchantRank: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: Colors.primary + '15',
+    backgroundColor: Colors.surfaceContainerHigh,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.sm,
@@ -788,50 +648,25 @@ const styles = StyleSheet.create({
   merchantRankText: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.bold,
-    color: Colors.primary,
-  },
-  merchantInfo: {
-    flex: 1,
-  },
-  merchantTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    color: Colors.textSecondary,
+    fontVariant: ['tabular-nums'] as any,
   },
   merchantName: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
   },
-  merchantAmount: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  merchantMeta: {
+  merchantCount: {
     fontSize: Typography.sizes.xs,
     color: Colors.textSecondary,
     marginTop: 2,
   },
-  // Lifestyle
-  lifestyleCard: {
-    backgroundColor: Tints.primaryBg,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight,
-  },
-  lifestyleTitle: {
-    fontSize: Typography.sizes.lg,
+  merchantAmount: {
+    fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
-    marginBottom: Spacing.sm,
-  },
-  lifestyleText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textPrimary,
-    lineHeight: Typography.sizes.sm * 1.6,
-    marginBottom: Spacing.sm,
-  },
-  lifestyleHighlight: {
-    fontWeight: Typography.weights.bold,
-    color: Colors.primary,
+    fontVariant: ['tabular-nums'] as any,
   },
 });
