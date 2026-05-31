@@ -119,14 +119,28 @@ describe('UserController (e2e)', () => {
     });
 
     it('should return 403 when requesting another user by ID', async () => {
+      // Both IDs are valid UUID v4 (the controller's ParseUUIDPipe rejects
+      // anything else with 400 first); the route only ever 403s on
+      // legitimate cross-user requests.
+      const someoneElse = '22222222-2222-4222-8222-222222222222';
       const res = await request(server)
-        .get('/api/v1/users/some-other-user-id')
+        .get(`/api/v1/users/${someoneElse}`)
         .set(authHeader())
         .expect(403);
 
       expect(res.body.message).toMatch(/own user record/i);
       // We must NOT have hit the database for the other user.
       expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when the id is not a UUID', async () => {
+      // Bonus: ParseUUIDPipe stops the request before the controller, so
+      // a stray static path like `/users/preferences` cannot accidentally
+      // be swallowed by `:id`.
+      await request(server)
+        .get('/api/v1/users/not-a-uuid')
+        .set(authHeader())
+        .expect(400);
     });
   });
 });

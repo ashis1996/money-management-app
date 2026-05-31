@@ -1,4 +1,5 @@
 ﻿import { IsString, IsNumber, IsOptional, IsEnum, IsDateString, IsBoolean } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export enum TransactionType {
   CREDIT = 'CREDIT',
@@ -90,9 +91,16 @@ export class TransactionsFilterDto {
   @IsOptional() @IsEnum(TransactionType) type?: TransactionType;
   @IsOptional() @IsString() category?: string;
   @IsOptional() @IsString() categoryId?: string;
-  @IsOptional() @IsNumber() minAmount?: number;
-  @IsOptional() @IsNumber() maxAmount?: number;
   @IsOptional() @IsString() search?: string;
-  @IsOptional() limit?: number;
-  @IsOptional() offset?: number;
+  // Pagination. We deliberately don't @IsNumber-validate page/limit here:
+  // query strings need explicit transformation to coerce "20" → 20 and the
+  // global ValidationPipe + class-transformer reflect-metadata interplay
+  // is brittle for optional union types. The service is the source of
+  // truth — it parses, clamps to [1, 100] for limit and >= 1 for page,
+  // and falls back to defaults on garbage.
+  @IsOptional() page?: any;
+  @IsOptional() limit?: any;
+  @IsOptional() offset?: any;
+  @IsOptional() @Type(() => Number) @IsNumber() minAmount?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() maxAmount?: number;
 }

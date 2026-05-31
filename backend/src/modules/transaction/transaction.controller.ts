@@ -19,11 +19,23 @@ export class TransactionController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all transactions' })
+  @ApiOperation({ summary: 'Get all transactions (paginated)' })
   @ApiQuery({ name: 'from', required: false, type: String })
   @ApiQuery({ name: 'to', required: false, type: String })
   @ApiQuery({ name: 'category', required: false, type: String })
   @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number, 1-indexed. Default: 1.',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Page size. Default: 20. Max: 100.',
+  })
   findAll(@User() user: any, @Query() filters: TransactionsFilterDto) {
     return this.transactionService.findAll(user.id, filters);
   }

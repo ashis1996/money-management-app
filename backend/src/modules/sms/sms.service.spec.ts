@@ -26,6 +26,10 @@ describe('SmsService', () => {
     createdAt: new Date(),
   };
 
+  // The new ingest flow upserts on (userId, externalReferenceId). A "fresh"
+  // upsert returns a row whose createdAt === updatedAt; the service uses
+  // that to decide whether to publish `transaction.created`.
+  const freshNow = new Date('2026-05-01T00:00:00Z');
   const mockTransaction = {
     id: 'tx-1',
     userId: 'user-1',
@@ -36,6 +40,8 @@ describe('SmsService', () => {
     date: new Date(),
     rawSms: 'Your account has been debited INR 500 at Amazon.',
     smsId: 'sms-1',
+    createdAt: freshNow,
+    updatedAt: freshNow,
   };
 
   const mockPrismaService = {
@@ -46,6 +52,14 @@ describe('SmsService', () => {
       update: jest.fn(),
     },
     transaction: {
+      // Dedup short-circuit reads via findUnique on the unique compound
+      // (userId, externalReferenceId). Returning null means "no duplicate";
+      // tests that want to exercise the short-circuit override per-test.
+      findUnique: jest.fn().mockResolvedValue(null),
+      // The actual write path is upsert with the dedup key.
+      upsert: jest.fn(),
+      // Kept around for any leftover test that still mocks .create — the
+      // production code no longer calls it for SMS-derived transactions.
       create: jest.fn(),
     },
   };
@@ -86,13 +100,16 @@ describe('SmsService', () => {
     rabbitMQ = module.get<RabbitMQService>(RabbitMQService);
 
     jest.clearAllMocks();
+    // Re-install dedup default after clearAllMocks since it's a stateful
+    // mock function.
+    mockPrismaService.transaction.findUnique.mockResolvedValue(null);
   });
 
   describe('ingestSms', () => {
     it('should parse SMS and create transaction for debit message', async () => {
       mockPrismaService.smsLog.create.mockResolvedValue(mockSmsLog);
       mockPrismaService.smsLog.update.mockResolvedValue({ ...mockSmsLog, isProcessed: true });
-      mockPrismaService.transaction.create.mockResolvedValue(mockTransaction);
+      mockPrismaService.transaction.upsert.mockResolvedValue(mockTransaction);
 
       const result = await service.ingestSms('user-1', {
         body: 'Your account has been debited INR 500 at Amazon; Avl Bal INR 9500',
@@ -107,12 +124,79 @@ describe('SmsService', () => {
       expect(result.parsed.amount).toBe(500);
       expect(result.parsed.transactionType).toBe('DEBIT');
       expect(result.parsed.merchant).toBe('Amazon');
+
+      // Critical: the upsert went through the dedup key, not a plain create.
+      expect(mockPrismaService.transaction.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId_externalReferenceId: expect.objectContaining({
+              userId: 'user-1',
+              externalReferenceId: expect.any(String),
+            }),
+          }),
+        }),
+      );
+      // The plain create path is no longer used for SMS-derived transactions.
+      expect(mockPrismaService.transaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should be idempotent: a duplicate SMS reuses the existing transaction', async () => {
+      // First ingest landed already; the dedup short-circuit returns the
+      // stored transaction without touching smsLog or upsert.
+      const existing = {
+        id: 'tx-existing',
+        userId: 'user-1',
+        amount: 500,
+        type: 'DEBIT',
+        merchantName: 'Amazon',
+        categoryId: 'SHOPPING',
+        aiConfidence: null,
+      };
+      mockPrismaService.transaction.findUnique.mockResolvedValueOnce(existing);
+
+      const result = await service.ingestSms('user-1', {
+        body: 'Your account has been debited INR 500 at Amazon; Avl Bal INR 9500',
+        sender: 'HD-BANK',
+        phoneNumber: '+1234567890',
+        timestamp: new Date('2026-05-01T00:00:00Z').toISOString(),
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.transactionCreated).toBe(false);
+      expect(result.transactionId).toBe('tx-existing');
+      // No SmsLog row created, no upsert, no publish.
+      expect(mockPrismaService.smsLog.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.transaction.upsert).not.toHaveBeenCalled();
+      expect(mockRabbitMQService.publishTransactionCreated).not.toHaveBeenCalled();
+    });
+
+    it('should NOT publish transaction.created when upsert returns an existing row (race)', async () => {
+      // Concurrent racer: upsert no-ops on the matching row; createdAt and
+      // updatedAt diverge, so the service must NOT re-publish.
+      const concurrent = {
+        ...mockTransaction,
+        createdAt: new Date('2026-05-01T00:00:00Z'),
+        updatedAt: new Date('2026-05-01T00:00:30Z'),
+      };
+      mockPrismaService.smsLog.create.mockResolvedValue(mockSmsLog);
+      mockPrismaService.smsLog.update.mockResolvedValue({ ...mockSmsLog, isProcessed: true });
+      mockPrismaService.transaction.upsert.mockResolvedValue(concurrent);
+
+      const result = await service.ingestSms('user-1', {
+        body: 'Your account has been debited INR 500 at Amazon',
+        sender: 'HD-BANK',
+        phoneNumber: '+1234567890',
+        timestamp: new Date().toISOString(),
+      });
+
+      expect(result.transactionCreated).toBe(false);
+      expect(mockRabbitMQService.publishTransactionCreated).not.toHaveBeenCalled();
     });
 
     it('should parse SMS and create transaction for credit message', async () => {
       mockPrismaService.smsLog.create.mockResolvedValue(mockSmsLog);
       mockPrismaService.smsLog.update.mockResolvedValue({ ...mockSmsLog, isProcessed: true });
-      mockPrismaService.transaction.create.mockResolvedValue({
+      mockPrismaService.transaction.upsert.mockResolvedValue({
         ...mockTransaction,
         type: 'CREDIT',
         amount: 1000,
@@ -143,13 +227,14 @@ describe('SmsService', () => {
 
       expect(result.success).toBe(true);
       expect(result.transactionCreated).toBe(false);
+      expect(mockPrismaService.transaction.upsert).not.toHaveBeenCalled();
       expect(mockPrismaService.transaction.create).not.toHaveBeenCalled();
     });
 
     it('should handle transaction creation failure gracefully', async () => {
       mockPrismaService.smsLog.create.mockResolvedValue(mockSmsLog);
       mockPrismaService.smsLog.update.mockResolvedValue({ ...mockSmsLog, isProcessed: true });
-      mockPrismaService.transaction.create.mockRejectedValue(new Error('DB Error'));
+      mockPrismaService.transaction.upsert.mockRejectedValue(new Error('DB Error'));
 
       const result = await service.ingestSms('user-1', {
         body: 'Debited INR 500 at Amazon.',

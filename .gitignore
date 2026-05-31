@@ -53,7 +53,9 @@ coverage/
 *.db
 *.sqlite
 *.sqlite3
-prisma/migrations/
+# NOTE: prisma/migrations/ used to be ignored here, which contradicted the
+# fact that we commit them. Migrations MUST be tracked so every developer
+# and every CI run applies the same schema changes in the same order.
 
 # Uploads
 uploads/

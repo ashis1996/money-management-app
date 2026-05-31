@@ -141,23 +141,33 @@ model User {
   
   isActive              Boolean   @default(true)
   lastLoginAt           DateTime?
+
+  /// Monotonic counter used to invalidate access tokens. Every issued JWT
+  /// carries the user's current `tokenVersion` in its `tv` claim. Logging
+  /// out everywhere (or rotating credentials) bumps this counter, which
+  /// makes every previously-issued access token fail validation on the
+  /// next request — closing the gap where the 15-minute access token
+  /// would otherwise outlive a logout.
+  tokenVersion          Int       @default(0)
+
   deletedAt             DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
   // Relations
-  accounts          Account[]
-  transactions      Transaction[]
-  subscriptions     Subscription[]
-  budgets           Budget[]
-  goals             Goal[]
-  notifications     Notification[]
-  refreshTokens     RefreshToken[]
-  smsLogs           SmsLog[]
-  auditLogs         AuditLog[]
-  actionCards       ActionCard[]
-  weeklySummaries   WeeklySummary[]
-  deviceTokens      DeviceToken[]
+  accounts            Account[]
+  transactions        Transaction[]
+  subscriptions       Subscription[]
+  budgets             Budget[]
+  goals               Goal[]
+  notifications       Notification[]
+  refreshTokens       RefreshToken[]
+  smsLogs             SmsLog[]
+  auditLogs           AuditLog[]
+  actionCards         ActionCard[]
+  weeklySummaries     WeeklySummary[]
+  deviceTokens        DeviceToken[]
+  behavioralPatterns  BehavioralPattern[]
   
   // Indexes
   @@index([email])
@@ -591,32 +601,40 @@ model WeeklySummary {
   @@index([weekStartDate])
 }
 
-/// BehavioralPattern: User spending behavior patterns
+/// BehavioralPattern: User spending behavior patterns.
+///
+/// Previously this model declared `userId` only as an indexed string with no
+/// `@relation` to User. That meant rows could orphan if a user was deleted
+/// (no FK), and Prisma's typed `user.behavioralPatterns` access didn't exist.
+/// We now add a real FK with cascade delete to match every other user-scoped
+/// model in the schema.
 model BehavioralPattern {
   id              String    @id @default(uuid())
   userId          String
-  
+
   // Time-based patterns
   lateNightSpending Decimal @default(0) @db.Decimal(15, 2)
   weekendSpending   Decimal @default(0) @db.Decimal(15, 2)
   impulseSpending   Decimal @default(0) @db.Decimal(15, 2)
-  
+
   // Category preferences
   dominantCategories Json   @default("[]")
-  
+
   // Spending triggers
   emotionalTriggers Json    @default("[]") // Stress, celebration, etc.
-  
+
   // Pattern scores
   consistencyScore Decimal  @default(0) @db.Decimal(5, 4) // How consistent is spending
   predictabilityScore Decimal @default(0) @db.Decimal(5, 4)
-  
+
   // Time period
   periodStart     DateTime
   periodEnd       DateTime
-  
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, periodStart])
   @@index([userId])

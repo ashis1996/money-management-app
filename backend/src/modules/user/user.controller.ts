@@ -4,6 +4,7 @@ import {
   Put,
   Body,
   Param,
+  ParseUUIDPipe,
   UseGuards,
   ForbiddenException,
 } from '@nestjs/common';
@@ -42,10 +43,19 @@ export class UserController {
    * for backward compatibility and parity with /users/me, but cross-user
    * access is forbidden — without this check any authenticated user could
    * read any other user's profile.
+   *
+   * `ParseUUIDPipe` is the second line of defence: it makes the parameter
+   * strictly UUID-shaped, which means a future static route like
+   * `/users/preferences` or `/users/dashboard` cannot ever be swallowed by
+   * this dynamic handler. A non-UUID hits a 400 here instead of accidentally
+   * leaking through to `findById('preferences')`.
    */
   @Get(':id')
   @ApiOperation({ summary: "Get user by ID (only the caller's own ID is allowed)" })
-  getUserById(@User() user: RequestUser, @Param('id') id: string) {
+  getUserById(
+    @User() user: RequestUser,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
     if (id !== user.id) {
       throw new ForbiddenException(
         'You can only retrieve your own user record. Use /users/me.',
