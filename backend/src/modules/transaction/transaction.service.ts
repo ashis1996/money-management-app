@@ -70,13 +70,48 @@ export class TransactionService {
       ];
     }
 
-    return this.prisma.transaction.findMany({
-      where,
-      orderBy: { transactionDate: 'desc' },
-      include: {
-        account: { select: { accountName: true, accountType: true } },
+    // ---------------------------------------------------------------
+    // Pagination. Without this a heavy user (e.g. 50k SMS-backed
+    // transactions) would OOM the API on a single GET. We clamp:
+    //   - page    >= 1
+    //   - limit   in [1, 100]   (default 20)
+    // and accept legacy `offset` for callers that already use it.
+    // ---------------------------------------------------------------
+    const limit = Math.min(Math.max(Number(filters.limit) || 20, 1), 100);
+    const page =
+      filters.page !== undefined
+        ? Math.max(Number(filters.page) || 1, 1)
+        : filters.offset !== undefined
+          ? Math.floor(Math.max(Number(filters.offset) || 0, 0) / limit) + 1
+          : 1;
+    const skip = (page - 1) * limit;
+
+    const [total, data] = await Promise.all([
+      this.prisma.transaction.count({ where }),
+      this.prisma.transaction.findMany({
+        where,
+        orderBy: { transactionDate: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          account: { select: { accountName: true, accountType: true } },
+        },
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
       },
-    });
+    };
   }
 
   async findOne(userId: string, id: string) {

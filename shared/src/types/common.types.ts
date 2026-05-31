@@ -49,6 +49,8 @@ export interface IPaginatedResponse<T> {
 export interface JwtPayload {
   sub: string;
   email: string;
+  /** See identical doc in api.types.ts. Mirrors the access-token version. */
+  tv?: number;
   iat?: number;
   exp?: number;
 }

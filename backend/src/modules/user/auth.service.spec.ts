@@ -14,6 +14,9 @@ describe('AuthService', () => {
   let jwtService: JwtService;
   let configService: ConfigService;
 
+  // Every user now carries a tokenVersion (defaults to 0). It's embedded in
+  // every issued access token's `tv` claim so logout-everywhere can
+  // invalidate them by bumping the column.
   const mockUser = {
     id: 'user-1',
     email: 'test@example.com',
@@ -21,14 +24,18 @@ describe('AuthService', () => {
     name: 'Test User',
     phone: '+1234567890',
     isActive: true,
+    tokenVersion: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
     lastLoginAt: null,
   };
 
-  const mockPrismaService = {
+  const mockPrismaService: any = {
     user: {
       findUnique: jest.fn(),
+      // findFirst is used by issueSessionForUserId to pull the latest
+      // tokenVersion when one isn't passed in.
+      findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -41,6 +48,9 @@ describe('AuthService', () => {
       deleteMany: jest.fn(),
       create: jest.fn(),
     },
+    // logout-everywhere wraps the tokenVersion bump + token deletion in a
+    // single DB transaction. The mock just resolves the promise array.
+    $transaction: jest.fn((promises: Promise<any>[]) => Promise.all(promises)),
   };
 
   const mockJwtService = {
@@ -67,6 +77,10 @@ describe('AuthService', () => {
     configService = module.get<ConfigService>(ConfigService);
 
     jest.clearAllMocks();
+    // Re-install the default $transaction implementation after clearAllMocks.
+    mockPrismaService.$transaction.mockImplementation((promises: Promise<any>[]) =>
+      Promise.all(promises),
+    );
   });
 
   describe('validateUser', () => {
@@ -148,6 +162,7 @@ describe('AuthService', () => {
         email: 'new@example.com',
         name: 'New User',
         phone: '+1234567890',
+        tokenVersion: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -183,7 +198,8 @@ describe('AuthService', () => {
   describe('refreshTokens', () => {
     it('should generate new tokens when refresh token is valid', async () => {
       // The service stores hashes, so the lookup is by tokenHash, not the
-      // raw token. Match that shape in the mock.
+      // raw token. Match that shape in the mock. The user object now also
+      // includes tokenVersion which feeds the new access token's `tv` claim.
       mockPrismaService.refreshToken.findUnique.mockResolvedValue({
         id: 'rt-1',
         tokenHash: 'any-hash',
@@ -222,21 +238,33 @@ describe('AuthService', () => {
   });
 
   describe('logout', () => {
-    it('should delete the matching refresh token by hash when one is provided', async () => {
+    it('should delete only the matching refresh token by hash when one is provided', async () => {
       mockPrismaService.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
 
       await service.logout('user-1', 'refresh-token');
 
+      // Single-device logout: refresh token revoked, but tokenVersion is
+      // NOT bumped — other devices' access tokens keep working.
       expect(mockPrismaService.refreshToken.deleteMany).toHaveBeenCalledWith({
         where: { tokenHash: expect.any(String) },
       });
+      expect(mockPrismaService.user.update).not.toHaveBeenCalled();
     });
 
-    it('should delete all user refresh tokens when no token provided', async () => {
+    it('should bump tokenVersion AND delete all refresh tokens on logout-everywhere', async () => {
+      mockPrismaService.user.update.mockResolvedValue({ ...mockUser, tokenVersion: 1 });
       mockPrismaService.refreshToken.deleteMany.mockResolvedValue({ count: 3 });
 
       await service.logout('user-1');
 
+      // Logout-everywhere: both operations must run inside a single
+      // $transaction so we never end up with refresh tokens deleted but
+      // tokenVersion not yet bumped (or vice versa).
+      expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { tokenVersion: { increment: 1 } },
+      });
       expect(mockPrismaService.refreshToken.deleteMany).toHaveBeenCalledWith({
         where: { userId: 'user-1' },
       });
@@ -244,10 +272,10 @@ describe('AuthService', () => {
   });
 
   describe('generateTokens', () => {
-    it('should generate access and refresh tokens', async () => {
-      mockJwtService.signAsync.mockResolvedValueOnce('access-token').mockResolvedValueOnce('refresh-token');
-      // requireSecret enforces a real secret; supply one that's long enough
-      // and not on the placeholder denylist.
+    it('should embed the tv claim and sign both tokens', async () => {
+      mockJwtService.signAsync
+        .mockResolvedValueOnce('access-token')
+        .mockResolvedValueOnce('refresh-token');
       const realSecret = 'a'.repeat(40);
       mockConfigService.get.mockImplementation((key: string, defaultValue?: any) => {
         if (key === 'REFRESH_TOKEN_SECRET') return realSecret;
@@ -255,11 +283,18 @@ describe('AuthService', () => {
         return defaultValue;
       });
 
-      const result = await (service as any).generateTokens('user-1', 'test@example.com');
+      const result = await (service as any).generateTokens('user-1', 'test@example.com', 5);
 
       expect(result.accessToken).toBe('access-token');
       expect(result.refreshToken).toBe('refresh-token');
       expect(mockJwtService.signAsync).toHaveBeenCalledTimes(2);
+      // The access token payload (1st call) must carry tv so JwtStrategy
+      // can reject revoked tokens. Refresh token (2nd call) carries it too
+      // so a bumped tokenVersion can also invalidate refreshes mid-window.
+      const [accessPayload] = mockJwtService.signAsync.mock.calls[0];
+      const [refreshPayload] = mockJwtService.signAsync.mock.calls[1];
+      expect(accessPayload).toMatchObject({ sub: 'user-1', email: 'test@example.com', tv: 5 });
+      expect(refreshPayload).toMatchObject({ sub: 'user-1', email: 'test@example.com', tv: 5 });
     });
   });
 

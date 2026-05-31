@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'crypto';
 import { PrismaService } from '../../config/prisma.service';
 import { RabbitMQService } from '../../config/rabbitmq.service';
 import { AiProxyService } from '../ai-proxy/ai-proxy.service';
@@ -15,7 +16,6 @@ import {
   CATEGORY_MAPPINGS,
   BANK_SENDER_MAPPING,
 } from '@money-management/shared/constants';
-import { SmsLog, Transaction } from '@prisma/client';
 
 @Injectable()
 export class SmsService {
@@ -34,29 +34,80 @@ export class SmsService {
     this.useAiParser = this.configService.get<string>('SMS_USE_AI_PARSER', 'true') !== 'false';
   }
 
+  /**
+   * Deterministic dedup key for an SMS.
+   *
+   * The same SMS replayed (e.g. mobile app retrying after a flaky network,
+   * or a backfill importing the user's full inbox twice) must not create a
+   * second Transaction row. We hash the immutable fields the device knows
+   * about — sender, body, and the timestamp it observed — scoped per user.
+   *
+   * Timestamp is normalized to whole seconds so device-clock jitter on
+   * retry doesn't break the match.
+   */
+  private computeDedupHash(
+    userId: string,
+    sender: string,
+    body: string,
+    receivedAt: Date,
+  ): string {
+    const stableTimestamp = Math.floor(receivedAt.getTime() / 1000);
+    return createHash('sha256')
+      .update(`${userId}|${sender}|${body}|${stableTimestamp}`)
+      .digest('hex');
+  }
+
   async ingestSms(userId: string, dto: SmsIngestDto): Promise<SmsParseResponseDto> {
-    const receivedAt = dto.timestamp ?? dto.receivedAt ?? new Date();
+    const receivedAt = new Date((dto.timestamp ?? dto.receivedAt ?? new Date()) as any);
+    const dedupHash = this.computeDedupHash(userId, dto.sender, dto.body, receivedAt);
+
+    // ---------------------------------------------------------------
+    // Idempotency short-circuit: if we've already ingested this exact
+    // SMS for this user, return the previous result instead of doing
+    // any work. Without this, two identical /sms/ingest calls would
+    // create two SmsLogs and two Transactions.
+    // ---------------------------------------------------------------
+    const existingTx = await this.prisma.transaction.findUnique({
+      where: { userId_externalReferenceId: { userId, externalReferenceId: dedupHash } },
+    });
+    if (existingTx) {
+      this.logger.debug(
+        `Duplicate SMS ingest detected (hash=${dedupHash.slice(0, 8)}…); reusing tx=${existingTx.id}`,
+      );
+      // Return a synthesized response that matches what the original call
+      // would have produced. We avoid re-parsing the SMS — the original
+      // parse is canonical.
+      return {
+        success: true,
+        parsed: {
+          rawSms: dto.body,
+          sender: dto.sender,
+          timestamp: receivedAt,
+          amount: Number(existingTx.amount),
+          merchant: existingTx.merchantName ?? undefined,
+          transactionType: existingTx.type as TransactionType,
+          category: existingTx.categoryId ?? undefined,
+          confidence: existingTx.aiConfidence ? Number(existingTx.aiConfidence) : 0,
+        },
+        transactionCreated: false,
+        transactionId: existingTx.id,
+      };
+    }
+
+    // Persist the raw SMS first so we always have an audit trail even if
+    // parsing or transaction creation later fails.
     const smsLog = await this.prisma.smsLog.create({
       data: {
         userId,
         body: dto.body,
         sender: dto.sender,
         phoneNumber: dto.phoneNumber,
-        receivedAt: new Date(receivedAt as any),
+        receivedAt,
         isProcessed: false,
       },
     });
 
-    // Best-effort: tell downstream consumers about the new SMS. Failures
-    // here must not block transaction creation below.
-    await this.rabbitMQ.publishSmsReceived({
-      smsId: smsLog.id,
-      body: dto.body,
-      sender: dto.sender,
-      timestamp: new Date(receivedAt as any),
-    });
-
-    const parsed = await this.parseSms(dto.body, dto.sender, new Date(receivedAt as any));
+    const parsed = await this.parseSms(dto.body, dto.sender, receivedAt);
 
     await this.prisma.smsLog.update({
       where: { id: smsLog.id },
@@ -71,8 +122,14 @@ export class SmsService {
 
     if (parsed.amount && parsed.transactionType) {
       try {
-        const transaction = await this.prisma.transaction.create({
-          data: {
+        // Upsert against the (userId, externalReferenceId) unique index so
+        // a concurrent duplicate (e.g. two mobile clients firing ingest at
+        // once) collapses cleanly instead of throwing or double-inserting.
+        const transaction = await this.prisma.transaction.upsert({
+          where: {
+            userId_externalReferenceId: { userId, externalReferenceId: dedupHash },
+          },
+          create: {
             userId,
             amount: parsed.amount,
             type: parsed.transactionType as any,
@@ -82,11 +139,13 @@ export class SmsService {
             rawSmsText: dto.body,
             smsSenderId: dto.sender,
             source: 'SMS',
+            externalReferenceId: dedupHash,
             // Preserve AI parse hints for the auto-actions consumer to refine.
             aiSuggestedCategory: parsed.category ?? null,
             aiSuggestedMerchant: parsed.merchant ?? null,
             aiConfidence: parsed.confidence ?? null,
           },
+          update: {}, // Race winner already wrote; no-op on conflict.
         });
 
         await this.prisma.smsLog.update({
@@ -94,15 +153,22 @@ export class SmsService {
           data: { transactionId: transaction.id },
         });
 
-        transactionCreated = true;
+        transactionCreated = transaction.createdAt.getTime() === transaction.updatedAt.getTime();
         transactionId = transaction.id;
 
-        await this.rabbitMQ.publishTransactionCreated({
-          transactionId: transaction.id,
-          userId,
-          amount: parsed.amount,
-          category: parsed.category || 'UNKNOWN',
-        });
+        // Single source of truth for downstream fan-out: notifications,
+        // subscription detection, AI enrichment, etc. all happen via the
+        // transaction.created consumer. We deliberately do NOT publish
+        // sms.received any more — the consumer that handled it was the
+        // duplicate path and has been removed.
+        if (transactionCreated) {
+          await this.rabbitMQ.publishTransactionCreated({
+            transactionId: transaction.id,
+            userId,
+            amount: parsed.amount,
+            category: parsed.category || 'UNKNOWN',
+          });
+        }
       } catch (error: any) {
         this.logger.error(`Failed to create transaction from SMS: ${error.message}`);
       }

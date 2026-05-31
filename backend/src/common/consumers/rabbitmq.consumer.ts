@@ -1,7 +1,6 @@
 import { Controller, OnModuleInit } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { PrismaService } from '../../config/prisma.service';
-import { SmsService } from '../../modules/sms/sms.service';
 import { SubscriptionService } from '../../modules/subscription/subscription.service';
 import { NotificationService } from '../../modules/notification/notification.service';
 import { TransactionEnrichmentService } from '../../modules/ai-proxy/transaction-enrichment.service';
@@ -19,7 +18,6 @@ export class RabbitMQConsumer implements OnModuleInit {
   private readonly logger = new Logger(RabbitMQConsumer.name);
 
   constructor(
-    private smsService: SmsService,
     private subscriptionService: SubscriptionService,
     private notificationService: NotificationService,
     private enrichment: TransactionEnrichmentService,
@@ -31,85 +29,20 @@ export class RabbitMQConsumer implements OnModuleInit {
   }
 
   /**
-   * Consumes SMS_RECEIVED events
-   * Processes raw SMS and creates transactions
+   * NOTE: `sms.received` no longer has a publisher.
+   *
+   * The original design had SmsService publish `sms.received` AND
+   * synchronously create a Transaction, while this consumer ALSO created a
+   * Transaction from the same SMS — a guaranteed double-write race. The
+   * dedup key on Transaction (`userId, externalReferenceId`) papered over
+   * the symptom but left two parser invocations and two notification
+   * round-trips per SMS.
+   *
+   * The single source of truth is now the synchronous path in
+   * SmsService.ingestSms, which upserts the Transaction by dedup hash and
+   * publishes a single `transaction.created` event. The handler that used
+   * to live here has been deleted intentionally; do not re-introduce it.
    */
-  @MessagePattern('sms.received')
-  async handleSmsReceived(@Payload() message: RabbitMQMessage<{ smsId: string; body: string; sender: string; timestamp: Date }>) {
-    this.logger.log(`Processing SMS: ${message.data.smsId}`);
-
-    try {
-      const { smsId, body, sender, timestamp } = message.data;
-
-      // Parse the SMS
-      const parsed = await this.smsService.parseSms(body, sender, timestamp);
-
-      // Update SMS log
-      await this.prisma.smsLog.update({
-        where: { id: smsId },
-        data: {
-          isProcessed: true,
-          parsedData: parsed as any,
-        },
-      });
-
-      // Create transaction if we have valid data
-      if (parsed.amount && parsed.transactionType) {
-        const smsLog = await this.prisma.smsLog.findUnique({
-          where: { id: smsId },
-        });
-
-        if (smsLog) {
-          // Avoid double-creating: SmsService.ingestSms already creates the
-          // transaction and links it. The legacy publish path lands here too;
-          // skip if a transaction is already attached.
-          if (smsLog.transactionId) {
-            this.logger.debug(
-              `SMS ${smsId} already has transaction ${smsLog.transactionId}, skipping consumer create.`,
-            );
-            return;
-          }
-
-          const transaction = await this.prisma.transaction.create({
-            data: {
-              userId: smsLog.userId,
-              amount: parsed.amount,
-              type: parsed.transactionType,
-              categoryId: parsed.category,
-              merchantName: parsed.merchant,
-              transactionDate: parsed.timestamp,
-              rawSmsText: body,
-              smsSenderId: sender,
-              source: 'SMS',
-              aiSuggestedCategory: parsed.category ?? null,
-              aiSuggestedMerchant: parsed.merchant ?? null,
-              aiConfidence: parsed.confidence ?? null,
-            },
-          });
-
-          // Link SMS to transaction
-          await this.prisma.smsLog.update({
-            where: { id: smsId },
-            data: { transactionId: transaction.id },
-          });
-
-          this.logger.log(`Created transaction ${transaction.id} from SMS`);
-
-          // Send notification for large transactions
-          if (parsed.amount >= 1000) {
-            await this.notificationService.sendTransactionNotification(smsLog.userId, {
-              amount: parsed.amount,
-              merchant: parsed.merchant,
-              type: parsed.transactionType,
-              category: parsed.category,
-            });
-          }
-        }
-      }
-    } catch (error: any) {
-      this.logger.error(`Failed to process SMS ${message.data.smsId}: ${error?.message ?? error}`);
-    }
-  }
 
   /**
    * Consumes TRANSACTION_CREATED events.
