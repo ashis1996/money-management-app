@@ -17,6 +17,7 @@ export class AiProxyService {
   private readonly logger = new Logger(AiProxyService.name);
   private readonly aiBaseUrl: string;
   private readonly requestTimeoutMs: number;
+  private readonly internalToken?: string;
 
   constructor(
     private readonly http: HttpService,
@@ -26,6 +27,20 @@ export class AiProxyService {
     const rawUrl = this.config.get<string>('AI_SERVICE_URL') ?? 'http://localhost:8000/api/v1';
     this.aiBaseUrl = this.normalizeBaseUrl(rawUrl);
     this.requestTimeoutMs = parseInt(this.config.get<string>('AI_TIMEOUT_MS') ?? '30000', 10);
+
+    // Shared secret used to authenticate as the trusted backend when calling
+    // the AI service. Mirrored from the AI service's INTERNAL_API_TOKEN env
+    // var. Optional in development; required in production by the AI service.
+    this.internalToken = this.config.get<string>('INTERNAL_API_TOKEN') ?? undefined;
+    if (
+      !this.internalToken &&
+      this.config.get<string>('NODE_ENV', 'development') === 'production'
+    ) {
+      this.logger.warn(
+        'INTERNAL_API_TOKEN is not set on the backend in production. Calls to the AI ' +
+          'service will be rejected unless the AI service is also unauthenticated.',
+      );
+    }
   }
 
   /**
@@ -47,9 +62,13 @@ export class AiProxyService {
    */
   async callAi<T = any>(path: string, body: any): Promise<T> {
     const url = `${this.aiBaseUrl}${path}`;
+    const headers: Record<string, string> = {};
+    if (this.internalToken) {
+      headers['X-Internal-Token'] = this.internalToken;
+    }
     try {
       const { data } = await firstValueFrom(
-        this.http.post<T>(url, body).pipe(
+        this.http.post<T>(url, body, { headers }).pipe(
           timeout(this.requestTimeoutMs),
           catchError((err) => {
             this.logger.error(`AI call failed: ${path} - ${err?.message}`);

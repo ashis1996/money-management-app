@@ -7,6 +7,40 @@ import helmet from 'helmet';
 import { AppModule } from './modules/app.module';
 import { Logger } from './common/utils/logger';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
+import { validateRequiredSecrets } from './config/secret-validation';
+
+/**
+ * Default CORS allowlist used in non-production environments when
+ * ALLOWED_ORIGINS is not set. These cover the local web dev server and
+ * the Expo Metro bundler. In production we refuse to default — operators
+ * must set ALLOWED_ORIGINS explicitly or the app will boot with CORS
+ * disabled (origin: false) which blocks every cross-origin request.
+ */
+const DEV_DEFAULT_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:8081',
+  'http://localhost:19006',
+];
+
+function resolveCorsOrigins(env: string): string[] | false {
+  const raw = process.env.ALLOWED_ORIGINS?.trim();
+  if (raw && raw.length > 0) {
+    return raw
+      .split(',')
+      .map((o) => o.trim())
+      .filter((o) => o.length > 0);
+  }
+
+  if (env === 'production') {
+    // Fail closed in production. Combining `origin: '*'` with
+    // `credentials: true` is rejected by browsers anyway and hides
+    // misconfiguration; we'd rather block requests than pretend to allow
+    // them.
+    return false;
+  }
+
+  return DEV_DEFAULT_ORIGINS;
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -16,10 +50,26 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
+  // Fail fast on missing or weak secrets *before* binding the HTTP server.
+  // This is a redundant check on top of requireSecret() in jwt.config.ts /
+  // user.module.ts / auth.service.ts, but it gives operators a single
+  // unified error message at startup.
+  validateRequiredSecrets(configService);
+
   // Security
   app.use(helmet());
+
+  const env = configService.get<string>('NODE_ENV', 'development');
+  const origins = resolveCorsOrigins(env);
+  if (origins === false) {
+    logger.warn(
+      'CORS is disabled: set ALLOWED_ORIGINS=https://your.domain to enable cross-origin requests.',
+    );
+  } else {
+    logger.log(`CORS enabled for origins: ${origins.join(', ')}`);
+  }
   app.enableCors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+    origin: origins,
     credentials: true,
   });
 

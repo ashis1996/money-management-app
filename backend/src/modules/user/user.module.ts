@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from '../../config/jwt.config';
 import { LocalStrategy } from '../../config/local.strategy';
+import { requireSecret } from '../../config/secret-validation';
 
 @Module({
   imports: [
@@ -15,7 +16,10 @@ import { LocalStrategy } from '../../config/local.strategy';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET', 'default-secret'),
+        // No fallback. requireSecret() throws if JWT_SECRET is missing/weak,
+        // so the module fails to construct rather than booting with a
+        // publicly known value.
+        secret: requireSecret(configService, 'JWT_SECRET'),
         signOptions: {
           expiresIn: configService.get<string>('JWT_EXPIRES_IN', '15m'),
         },

@@ -5,13 +5,12 @@ export interface RequestUser {
   email: string;
 }
 
+/**
+ * Param decorator that resolves to the authenticated user attached to the
+ * request by Passport. Always typed as RequestUser so callers no longer
+ * need `@User() user: any`.
+ */
 export const User = createParamDecorator((data: unknown, ctx: ExecutionContext): RequestUser => {
   const request = ctx.switchToHttp().getRequest();
   return request.user;
 });
-
-export const Public = () => {
-  // This is a marker decorator for public routes
-  // The actual implementation is in the guard
-  return 'public';
-};

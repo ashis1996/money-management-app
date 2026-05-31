@@ -3,7 +3,9 @@ AI Service for Money Management Application
 Handles SMS parsing, transaction categorization, subscription detection, and financial insights
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+import os
+import secrets
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -29,21 +31,139 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
+
+# ---------------------------------------------------------------------------
+# Internal authentication
+# ---------------------------------------------------------------------------
+# The AI service is intended to be reachable ONLY from the trusted backend.
+# In Kubernetes, the backend reaches us over the internal cluster network,
+# but `kind: Service` is open to every pod in the namespace by default, so
+# we additionally require a shared secret on every privileged route. The
+# value comes from the `INTERNAL_API_TOKEN` environment variable, which the
+# backend mirrors and sends as the `X-Internal-Token` header.
+#
+# `/`, `/health`, `/docs`, `/openapi.json` remain unauthenticated so K8s
+# probes and developers can introspect the service.
+# ---------------------------------------------------------------------------
+INTERNAL_API_TOKEN = (os.getenv("INTERNAL_API_TOKEN") or "").strip()
+ENVIRONMENT = (os.getenv("ENVIRONMENT") or os.getenv("NODE_ENV") or "development").lower()
+
+if not INTERNAL_API_TOKEN:
+    if ENVIRONMENT == "production":
+        # Fail loudly. Booting an AI service open to the world in prod is
+        # never what an operator wants.
+        raise RuntimeError(
+            "INTERNAL_API_TOKEN is required in production. Set it on both "
+            "the AI service and the backend deployment."
+        )
+    logger.warning(
+        "INTERNAL_API_TOKEN is not set. The AI service will accept "
+        "requests without authentication. This is acceptable for local "
+        "development only."
+    )
+
+
+def require_internal_token(
+    x_internal_token: Optional[str] = Header(default=None, alias="X-Internal-Token"),
+) -> None:
+    """
+    FastAPI dependency that enforces the internal-service shared secret.
+
+    When INTERNAL_API_TOKEN is configured, every request to a guarded route
+    must present the matching value in the `X-Internal-Token` header. The
+    comparison is constant-time to avoid timing oracles.
+    """
+    if not INTERNAL_API_TOKEN:
+        # No token configured (development mode) -> allow.
+        return
+    if not x_internal_token or not secrets.compare_digest(
+        x_internal_token, INTERNAL_API_TOKEN
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing X-Internal-Token header",
+        )
+
+
+# Initialize FastAPI app — every guarded route inherits the internal-token
+# dependency via `dependencies=[Depends(require_internal_token)]` below.
 app = FastAPI(
     title="Money Management AI Service",
     description="AI-powered financial insights and SMS parsing service",
     version="1.0.0",
 )
 
-# CORS middleware
+# CORS middleware — restrict to explicitly configured origins. In production
+# this should be the backend's external URL only; in dev it defaults to a
+# small allowlist of local hosts. Using `["*"]` together with
+# `allow_credentials=True` is rejected by browsers and hides misconfiguration.
+_raw_origins = (os.getenv("ALLOWED_ORIGINS") or "").strip()
+if _raw_origins:
+    _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+elif ENVIRONMENT == "production":
+    _allowed_origins = []  # explicit deny
+else:
+    _allowed_origins = [
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://localhost:8081",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Internal-Token"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Path-based internal-token middleware
+# ---------------------------------------------------------------------------
+# `require_internal_token` is the per-route dependency for fine-grained use
+# cases, but every business endpoint here lives under `/api/v1/*`. Rather
+# than wire `Depends(require_internal_token)` into 30+ routes individually,
+# we enforce the same check once in middleware. Health/docs paths are
+# explicitly unauthenticated so K8s probes and developers can still reach
+# them.
+# ---------------------------------------------------------------------------
+from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
+from starlette.responses import JSONResponse  # noqa: E402
+
+_PUBLIC_PATHS = {"/", "/health", "/docs", "/openapi.json", "/redoc"}
+
+
+class InternalTokenMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        # CORS preflight requests must be allowed through unauthenticated.
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
+        path = request.url.path
+        if path in _PUBLIC_PATHS or path.startswith("/docs") or path.startswith("/openapi"):
+            return await call_next(request)
+
+        if not INTERNAL_API_TOKEN:
+            # Dev mode without a token configured — allow.
+            return await call_next(request)
+
+        provided = request.headers.get("x-internal-token") or request.headers.get(
+            "X-Internal-Token"
+        )
+        if not provided or not secrets.compare_digest(provided, INTERNAL_API_TOKEN):
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "success": False,
+                    "error": "unauthorized",
+                    "message": "Invalid or missing X-Internal-Token header",
+                },
+            )
+        return await call_next(request)
+
+
+app.add_middleware(InternalTokenMiddleware)
 
 # Initialize services
 sms_parser = SmsParserService()

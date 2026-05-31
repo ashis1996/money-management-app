@@ -83,9 +83,10 @@ describe('UserService', () => {
       expect(mockPrismaService.account.create).toHaveBeenCalledWith({
         data: {
           userId: 'user-1',
-          name: 'Main Account',
-          type: 'BANK',
+          accountName: 'Main Account',
+          accountType: 'BANK',
           balance: 0,
+          isPrimary: true,
         },
       });
     });

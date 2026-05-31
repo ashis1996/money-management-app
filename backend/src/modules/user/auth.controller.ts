@@ -1,44 +1,55 @@
-import { Controller, Post, Body, UseGuards, HttpCode } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, HttpCode, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from '../../common/guards/local-auth.guard';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RefreshTokenGuard } from '../../common/guards/refresh-token.guard';
-import { User } from '../../common/decorators/user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
+import { User, RequestUser } from '../../common/decorators/user.decorator';
+import { LoginDto } from '@money-management/shared/dto';
+import { RegisterDto } from './dto/register.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { LogoutDto } from './dto/logout.dto';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
+  // Public so a future global JwtAuthGuard wouldn't accidentally lock it out.
+  @Public()
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
-  async register(@Body() body: { email: string; password: string; name?: string; phone?: string }) {
-    return this.authService.register(body.email, body.password, body.name, body.phone);
+  async register(@Body() dto: RegisterDto) {
+    return this.authService.register(dto.email, dto.password, dto.name, dto.phone);
   }
 
+  @Public()
   @Post('login')
   @UseGuards(LocalAuthGuard)
   @HttpCode(200)
   @ApiOperation({ summary: 'Login user' })
-  async login(@User() user: any) {
-    return this.authService.generateSession(user);
+  // The body is also documented for Swagger; LocalAuthGuard validates it
+  // via passport-local using the email/password fields.
+  async login(@User() user: RequestUser, @Body() _dto: LoginDto) {
+    return this.authService.generateSession(user as any);
   }
 
+  @Public()
   @Post('refresh')
   @UseGuards(RefreshTokenGuard)
   @HttpCode(200)
   @ApiOperation({ summary: 'Refresh access token' })
-  async refreshTokens(@User() user: any, @Body() body: { refreshToken: string }) {
-    return this.authService.refreshTokens(body.refreshToken);
+  async refreshTokens(@Body() dto: RefreshTokenDto) {
+    return this.authService.refreshTokens(dto.refreshToken);
   }
 
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout user' })
-  async logout(@User() user: any, @Body() body: { refreshToken?: string }) {
-    await this.authService.logout(user.id, body.refreshToken);
+  async logout(@User() user: RequestUser, @Body() dto: LogoutDto) {
+    await this.authService.logout(user.id, dto.refreshToken);
     return { message: 'Logged out successfully' };
   }
 }

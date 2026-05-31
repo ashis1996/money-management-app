@@ -45,8 +45,29 @@ spec:
                 secretKeyRef:
                   name: money-secrets
                   key: jwt-secret
+            - name: REFRESH_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: money-secrets
+                  key: refresh-token-secret
+            # Shared secret required by the ai-service to accept calls from
+            # this backend. Both pods must read the same value.
+            - name: INTERNAL_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: money-secrets
+                  key: internal-api-token
+            - name: ALLOWED_ORIGINS
+              valueFrom:
+                secretKeyRef:
+                  name: money-secrets
+                  key: allowed-origins
+                  optional: true
+            # AI service includes the /api/v1 prefix so AiProxyService can
+            # append paths like /sms/parse directly without doubling the
+            # version segment.
             - name: AI_SERVICE_URL
-              value: "http://ai-service:8000"
+              value: "http://ai-service/api/v1"
           resources:
             requests:
               memory: "256Mi"
@@ -54,15 +75,17 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+          # NestJS sets a global prefix of /api/v1 in main.ts. The previous
+          # `/health` path matched no route and probes silently failed.
           livenessProbe:
             httpGet:
-              path: /health
+              path: /api/v1/health
               port: 3000
             initialDelaySeconds: 30
             periodSeconds: 10
           readinessProbe:
             httpGet:
-              path: /health
+              path: /api/v1/health
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 5
