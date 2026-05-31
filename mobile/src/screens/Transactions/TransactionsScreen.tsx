@@ -3,20 +3,30 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
   ScrollView,
   Modal,
   TextInput,
-  ActivityIndicator,
 } from 'react-native';
-import { Card, Badge, Button, EmptyState } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius, Shadows, Tints } from '../../styles/theme';
+import {
+  Search,
+  Sliders,
+  Plus,
+  X,
+  Sparkles,
+  Check,
+  Edit3,
+  Calendar,
+  ArrowRight,
+  Mic,
+} from 'lucide-react-native';
+import { Card, Badge, Button, EmptyState, IconButton } from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
 import { useTransactions, useUpdateTransaction } from '../../hooks';
+import { formatCurrency } from '../../utils';
 
 type CaptureMode = 'AUTO' | 'MANUAL' | 'ASSISTED';
 type TransactionType = 'CREDIT' | 'DEBIT';
-type TransactionSource = 'SMS' | 'EMAIL' | 'UPI' | 'BANK_API' | 'MANUAL' | 'VOICE';
 
 interface Transaction {
   id: string;
@@ -26,7 +36,7 @@ interface Transaction {
   merchant: string;
   description: string;
   date: string;
-  source: TransactionSource;
+  source: string;
   captureMode: CaptureMode;
   isImpulse?: boolean;
   isLateNight?: boolean;
@@ -34,38 +44,31 @@ interface Transaction {
   isUserConfirmed?: boolean;
   aiSuggestedCategory?: string;
   aiConfidence?: number;
-  account?: string;
 }
 
-// Mock transactions data
-const mockTransactions: Transaction[] = [];
-
-const CATEGORY_ICONS: Record<string, string> = {
-  Food: '🍔',
-  Shopping: '🛍️',
-  Transport: '🚗',
-  Entertainment: '🎬',
-  Bills: '⚡',
-  Health: '💊',
-  Salary: '💰',
-  Other: '📦',
-};
-
-const SOURCE_ICONS: Record<TransactionSource, string> = {
-  SMS: '📩',
-  EMAIL: '✉️',
-  UPI: '📱',
-  BANK_API: '🏦',
-  MANUAL: '✍️',
-  VOICE: '🎤',
-};
-
-const FILTER_TABS = [
+const FILTER_TABS: Array<{ key: 'all' | CaptureMode; label: string }> = [
   { key: 'all', label: 'All' },
-  { key: 'AUTO', label: '⚡ Auto' },
-  { key: 'ASSISTED', label: '🤖 Assisted' },
-  { key: 'MANUAL', label: '✍️ Manual' },
+  { key: 'AUTO', label: 'Auto' },
+  { key: 'ASSISTED', label: 'Assisted' },
+  { key: 'MANUAL', label: 'Manual' },
 ];
+
+// Single-letter glyph backgrounds — derived from the merchant's first
+// character so different merchants don't all look the same.
+const GLYPH_PALETTE = [
+  Colors.accentPrimary,
+  Colors.accentAi,
+  Colors.accentSuccess,
+  Colors.accentWarning,
+  Colors.accentError,
+  '#A78BFA',
+  '#F472B6',
+];
+function glyphColor(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+  return GLYPH_PALETTE[Math.abs(hash) % GLYPH_PALETTE.length];
+}
 
 export function TransactionsScreen({ navigation }: any) {
   const [filter, setFilter] = useState<'all' | CaptureMode>('all');
@@ -97,7 +100,6 @@ export function TransactionsScreen({ navigation }: any) {
       isUserConfirmed: t.isUserConfirmed,
       aiSuggestedCategory: t.aiSuggestedCategory,
       aiConfidence: t.aiConfidence ? Number(t.aiConfidence) : undefined,
-      account: t.account?.accountName,
     }));
   }, [txQuery.data]);
 
@@ -121,26 +123,35 @@ export function TransactionsScreen({ navigation }: any) {
     });
   }, [transactions, filter, typeFilter, search]);
 
-  // Group by date
-  const groupedTransactions = useMemo(() => {
+  // Mini analytics roll-up
+  const analytics = useMemo(() => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    let income = 0;
+    let spent = 0;
+    transactions.forEach((t) => {
+      if (new Date(t.date).getTime() < monthStart) return;
+      if (t.type === 'CREDIT') income += t.amount;
+      else spent += t.amount;
+    });
+    return { income, spent, net: income - spent };
+  }, [transactions]);
+
+  const grouped = useMemo(() => {
     const groups: Record<string, Transaction[]> = {};
     filteredTransactions.forEach((tx) => {
       const date = new Date(tx.date);
       const today = new Date();
       const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
       let key: string;
-      if (date.toDateString() === today.toDateString()) {
-        key = 'Today';
-      } else if (date.toDateString() === yesterday.toDateString()) {
-        key = 'Yesterday';
-      } else {
+      if (date.toDateString() === today.toDateString()) key = 'Today';
+      else if (date.toDateString() === yesterday.toDateString()) key = 'Yesterday';
+      else
         key = date.toLocaleDateString('en-IN', {
           day: 'numeric',
           month: 'short',
           year: 'numeric',
         });
-      }
       if (!groups[key]) groups[key] = [];
       groups[key].push(tx);
     });
@@ -150,30 +161,32 @@ export function TransactionsScreen({ navigation }: any) {
   const handleConfirmAI = (id: string) => {
     updateTx.mutate({ id, data: { isUserConfirmed: true } });
   };
-
   const handleRejectAI = (id: string) => {
-    // In real app, would open category picker
     updateTx.mutate({ id, data: { isUserConfirmed: true, categoryId: 'Other' } });
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.title}>Transactions</Text>
-          <Text style={styles.subtitle}>{filteredTransactions.length} transactions</Text>
+          <Text style={styles.subtitle}>
+            {filteredTransactions.length}{' '}
+            {filteredTransactions.length === 1 ? 'transaction' : 'transactions'}
+          </Text>
         </View>
-        <TouchableOpacity
-          style={styles.addButton}
+        <IconButton
+          name="plus"
+          variant="primary"
+          size="md"
+          accessibilityLabel="Add transaction"
           onPress={() => navigation.navigate('AddTransaction')}
-        >
-          <Text style={styles.addButtonIcon}>+</Text>
-        </TouchableOpacity>
+        />
       </View>
 
       {/* Search bar */}
       <View style={styles.searchBar}>
-        <Text style={styles.searchIcon}>🔍</Text>
+        <Search size={16} color={Colors.textSecondary} strokeWidth={1.75} />
         <TextInput
           style={styles.searchInput}
           placeholder="Search merchants, categories..."
@@ -181,25 +194,67 @@ export function TransactionsScreen({ navigation }: any) {
           value={search}
           onChangeText={setSearch}
         />
-        <TouchableOpacity onPress={() => setShowFilters(true)}>
-          <Text style={styles.filterIcon}>⚙️</Text>
+        <TouchableOpacity hitSlop={6} accessibilityLabel="Voice search">
+          <Mic size={16} color={Colors.textSecondary} strokeWidth={1.75} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setShowFilters(true)}
+          hitSlop={6}
+          accessibilityLabel="Filters"
+          style={{ marginLeft: Spacing.sm }}
+        >
+          <Sliders size={16} color={Colors.textSecondary} strokeWidth={1.75} />
         </TouchableOpacity>
       </View>
 
-      {/* AI Pending Banner */}
+      {/* Mini analytics card */}
+      <Card style={styles.analyticsCard} padding="base">
+        <View style={styles.analyticsRow}>
+          <View style={styles.analyticsItem}>
+            <Text style={styles.analyticsLabel}>This month</Text>
+            <Text style={styles.analyticsHeadline}>
+              {formatCurrency(analytics.spent, { compact: true })}
+            </Text>
+            <Text style={styles.analyticsSub}>spent</Text>
+          </View>
+          <View style={styles.analyticsDivider} />
+          <View style={styles.analyticsItem}>
+            <Text style={styles.analyticsLabel}>Net</Text>
+            <Text
+              style={[
+                styles.analyticsHeadline,
+                {
+                  color: analytics.net >= 0 ? Colors.accentSuccess : Colors.accentError,
+                },
+              ]}
+            >
+              {analytics.net >= 0 ? '+' : '-'}
+              {formatCurrency(Math.abs(analytics.net), { compact: true })}
+            </Text>
+            <Text style={styles.analyticsSub}>this month</Text>
+          </View>
+        </View>
+      </Card>
+
+      {/* AI nudge */}
       {pendingAICount > 0 && (
-        <Card style={styles.aiBanner}>
-          <View style={styles.aiBannerContent}>
-            <Text style={styles.aiBannerIcon}>🤖</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.aiBannerTitle}>{pendingAICount} AI suggestions waiting</Text>
-              <Text style={styles.aiBannerSubtitle}>Swipe to approve or reject categorization</Text>
+        <Card variant="ai" style={styles.aiNudge}>
+          <View style={styles.aiNudgeRow}>
+            <View style={styles.aiNudgeIcon}>
+              <Sparkles size={16} color={Colors.accentAi} strokeWidth={1.75} />
             </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.aiNudgeTitle}>{pendingAICount} AI suggestions waiting</Text>
+              <Text style={styles.aiNudgeSubtitle}>
+                Confirm or recategorize the highlighted rows below.
+              </Text>
+            </View>
+            <ArrowRight size={16} color={Colors.accentAi} strokeWidth={1.5} />
           </View>
         </Card>
       )}
 
-      {/* Filter tabs */}
+      {/* Filter chip rail */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -208,36 +263,38 @@ export function TransactionsScreen({ navigation }: any) {
         {FILTER_TABS.map((tab) => (
           <TouchableOpacity
             key={tab.key}
-            style={[styles.filterTab, filter === tab.key && styles.filterTabActive]}
-            onPress={() => setFilter(tab.key as any)}
+            style={[styles.chip, filter === tab.key && styles.chipActive]}
+            onPress={() => setFilter(tab.key)}
+            accessibilityRole="button"
+            accessibilityLabel={tab.label}
           >
-            <Text style={[styles.filterTabText, filter === tab.key && styles.filterTabTextActive]}>
+            <Text style={[styles.chipLabel, filter === tab.key && styles.chipLabelActive]}>
               {tab.label}
             </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
 
-      {/* Transactions list */}
+      {/* List */}
       <ScrollView
         style={styles.list}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       >
-        {Object.keys(groupedTransactions).length === 0 ? (
+        {Object.keys(grouped).length === 0 ? (
           <EmptyState
             icon="📭"
-            title="No transactions"
-            message="Try adjusting your filters or add a new transaction"
+            title="No transactions yet"
+            message="Add a transaction or wait for SMS auto-capture to fill in your activity."
             actionLabel="Add Transaction"
             onAction={() => navigation.navigate('AddTransaction')}
           />
         ) : (
-          Object.entries(groupedTransactions).map(([date, txns]) => (
+          Object.entries(grouped).map(([date, txns]) => (
             <View key={date}>
               <Text style={styles.dateHeader}>{date}</Text>
               {txns.map((tx) => (
-                <TransactionItem
+                <TransactionRow
                   key={tx.id}
                   transaction={tx}
                   onConfirm={() => handleConfirmAI(tx.id)}
@@ -250,71 +307,46 @@ export function TransactionsScreen({ navigation }: any) {
         )}
       </ScrollView>
 
-      {/* Filter Modal */}
-      <Modal
+      {/* Filter modal */}
+      <FilterModal
         visible={showFilters}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowFilters(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filters</Text>
-              <TouchableOpacity onPress={() => setShowFilters(false)}>
-                <Text style={styles.modalClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.filterLabel}>Type</Text>
-            <View style={styles.filterRow}>
-              {(['ALL', 'CREDIT', 'DEBIT'] as const).map((type) => (
-                <TouchableOpacity
-                  key={type}
-                  style={[styles.typeChip, typeFilter === type && styles.typeChipActive]}
-                  onPress={() => setTypeFilter(type)}
-                >
-                  <Text
-                    style={[styles.typeChipText, typeFilter === type && styles.typeChipTextActive]}
-                  >
-                    {type}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Button
-              title="Apply Filters"
-              onPress={() => setShowFilters(false)}
-              variant="primary"
-              fullWidth
-              style={{ marginTop: Spacing.lg }}
-            />
-          </View>
-        </View>
-      </Modal>
+        typeFilter={typeFilter}
+        onTypeChange={setTypeFilter}
+        onClose={() => setShowFilters(false)}
+      />
     </View>
   );
 }
 
-interface TransactionItemProps {
+// =============================================================
+// Transaction row
+// =============================================================
+function TransactionRow({
+  transaction: tx,
+  onConfirm,
+  onReject,
+  onPress,
+}: {
   transaction: Transaction;
   onConfirm: () => void;
   onReject: () => void;
   onPress: () => void;
-}
-
-function TransactionItem({ transaction: tx, onConfirm, onReject, onPress }: TransactionItemProps) {
+}) {
   const isPendingAI = tx.captureMode === 'ASSISTED' && !tx.isUserConfirmed;
-  const icon = CATEGORY_ICONS[tx.category] || CATEGORY_ICONS.Other;
+  const initial = (tx.merchant?.[0] || '?').toUpperCase();
+  const tone = glyphColor(tx.merchant);
 
   return (
-    <Card onPress={onPress} style={[styles.txItem, isPendingAI && styles.txItemPending]}>
-      <View style={styles.txMain}>
-        <View style={[styles.txIcon, { backgroundColor: getCategoryColor(tx.category) }]}>
-          <Text style={styles.txIconText}>{icon}</Text>
+    <Card
+      onPress={onPress}
+      style={[styles.txRow, isPendingAI && styles.txRowPending]}
+      padding="base"
+    >
+      <View style={styles.txMainRow}>
+        <View style={[styles.txGlyph, { backgroundColor: tone + '22', borderColor: tone + '44' }]}>
+          <Text style={[styles.txGlyphLetter, { color: tone }]}>{initial}</Text>
         </View>
-        <View style={styles.txContent}>
+        <View style={{ flex: 1, minWidth: 0 }}>
           <View style={styles.txTopRow}>
             <Text style={styles.txMerchant} numberOfLines={1}>
               {tx.merchant}
@@ -322,48 +354,111 @@ function TransactionItem({ transaction: tx, onConfirm, onReject, onPress }: Tran
             <Text
               style={[
                 styles.txAmount,
-                { color: tx.type === 'CREDIT' ? Colors.success : Colors.textPrimary },
+                {
+                  color: tx.type === 'CREDIT' ? Colors.accentSuccess : Colors.textPrimary,
+                },
               ]}
             >
-              {tx.type === 'CREDIT' ? '+' : '-'}₹{tx.amount.toLocaleString()}
+              {tx.type === 'CREDIT' ? '+' : '−'}
+              {formatCurrency(tx.amount)}
             </Text>
           </View>
           <View style={styles.txBottomRow}>
             <Text style={styles.txMeta} numberOfLines={1}>
-              {tx.category} • {SOURCE_ICONS[tx.source]} {tx.source}
+              {tx.category} • {tx.source.toLowerCase()}
             </Text>
             <Text style={styles.txTime}>{formatTime(tx.date)}</Text>
           </View>
-          {/* Behavioral tags */}
           {(tx.isImpulse || tx.isLateNight) && (
-            <View style={styles.tagRow}>
-              {tx.isImpulse && <Badge text="🎯 Impulse" variant="warning" size="sm" />}
-              {tx.isLateNight && <Badge text="🌙 Late Night" variant="info" size="sm" />}
+            <View style={styles.txTags}>
+              {tx.isImpulse && <Badge text="Impulse" variant="warning" size="sm" />}
+              {tx.isLateNight && <Badge text="Late night" variant="ai" size="sm" />}
             </View>
           )}
         </View>
       </View>
 
-      {/* AI Confirmation actions */}
       {isPendingAI && (
         <View style={styles.aiActions}>
-          <View style={styles.aiInfo}>
-            <Text style={styles.aiInfoText}>
-              🤖 AI suggests: <Text style={styles.aiCategory}>{tx.aiSuggestedCategory}</Text> (
-              {Math.round((tx.aiConfidence || 0) * 100)}% confident)
-            </Text>
-          </View>
-          <View style={styles.aiButtons}>
-            <TouchableOpacity style={[styles.aiButton, styles.aiReject]} onPress={onReject}>
-              <Text style={styles.aiRejectText}>Change</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.aiButton, styles.aiApprove]} onPress={onConfirm}>
-              <Text style={styles.aiApproveText}>✓ Approve</Text>
-            </TouchableOpacity>
+          <Text style={styles.aiHint}>
+            <Sparkles size={12} color={Colors.accentAi} strokeWidth={2} />{' '}
+            <Text style={{ color: Colors.accentAi }}>{tx.aiSuggestedCategory}</Text> (
+            {Math.round((tx.aiConfidence || 0) * 100)}% confident)
+          </Text>
+          <View style={styles.aiButtonRow}>
+            <Button
+              title="Recategorize"
+              variant="secondary"
+              size="sm"
+              onPress={onReject}
+              leadingIcon={<Edit3 size={14} color={Colors.textPrimary} strokeWidth={2} />}
+              style={{ flex: 1 }}
+            />
+            <View style={{ width: Spacing.sm }} />
+            <Button
+              title="Confirm"
+              variant="primary"
+              size="sm"
+              onPress={onConfirm}
+              leadingIcon={<Check size={14} color={Colors.white} strokeWidth={2} />}
+              style={{ flex: 1 }}
+            />
           </View>
         </View>
       )}
     </Card>
+  );
+}
+
+// =============================================================
+// Filter modal (dark glass)
+// =============================================================
+function FilterModal({
+  visible,
+  typeFilter,
+  onTypeChange,
+  onClose,
+}: {
+  visible: boolean;
+  typeFilter: 'ALL' | TransactionType;
+  onTypeChange: (t: 'ALL' | TransactionType) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Filters</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={8}>
+              <X size={20} color={Colors.textSecondary} strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.modalLabel}>Type</Text>
+          <View style={styles.typeRow}>
+            {(['ALL', 'CREDIT', 'DEBIT'] as const).map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[styles.typeChip, typeFilter === t && styles.typeChipActive]}
+                onPress={() => onTypeChange(t)}
+              >
+                <Text
+                  style={[styles.typeChipLabel, typeFilter === t && styles.typeChipLabelActive]}
+                >
+                  {t === 'ALL' ? 'All' : t === 'CREDIT' ? 'Credit' : 'Debit'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={{ marginTop: Spacing.xl }}>
+            <Button title="Apply filters" onPress={onClose} fullWidth />
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -376,20 +471,9 @@ function formatTime(dateStr: string): string {
   });
 }
 
-function getCategoryColor(category: string): string {
-  const colors: Record<string, string> = {
-    Food: Tints.errorBg,
-    Shopping: 'rgba(167, 139, 250, 0.16)',
-    Transport: Tints.aiBg,
-    Entertainment: 'rgba(244, 114, 182, 0.16)',
-    Bills: Tints.warningBg,
-    Health: Tints.successBg,
-    Salary: Tints.successBg,
-    Other: Colors.gray100,
-  };
-  return colors[category] || Colors.gray100;
-}
-
+// =============================================================
+// Styles
+// =============================================================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -397,145 +481,185 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing['3xl'] + Spacing.lg,
     paddingBottom: Spacing.base,
   },
   title: {
-    fontSize: Typography.sizes['2xl'],
+    fontSize: Typography.sizes['3xl'],
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
+    letterSpacing: -0.6,
   },
   subtitle: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
     marginTop: 2,
   },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addButtonIcon: {
-    color: Colors.white,
-    fontSize: 28,
-    fontWeight: Typography.weights.bold,
-  },
+
+  // Search
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: Spacing.lg,
     paddingHorizontal: Spacing.base,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.md,
     height: 48,
-    ...Shadows.sm,
-  },
-  searchIcon: {
-    fontSize: 18,
-    marginRight: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
   searchInput: {
     flex: 1,
+    marginLeft: Spacing.sm,
     fontSize: Typography.sizes.base,
     color: Colors.textPrimary,
   },
-  filterIcon: {
-    fontSize: 20,
-    paddingHorizontal: Spacing.xs,
-  },
-  aiBanner: {
+
+  // Mini analytics
+  analyticsCard: {
     marginHorizontal: Spacing.lg,
     marginTop: Spacing.base,
-    backgroundColor: Tints.primaryBg,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight,
   },
-  aiBannerContent: {
+  analyticsRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  aiBannerIcon: {
-    fontSize: 28,
+  analyticsItem: {
+    flex: 1,
+  },
+  analyticsLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  analyticsHeadline: {
+    fontSize: Typography.sizes['2xl'],
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.6,
+    marginTop: 4,
+  },
+  analyticsSub: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  analyticsDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: Colors.borderDefault,
+    marginHorizontal: Spacing.base,
+  },
+
+  // AI nudge
+  aiNudge: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.base,
+  },
+  aiNudgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  aiNudgeIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(34,211,238,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.sm,
   },
-  aiBannerTitle: {
+  aiNudgeTitle: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
   },
-  aiBannerSubtitle: {
+  aiNudgeSubtitle: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
     marginTop: 2,
   },
+
+  // Chip rail
   filterTabs: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.base,
     gap: Spacing.sm,
   },
-  filterTab: {
+  chip: {
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
     marginRight: Spacing.sm,
   },
-  filterTabActive: {
-    backgroundColor: Colors.primary,
+  chipActive: {
+    backgroundColor: Colors.accentPrimary,
+    borderColor: Colors.accentPrimary,
   },
-  filterTabText: {
+  chipLabel: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.medium,
     color: Colors.textSecondary,
+    letterSpacing: 0.2,
   },
-  filterTabTextActive: {
+  chipLabelActive: {
     color: Colors.white,
   },
+
+  // List
   list: {
     flex: 1,
   },
   listContent: {
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing['2xl'],
+    paddingBottom: Spacing['3xl'],
   },
   dateHeader: {
-    fontSize: Typography.sizes.sm,
+    fontSize: Typography.sizes.xs,
     fontWeight: Typography.weights.semiBold,
-    color: Colors.textSecondary,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
     marginTop: Spacing.base,
     marginBottom: Spacing.sm,
-    textTransform: 'uppercase',
   },
-  txItem: {
+
+  // Tx row
+  txRow: {
     marginBottom: Spacing.sm,
   },
-  txItemPending: {
-    borderWidth: 1,
-    borderColor: Colors.primaryLight,
+  txRowPending: {
+    borderColor: 'rgba(34,211,238,0.40)',
   },
-  txMain: {
+  txMainRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  txIcon: {
+  txGlyph: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
     marginRight: Spacing.sm,
   },
-  txIconText: {
-    fontSize: 20,
-  },
-  txContent: {
-    flex: 1,
+  txGlyphLetter: {
+    fontSize: Typography.sizes.lg,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
   },
   txTopRow: {
     flexDirection: 'row',
@@ -546,11 +670,14 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
   },
   txAmount: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
     marginLeft: Spacing.sm,
   },
   txBottomRow: {
@@ -559,74 +686,60 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   txMeta: {
+    flex: 1,
     fontSize: Typography.sizes.xs,
     color: Colors.textSecondary,
-    flex: 1,
   },
   txTime: {
     fontSize: Typography.sizes.xs,
     color: Colors.textTertiary,
+    fontVariant: ['tabular-nums'] as any,
     marginLeft: Spacing.sm,
   },
-  tagRow: {
+  txTags: {
     flexDirection: 'row',
-    gap: Spacing.xs,
+    gap: 4,
     marginTop: Spacing.xs,
   },
-  // AI Actions
+
+  // AI actions
   aiActions: {
     marginTop: Spacing.sm,
     paddingTop: Spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: Colors.gray100,
+    borderTopColor: Colors.borderDefault,
   },
-  aiInfo: {
-    marginBottom: Spacing.sm,
-  },
-  aiInfoText: {
+  aiHint: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
+    marginBottom: Spacing.sm,
   },
-  aiCategory: {
-    color: Colors.primary,
-    fontWeight: Typography.weights.semiBold,
-  },
-  aiButtons: {
+  aiButtonRow: {
     flexDirection: 'row',
-    gap: Spacing.sm,
   },
-  aiButton: {
-    flex: 1,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.base,
-    alignItems: 'center',
-  },
-  aiReject: {
-    backgroundColor: Colors.gray100,
-  },
-  aiRejectText: {
-    color: Colors.textSecondary,
-    fontWeight: Typography.weights.medium,
-  },
-  aiApprove: {
-    backgroundColor: Colors.success,
-  },
-  aiApproveText: {
-    color: Colors.white,
-    fontWeight: Typography.weights.semiBold,
-  },
+
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
     justifyContent: 'flex-end',
   },
-  modalContent: {
-    backgroundColor: Colors.white,
+  modalSheet: {
+    backgroundColor: Colors.surfaceContainerHighest,
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
     padding: Spacing.lg,
     paddingBottom: Spacing['3xl'],
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.outline,
+    alignSelf: 'center',
+    marginBottom: Spacing.base,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -637,40 +750,40 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: Typography.sizes.xl,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
   },
-  modalClose: {
-    fontSize: 24,
-    color: Colors.textSecondary,
-  },
-  filterLabel: {
-    fontSize: Typography.sizes.sm,
+  modalLabel: {
+    fontSize: Typography.sizes.xs,
     fontWeight: Typography.weights.semiBold,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
+    marginBottom: Spacing.sm,
   },
-  filterRow: {
+  typeRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
   },
   typeChip: {
     flex: 1,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.gray100,
+    backgroundColor: Colors.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
     alignItems: 'center',
   },
   typeChipActive: {
-    backgroundColor: Colors.primary,
+    backgroundColor: 'rgba(59,130,246,0.20)',
+    borderColor: Colors.accentPrimary,
   },
-  typeChipText: {
+  typeChipLabel: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.medium,
     color: Colors.textSecondary,
   },
-  typeChipTextActive: {
-    color: Colors.white,
+  typeChipLabelActive: {
+    color: Colors.accentPrimary,
   },
 });
