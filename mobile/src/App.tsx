@@ -47,6 +47,7 @@ import {
   AccountsScreen,
   SplitExpenseScreen,
   SmsForwardScreen,
+  StoryBookScreen,
 } from './screens';
 
 const queryClient = new QueryClient({
@@ -190,6 +191,11 @@ function MainStack() {
       <RootStack.Screen name="MoneyLeaks" component={MoneyLeaksScreen} />
       <RootStack.Screen name="HealthScore" component={HealthScoreScreen} />
       <RootStack.Screen name="SmsForward" component={SmsForwardScreen} />
+
+      {/* Dev-only catalogue screen. Always wired so debug builds can
+          deeplink to it (`navigation.navigate('StoryBook')`); not
+          surfaced in product navigation. */}
+      <RootStack.Screen name="StoryBook" component={StoryBookScreen} />
     </RootStack.Navigator>
   );
 }

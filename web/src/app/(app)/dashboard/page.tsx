@@ -114,6 +114,21 @@ export default function DashboardPage() {
     const dailyBurn = monthlySpent / 30;
     const daysLeft = dailyBurn > 0 ? Math.floor(totalBalance / dailyBurn) : 30;
 
+    // End-of-month projection: assume the user keeps spending at their
+    // month-to-date daily burn for every remaining day. We don't try to
+    // model an income event coming in late in the month — most salaries
+    // post on the 1st, which is already in `monthlyIncome`. If we get
+    // this wrong on the conservative side it costs the user nothing;
+    // overstating projected balance can make them overspend.
+    const today = new Date();
+    const lastDayOfMonth = new Date(
+      today.getFullYear(),
+      today.getMonth() + 1,
+      0,
+    ).getDate();
+    const daysRemainingInMonth = Math.max(0, lastDayOfMonth - today.getDate());
+    const projectedEndOfMonth = Math.max(0, totalBalance - dailyBurn * daysRemainingInMonth);
+
     return {
       archetype,
       healthScore,
@@ -130,6 +145,8 @@ export default function DashboardPage() {
       activeSubscriptions: subs.length,
       cards: cards.slice(0, 3),
       forecastDays: daysLeft,
+      projectedEndOfMonth,
+      daysRemainingInMonth,
     };
   }, [
     dashboardQuery.data,
@@ -182,7 +199,13 @@ export default function DashboardPage() {
       />
     ),
     forecast: (
-      <ForecastWidget key="forecast" days={data.forecastDays} balance={data.totalBalance} />
+      <ForecastWidget
+        key="forecast"
+        days={data.forecastDays}
+        projected={data.projectedEndOfMonth}
+        daysRemainingInMonth={data.daysRemainingInMonth}
+        currentBalance={data.totalBalance}
+      />
     ),
     payments: (
       <SubscriptionsWidget
@@ -553,7 +576,22 @@ function SubscriptionsWidget({ count, dues }: { count: number; dues: number }) {
   );
 }
 
-function ForecastWidget({ days, balance }: { days: number; balance: number }) {
+function ForecastWidget({
+  days,
+  projected,
+  daysRemainingInMonth,
+  currentBalance,
+}: {
+  days: number;
+  projected: number;
+  daysRemainingInMonth: number;
+  currentBalance: number;
+}) {
+  // The runway figure is the headline. We pick a tone for it based on
+  // how close it cuts to the end of the month: if the user runs out
+  // before month-end we paint it warning so they notice.
+  const tight = days < daysRemainingInMonth;
+
   return (
     <Card variant="hero" className="bg-gradient-to-br from-accent-primary/30 to-accent-primary/10">
       <div className="relative">
@@ -564,12 +602,41 @@ function ForecastWidget({ days, balance }: { days: number; balance: number }) {
         <p className="text-body-sm text-on-surface-variant mt-3">
           At current pace, your balance lasts
         </p>
-        <p className="text-display-xl text-on-surface tabular-nums my-1">
+        <p
+          className={`text-display-xl tabular-nums my-1 ${
+            tight ? 'text-accent-warning' : 'text-on-surface'
+          }`}
+        >
           {days} <span className="text-headline-md text-on-surface-variant">days</span>
         </p>
-        <p className="text-body-sm text-on-surface-variant">
-          End-of-month projected: {formatCurrency(balance)}
-        </p>
+        <div className="mt-2 grid grid-cols-2 gap-3 border-t border-[var(--border-default)] pt-3">
+          <div>
+            <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">
+              End of month
+            </p>
+            <p
+              className={`text-headline-sm tabular-nums mt-1 ${
+                tight ? 'text-accent-warning' : 'text-on-surface'
+              }`}
+            >
+              {formatCurrency(projected, { compact: true })}
+            </p>
+          </div>
+          <div>
+            <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">
+              Now
+            </p>
+            <p className="text-headline-sm tabular-nums text-on-surface mt-1">
+              {formatCurrency(currentBalance, { compact: true })}
+            </p>
+          </div>
+        </div>
+        {tight && (
+          <p className="mt-3 inline-flex items-center gap-1.5 text-body-sm text-accent-warning">
+            <AlertTriangle size={14} strokeWidth={2} />
+            Tight runway — review subscriptions or top up.
+          </p>
+        )}
       </div>
     </Card>
   );

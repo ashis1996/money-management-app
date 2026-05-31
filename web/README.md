@@ -33,7 +33,7 @@ The browser hits `http://localhost:3001`. All client API calls go through `/api/
 src/
 ├── app/                          # Next.js App Router
 │   ├── (auth)/                   # unauthenticated shell (login, register)
-│   ├── (app)/                    # authenticated shell (dashboard, ...)
+│   ├── (app)/                    # authenticated shell (14 routes)
 │   ├── api/
 │   │   ├── auth/{login,register,logout,me}/route.ts
 │   │   └── proxy/[...path]/route.ts   # auth-injecting proxy to NestJS
@@ -41,21 +41,45 @@ src/
 │   ├── layout.tsx                # root layout (Inter font, providers)
 │   └── providers.tsx             # React Query + auth bootstrap
 ├── components/
-│   ├── ui/                       # Button, Card, Input, Badge, ProgressRing, ...
-│   ├── layout/                   # AppShell, Sidebar, Topbar, AuthShell, BackgroundGlow
+│   ├── ui/                       # Button, Card, Input, Badge, Modal, Toggle, ProgressRing, ...
+│   ├── layout/                   # AppShell, Sidebar, Topbar, AuthShell, BackgroundGlow, MobileNav
 │   └── ai/                       # AiOrb (and future AI surfaces)
-├── hooks/                        # React Query hooks (useDashboard, ...)
+├── hooks/                        # React Query hooks (one per domain)
 ├── lib/
 │   ├── api.ts                    # browser → /api/proxy
 │   ├── api-server.ts             # server → backend (cookies + bearer)
 │   ├── auth/cookies.ts           # set/clear/read mm_at + mm_rt
 │   ├── env.ts                    # ServerEnv / PublicEnv
 │   ├── format.ts                 # currency / date / greeting (mirror mobile)
-│   └── archetype.ts              # widget-order logic (mirror mobile)
+│   ├── archetype.ts              # widget-order logic (mirror mobile)
+│   └── categories.ts             # category vocabulary (mirror mobile)
 ├── store/auth.ts                 # zustand store (user, login, logout, bootstrap)
 ├── types/index.ts                # domain types (mirror mobile)
 └── middleware.ts                 # gate (app)/* routes on cookie presence
 ```
+
+### Routes
+
+Authenticated shell (`(app)/`):
+
+| Route | Purpose |
+|---|---|
+| `/dashboard` | Hero stats, archetype, health score, action cards |
+| `/transactions` (+ `[id]`, `/new`) | List, detail, create |
+| `/accounts` | Net worth, link / sync / set-primary |
+| `/budgets` | Per-category cards with progress |
+| `/goals` | Per-goal ring, contribute, target dates |
+| `/subscriptions` | Active list, leak hints, cancel walkthrough |
+| `/calendar` | Upcoming subscription renewals grouped by week |
+| `/insights` | Period analytics, top categories / merchants |
+| `/health-score` | Score breakdown + recommendations |
+| `/money-leaks` | AI-detected leaks with monthly savings impact |
+| `/notifications` | Bucketed inbox with mark-read / delete |
+| `/weekly-summary` | AI summary + behavioural patterns + 8-week history |
+| `/ai-coach` | Conversational AI assistant |
+| `/settings` | Profile, capture modes, preferences, export |
+
+Unauthenticated (`(auth)/`): `/login`, `/register`.
 
 ### Auth flow
 
@@ -67,17 +91,17 @@ src/
 6. On 401 the proxy attempts a single `/auth/refresh` round-trip, sets new cookies, and retries the original request.
 7. Logout: `POST /api/auth/logout` calls backend logout (best-effort) and clears cookies.
 
-Middleware gates `/dashboard`, `/transactions`, `/subscriptions`, `/insights`, `/ai-coach`, `/settings` on cookie presence and bounces unauthenticated visitors to `/login?next=…`.
+Middleware gates every route under `(app)/` on cookie presence and bounces unauthenticated visitors to `/login?next=…`.
+
+## Responsive nav
+
+Below `lg` (1024px) the persistent `Sidebar` is hidden and a slide-in `MobileNav` drawer takes over. The hamburger trigger lives in the `Topbar`. Both nav surfaces iterate over `components/layout/navItems.ts` so they can never drift.
 
 ## Design tokens
 
 `src/app/globals.css` defines the MoneyMind dark palette as CSS custom properties. `tailwind.preset.js` exposes them as Tailwind utilities (e.g. `bg-surface-container`, `text-on-surface`, `border-accent-ai`). Both are 1:1 mirrors of `.kiro/specs/moneymind-design-system/tokens/`.
 
 When the spec changes, update the spec first; sync the runtime mirrors in the same PR.
-
-## Phasing
-
-This package was scaffolded in Phase 5 (see `.kiro/specs/moneymind-design-system/05-implementation-plan.md`). The Dashboard is fully wired; Transactions / Subscriptions / Insights / AI Coach / Settings render placeholder pages until Phases 6–8 fill them in.
 
 ## Verification commands
 
