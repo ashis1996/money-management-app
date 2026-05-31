@@ -1,31 +1,91 @@
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios';
+import axios, {
+  AxiosError,
+  AxiosInstance,
+  AxiosRequestConfig,
+  InternalAxiosRequestConfig,
+} from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
+import type {
+  Account,
+  ActionCard,
+  AppNotification,
+  AuthResponse,
+  Budget,
+  CategorySpending,
+  CreateTransactionPayload,
+  DashboardStats,
+  Goal,
+  HealthScoreResult,
+  Insight,
+  MoneyLeaksResult,
+  Subscription,
+  SubscriptionStatus,
+  Transaction,
+  TransactionType,
+  User,
+} from '../types';
 
-const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:3000/api/v1';
+// =============================================================
+// Base URL resolution
+//
+// Order: EXPO_PUBLIC_API_URL  ->  expoConfig.extra.apiUrl  ->  fallback
+// The fallback is the Android emulator default; we log a warning in dev
+// so contributors notice the missing config quickly.
+// =============================================================
+const FALLBACK_BASE_URL = 'http://10.0.2.2:3000/api/v1';
 
-/**
- * NestJS wraps every successful response with the ResponseInterceptor:
- *   { success: true, data: <payload>, message?, errors?, timestamp? }
- * Hooks consume `data` directly so we type the wrapper here.
- */
+function resolveBaseUrl(): string {
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (fromEnv) return fromEnv;
+
+  const fromConfig = (Constants?.expoConfig?.extra as
+    | { apiUrl?: string }
+    | undefined)?.apiUrl;
+  if (fromConfig) return fromConfig;
+
+  if (__DEV__) {
+    console.warn(
+      '[api] No EXPO_PUBLIC_API_URL or app.json extra.apiUrl set — falling back to',
+      FALLBACK_BASE_URL,
+    );
+  }
+  return FALLBACK_BASE_URL;
+}
+
+export const API_BASE_URL = resolveBaseUrl();
+
+// =============================================================
+// Envelope: every successful response from the NestJS backend is
+// wrapped by ResponseInterceptor with this shape.
+// =============================================================
 export interface ApiEnvelope<T> {
   success: boolean;
   data: T;
   message?: string;
-  errors?: any;
+  errors?: unknown;
   timestamp?: string;
 }
 
+// =============================================================
+// API client (singleton).
+//
+// Notable behaviour:
+//   * Bearer token injected on every outgoing request.
+//   * On 401 we attempt /auth/refresh **once** and replay the request.
+//     A shared in-flight promise serialises concurrent 401s so we don't
+//     fire N refresh calls when N requests fail simultaneously.
+// =============================================================
 class ApiClient {
   private client: AxiosInstance;
+  private refreshPromise: Promise<string | null> | null = null;
   private static instance: ApiClient;
 
   private constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
       headers: { 'Content-Type': 'application/json' },
-      timeout: 30000,
+      timeout: 30_000,
     });
 
     this.setupInterceptors();
@@ -39,11 +99,10 @@ class ApiClient {
   }
 
   private setupInterceptors() {
-    // Auth header
     this.client.interceptors.request.use(
-      async (config) => {
+      async (config: InternalAxiosRequestConfig) => {
         const token = await SecureStore.getItemAsync('accessToken');
-        if (token) {
+        if (token && config.headers) {
           config.headers.Authorization = `Bearer ${token}`;
         }
         return config;
@@ -51,43 +110,76 @@ class ApiClient {
       (error) => Promise.reject(error),
     );
 
-    // Refresh on 401
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
-        const originalRequest: any = error.config;
+        const originalRequest = error.config as
+          | (InternalAxiosRequestConfig & { _retried?: boolean })
+          | undefined;
 
-        if (
-          error.response?.status === 401 &&
-          originalRequest &&
-          !originalRequest.headers?.['X-Retry-Refresh']
-        ) {
-          try {
-            const refreshToken = await SecureStore.getItemAsync('refreshToken');
-            if (!refreshToken) throw new Error('No refresh token');
+        const is401 = error.response?.status === 401;
+        const alreadyRetried = originalRequest?._retried === true;
 
-            const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-              refreshToken,
-            });
-            const { accessToken, refreshToken: newRefreshToken } =
-              response.data.data;
+        // Don't recurse on the refresh call itself.
+        const isRefreshCall = originalRequest?.url?.includes('/auth/refresh');
 
-            await SecureStore.setItemAsync('accessToken', accessToken);
-            await SecureStore.setItemAsync('refreshToken', newRefreshToken);
-
-            originalRequest.headers['Authorization'] = `Bearer ${accessToken}`;
-            originalRequest.headers['X-Retry-Refresh'] = 'true';
-            return this.client(originalRequest);
-          } catch (refreshError) {
-            await SecureStore.deleteItemAsync('accessToken');
-            await SecureStore.deleteItemAsync('refreshToken');
-            return Promise.reject(refreshError);
-          }
+        if (!is401 || !originalRequest || alreadyRetried || isRefreshCall) {
+          return Promise.reject(error);
         }
 
-        return Promise.reject(error);
+        try {
+          const newAccessToken = await this.refreshAccessToken();
+          if (!newAccessToken) {
+            return Promise.reject(error);
+          }
+
+          originalRequest._retried = true;
+          if (!originalRequest.headers) {
+            originalRequest.headers = {} as InternalAxiosRequestConfig['headers'];
+          }
+          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+          return this.client(originalRequest);
+        } catch (refreshError) {
+          await SecureStore.deleteItemAsync('accessToken');
+          await SecureStore.deleteItemAsync('refreshToken');
+          return Promise.reject(refreshError);
+        }
       },
     );
+  }
+
+  /**
+   * Returns a shared in-flight refresh promise so concurrent 401s
+   * collapse into a single network round-trip. Resolves to the new
+   * access token, or null if there's no refresh token to use.
+   */
+  private refreshAccessToken(): Promise<string | null> {
+    if (this.refreshPromise) return this.refreshPromise;
+
+    this.refreshPromise = (async () => {
+      try {
+        const refreshToken = await SecureStore.getItemAsync('refreshToken');
+        if (!refreshToken) return null;
+
+        // Use a bare axios call to avoid bouncing through interceptors.
+        const response = await axios.post<ApiEnvelope<AuthResponse>>(
+          `${API_BASE_URL}/auth/refresh`,
+          { refreshToken },
+          { headers: { 'Content-Type': 'application/json' }, timeout: 30_000 },
+        );
+
+        const tokens = response.data?.data;
+        if (!tokens?.accessToken || !tokens?.refreshToken) return null;
+
+        await SecureStore.setItemAsync('accessToken', tokens.accessToken);
+        await SecureStore.setItemAsync('refreshToken', tokens.refreshToken);
+        return tokens.accessToken;
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
   }
 
   async request<T>(config: AxiosRequestConfig): Promise<T> {
@@ -100,12 +192,12 @@ class ApiClient {
     return response.data;
   }
 
-  async post<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  async post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.client.post<T>(url, data, config);
     return response.data;
   }
 
-  async put<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  async put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.client.put<T>(url, data, config);
     return response.data;
   }
@@ -118,310 +210,372 @@ class ApiClient {
 
 export const api = ApiClient.getInstance();
 
-// ============================================================
+// Convenience: every endpoint returns ApiEnvelope<T>, so this saves
+// a layer of generics at every call-site.
+type Env<T> = ApiEnvelope<T>;
+
+// =============================================================
 // AUTH
-// ============================================================
+// =============================================================
 export const authApi = {
   login: (email: string, password: string) =>
-    api.post<ApiEnvelope<{ user: any; accessToken: string; refreshToken: string }>>(
-      '/auth/login',
-      { email, password },
-    ),
+    api.post<Env<AuthResponse>>('/auth/login', { email, password }),
 
   register: (email: string, password: string, name?: string, phone?: string) =>
-    api.post<ApiEnvelope<{ user: any; accessToken: string; refreshToken: string }>>(
-      '/auth/register',
-      { email, password, name, phone },
-    ),
+    api.post<Env<AuthResponse>>('/auth/register', {
+      email,
+      password,
+      name,
+      phone,
+    }),
 
   logout: (refreshToken?: string) =>
-    api.post<ApiEnvelope<any>>('/auth/logout', { refreshToken }),
+    api.post<Env<{ ok: true }>>('/auth/logout', { refreshToken }),
 
-  getProfile: () => api.get<ApiEnvelope<any>>('/users/me'),
+  getProfile: () => api.get<Env<User>>('/users/me'),
 
-  updateProfile: (data: any) =>
-    api.put<ApiEnvelope<any>>('/users/me', data),
+  updateProfile: (data: Partial<User>) =>
+    api.put<Env<User>>('/users/me', data),
 };
 
-// ============================================================
+// =============================================================
 // TRANSACTIONS
-// ============================================================
+// =============================================================
+export interface TransactionFilters {
+  from?: string;
+  to?: string;
+  category?: string;
+  search?: string;
+  type?: TransactionType;
+}
+
 export const transactionsApi = {
-  getAll: (params?: {
-    from?: string;
-    to?: string;
-    category?: string;
-    search?: string;
-    type?: 'CREDIT' | 'DEBIT';
-  }) => api.get<ApiEnvelope<any[]>>('/transactions', { params }),
+  getAll: (params?: TransactionFilters) =>
+    api.get<Env<Transaction[]>>('/transactions', { params }),
 
-  getById: (id: string) =>
-    api.get<ApiEnvelope<any>>(`/transactions/${id}`),
+  getById: (id: string) => api.get<Env<Transaction>>(`/transactions/${id}`),
 
-  create: (data: any) => api.post<ApiEnvelope<any>>('/transactions', data),
+  create: (data: CreateTransactionPayload) =>
+    api.post<Env<Transaction>>('/transactions', data),
 
-  update: (id: string, data: any) =>
-    api.put<ApiEnvelope<any>>(`/transactions/${id}`, data),
+  update: (id: string, data: Partial<CreateTransactionPayload>) =>
+    api.put<Env<Transaction>>(`/transactions/${id}`, data),
 
   delete: (id: string) =>
-    api.delete<ApiEnvelope<any>>(`/transactions/${id}`),
+    api.delete<Env<{ ok: true }>>(`/transactions/${id}`),
 
   getCategories: (from?: string, to?: string) =>
-    api.get<ApiEnvelope<any[]>>('/transactions/analytics/categories', {
+    api.get<Env<CategorySpending[]>>('/transactions/analytics/categories', {
       params: { from, to },
     }),
 
   getMonthlyStats: (year: number, month: number) =>
-    api.get<ApiEnvelope<any>>('/transactions/analytics/monthly', {
+    api.get<Env<Insight>>('/transactions/analytics/monthly', {
       params: { year, month },
     }),
 
   search: (query: string) =>
-    api.get<ApiEnvelope<any[]>>('/transactions/search', { params: { q: query } }),
+    api.get<Env<Transaction[]>>('/transactions/search', {
+      params: { q: query },
+    }),
 };
 
-// ============================================================
+// =============================================================
 // SMS
-// ============================================================
-export const smsApi = {
-  ingest: (body: string, sender: string, timestamp: string, phoneNumber?: string) =>
-    api.post<ApiEnvelope<any>>('/sms/ingest', { body, sender, timestamp, phoneNumber }),
+// =============================================================
+export interface SmsMessage {
+  body: string;
+  sender: string;
+  timestamp: string;
+  phoneNumber?: string;
+}
 
-  ingestBatch: (
-    messages: Array<{ body: string; sender: string; timestamp: string; phoneNumber?: string }>,
-  ) => api.post<ApiEnvelope<any>>('/sms/ingest/batch', { messages }),
+export const smsApi = {
+  ingest: (message: SmsMessage) =>
+    api.post<Env<{ ok: true }>>('/sms/ingest', message),
+
+  ingestBatch: (messages: SmsMessage[]) =>
+    api.post<Env<{ processed: number }>>('/sms/ingest/batch', { messages }),
 
   getHistory: (page?: number, limit?: number) =>
-    api.get<ApiEnvelope<any>>('/sms/history', { params: { page, limit } }),
+    api.get<Env<{ items: unknown[]; total: number }>>('/sms/history', {
+      params: { page, limit },
+    }),
 
   getUnprocessed: (limit?: number) =>
-    api.get<ApiEnvelope<any[]>>('/sms/unprocessed', { params: { limit } }),
+    api.get<Env<unknown[]>>('/sms/unprocessed', { params: { limit } }),
 };
 
-// ============================================================
+// =============================================================
 // SUBSCRIPTIONS
-// ============================================================
+// =============================================================
 export const subscriptionsApi = {
-  getAll: (status?: string) =>
-    api.get<ApiEnvelope<any[]>>('/subscriptions', { params: { status } }),
+  getAll: (status?: SubscriptionStatus | string) =>
+    api.get<Env<Subscription[]>>('/subscriptions', { params: { status } }),
 
-  getById: (id: string) =>
-    api.get<ApiEnvelope<any>>(`/subscriptions/${id}`),
+  getById: (id: string) => api.get<Env<Subscription>>(`/subscriptions/${id}`),
 
-  create: (data: any) =>
-    api.post<ApiEnvelope<any>>('/subscriptions', data),
+  create: (data: Partial<Subscription>) =>
+    api.post<Env<Subscription>>('/subscriptions', data),
 
-  update: (id: string, data: any) =>
-    api.put<ApiEnvelope<any>>(`/subscriptions/${id}`, data),
+  update: (id: string, data: Partial<Subscription>) =>
+    api.put<Env<Subscription>>(`/subscriptions/${id}`, data),
 
   delete: (id: string) =>
-    api.delete<ApiEnvelope<any>>(`/subscriptions/${id}`),
+    api.delete<Env<{ ok: true }>>(`/subscriptions/${id}`),
 
-  detect: () => api.post<ApiEnvelope<any>>('/subscriptions/detect'),
+  detect: () => api.post<Env<{ created: number }>>('/subscriptions/detect'),
 
-  getSummary: () => api.get<ApiEnvelope<any>>('/subscriptions/summary'),
+  getSummary: () =>
+    api.get<Env<{ active: number; monthlyTotal: number; upcomingDues: number }>>(
+      '/subscriptions/summary',
+    ),
 
   getUpcoming: (days?: number) =>
-    api.get<ApiEnvelope<any[]>>('/subscriptions/upcoming', { params: { days } }),
+    api.get<Env<Subscription[]>>('/subscriptions/upcoming', {
+      params: { days },
+    }),
 
   cancel: (id: string) =>
-    api.post<ApiEnvelope<any>>(`/subscriptions/${id}/cancel`),
+    api.post<Env<Subscription>>(`/subscriptions/${id}/cancel`),
 
   pause: (id: string) =>
-    api.post<ApiEnvelope<any>>(`/subscriptions/${id}/pause`),
+    api.post<Env<Subscription>>(`/subscriptions/${id}/pause`),
 
   resume: (id: string) =>
-    api.post<ApiEnvelope<any>>(`/subscriptions/${id}/resume`),
+    api.post<Env<Subscription>>(`/subscriptions/${id}/resume`),
 };
 
-// ============================================================
+// =============================================================
 // INSIGHTS
-// ============================================================
+// =============================================================
 export const insightsApi = {
-  getAll: () => api.get<ApiEnvelope<any>>('/insights'),
+  getAll: () => api.get<Env<Insight>>('/insights'),
 
   getSpending: (period?: string) =>
-    api.get<ApiEnvelope<any>>('/insights/spending', { params: { period } }),
+    api.get<Env<Insight>>('/insights/spending', { params: { period } }),
 
   getRecommendations: () =>
-    api.get<ApiEnvelope<any[]>>('/insights/recommendations'),
+    api.get<Env<Array<{ id: string; title: string; body: string }>>>(
+      '/insights/recommendations',
+    ),
 
-  getPredictions: () => api.get<ApiEnvelope<any>>('/insights/predictions'),
+  getPredictions: () =>
+    api.get<Env<{ nextMonthSpend?: number; categories?: CategorySpending[] }>>(
+      '/insights/predictions',
+    ),
 
-  getAnomalies: () => api.get<ApiEnvelope<any[]>>('/insights/anomalies'),
+  getAnomalies: () =>
+    api.get<Env<Array<{ id: string; title: string; description: string; amount: number }>>>(
+      '/insights/anomalies',
+    ),
 };
 
-// ============================================================
+// =============================================================
 // NOTIFICATIONS
-// ============================================================
+// =============================================================
 export const notificationsApi = {
   getAll: (unread?: boolean) =>
-    api.get<ApiEnvelope<any[]>>('/notifications', { params: { unread } }),
+    api.get<Env<AppNotification[]>>('/notifications', { params: { unread } }),
 
   getUnreadCount: () =>
-    api.get<ApiEnvelope<{ count: number }>>('/notifications/unread/count'),
+    api.get<Env<{ count: number }>>('/notifications/unread/count'),
 
   markAsRead: (id: string) =>
-    api.put<ApiEnvelope<any>>(`/notifications/${id}/read`),
+    api.put<Env<AppNotification>>(`/notifications/${id}/read`),
 
   markAllAsRead: () =>
-    api.post<ApiEnvelope<any>>('/notifications/read-all'),
+    api.post<Env<{ updated: number }>>('/notifications/read-all'),
 
   getPreferences: () =>
-    api.get<ApiEnvelope<any>>('/notifications/preferences'),
+    api.get<Env<Record<string, boolean>>>('/notifications/preferences'),
 
-  updatePreferences: (data: any) =>
-    api.put<ApiEnvelope<any>>('/notifications/preferences', data),
+  updatePreferences: (data: Record<string, boolean>) =>
+    api.put<Env<Record<string, boolean>>>('/notifications/preferences', data),
 };
 
-// ============================================================
-// DASHBOARD (user/dashboard summary)
-// ============================================================
+// =============================================================
+// DASHBOARD
+// =============================================================
 export const dashboardApi = {
-  getStats: () => api.get<ApiEnvelope<any>>('/users/dashboard'),
+  getStats: () => api.get<Env<DashboardStats>>('/users/dashboard'),
 };
 
-// ============================================================
+// =============================================================
 // GOALS
-// ============================================================
+// =============================================================
 export const goalsApi = {
   getAll: (params?: { isCompleted?: boolean; category?: string }) =>
-    api.get<ApiEnvelope<any[]>>('/goals', { params }),
+    api.get<Env<Goal[]>>('/goals', { params }),
 
-  getById: (id: string) => api.get<ApiEnvelope<any>>(`/goals/${id}`),
+  getById: (id: string) => api.get<Env<Goal>>(`/goals/${id}`),
 
-  getSummary: () => api.get<ApiEnvelope<any>>('/goals/summary'),
+  getSummary: () =>
+    api.get<Env<{ active: number; completed: number; totalTarget: number }>>(
+      '/goals/summary',
+    ),
 
-  create: (data: any) => api.post<ApiEnvelope<any>>('/goals', data),
+  create: (data: Partial<Goal>) => api.post<Env<Goal>>('/goals', data),
 
-  update: (id: string, data: any) =>
-    api.put<ApiEnvelope<any>>(`/goals/${id}`, data),
+  update: (id: string, data: Partial<Goal>) =>
+    api.put<Env<Goal>>(`/goals/${id}`, data),
 
-  delete: (id: string) => api.delete<ApiEnvelope<any>>(`/goals/${id}`),
+  delete: (id: string) => api.delete<Env<{ ok: true }>>(`/goals/${id}`),
 
   contribute: (id: string, amount: number, note?: string) =>
-    api.post<ApiEnvelope<any>>(`/goals/${id}/contribute`, { amount, note }),
+    api.post<Env<Goal>>(`/goals/${id}/contribute`, { amount, note }),
 };
 
-// ============================================================
+// =============================================================
 // BUDGETS
-// ============================================================
+// =============================================================
 export const budgetsApi = {
   getAll: (params?: { isActive?: boolean; period?: string }) =>
-    api.get<ApiEnvelope<any[]>>('/budgets', { params }),
+    api.get<Env<Budget[]>>('/budgets', { params }),
 
-  getById: (id: string) => api.get<ApiEnvelope<any>>(`/budgets/${id}`),
+  getById: (id: string) => api.get<Env<Budget>>(`/budgets/${id}`),
 
-  getSummary: () => api.get<ApiEnvelope<any>>('/budgets/summary'),
+  getSummary: () =>
+    api.get<Env<{ activeCount: number; totalAllocated: number; totalSpent: number }>>(
+      '/budgets/summary',
+    ),
 
-  create: (data: any) => api.post<ApiEnvelope<any>>('/budgets', data),
+  create: (data: Partial<Budget>) => api.post<Env<Budget>>('/budgets', data),
 
-  update: (id: string, data: any) =>
-    api.put<ApiEnvelope<any>>(`/budgets/${id}`, data),
+  update: (id: string, data: Partial<Budget>) =>
+    api.put<Env<Budget>>(`/budgets/${id}`, data),
 
-  delete: (id: string) => api.delete<ApiEnvelope<any>>(`/budgets/${id}`),
+  delete: (id: string) => api.delete<Env<{ ok: true }>>(`/budgets/${id}`),
 };
 
-// ============================================================
+// =============================================================
 // ACCOUNTS
-// ============================================================
+// =============================================================
 export const accountsApi = {
   getAll: (params?: { accountType?: string; isActive?: boolean }) =>
-    api.get<ApiEnvelope<any[]>>('/accounts', { params }),
+    api.get<Env<Account[]>>('/accounts', { params }),
 
-  getById: (id: string) => api.get<ApiEnvelope<any>>(`/accounts/${id}`),
+  getById: (id: string) => api.get<Env<Account>>(`/accounts/${id}`),
 
-  getNetWorth: () => api.get<ApiEnvelope<any>>('/accounts/net-worth'),
+  getNetWorth: () =>
+    api.get<Env<{ total: number; byType: Record<string, number> }>>(
+      '/accounts/net-worth',
+    ),
 
-  create: (data: any) => api.post<ApiEnvelope<any>>('/accounts', data),
+  create: (data: Partial<Account>) => api.post<Env<Account>>('/accounts', data),
 
-  update: (id: string, data: any) =>
-    api.put<ApiEnvelope<any>>(`/accounts/${id}`, data),
+  update: (id: string, data: Partial<Account>) =>
+    api.put<Env<Account>>(`/accounts/${id}`, data),
 
-  delete: (id: string) => api.delete<ApiEnvelope<any>>(`/accounts/${id}`),
+  delete: (id: string) => api.delete<Env<{ ok: true }>>(`/accounts/${id}`),
 
   setPrimary: (id: string) =>
-    api.post<ApiEnvelope<any>>(`/accounts/${id}/set-primary`),
+    api.post<Env<Account>>(`/accounts/${id}/set-primary`),
 
   recompute: (id: string) =>
-    api.post<ApiEnvelope<any>>(`/accounts/${id}/recompute`),
+    api.post<Env<Account>>(`/accounts/${id}/recompute`),
 };
 
-// ============================================================
+// =============================================================
 // ACTION CARDS
-// ============================================================
+// =============================================================
 export const actionCardsApi = {
   getAll: (params?: { status?: string; priority?: string; type?: string }) =>
-    api.get<ApiEnvelope<any[]>>('/action-cards', { params }),
+    api.get<Env<ActionCard[]>>('/action-cards', { params }),
 
-  getById: (id: string) =>
-    api.get<ApiEnvelope<any>>(`/action-cards/${id}`),
+  getById: (id: string) => api.get<Env<ActionCard>>(`/action-cards/${id}`),
 
-  getSummary: () => api.get<ApiEnvelope<any>>('/action-cards/summary'),
+  getSummary: () =>
+    api.get<Env<{ pending: number; completed: number; dismissed: number }>>(
+      '/action-cards/summary',
+    ),
 
-  create: (data: any) => api.post<ApiEnvelope<any>>('/action-cards', data),
+  create: (data: Partial<ActionCard>) =>
+    api.post<Env<ActionCard>>('/action-cards', data),
 
-  update: (id: string, data: any) =>
-    api.put<ApiEnvelope<any>>(`/action-cards/${id}`, data),
+  update: (id: string, data: Partial<ActionCard>) =>
+    api.put<Env<ActionCard>>(`/action-cards/${id}`, data),
 
   delete: (id: string) =>
-    api.delete<ApiEnvelope<any>>(`/action-cards/${id}`),
+    api.delete<Env<{ ok: true }>>(`/action-cards/${id}`),
 
   dismiss: (id: string) =>
-    api.post<ApiEnvelope<any>>(`/action-cards/${id}/dismiss`),
+    api.post<Env<ActionCard>>(`/action-cards/${id}/dismiss`),
 
   complete: (id: string) =>
-    api.post<ApiEnvelope<any>>(`/action-cards/${id}/complete`),
+    api.post<Env<ActionCard>>(`/action-cards/${id}/complete`),
 };
 
-// ============================================================
+// =============================================================
 // AI PROXY (FastAPI passthrough)
-// ============================================================
+// =============================================================
+export interface AiAnswer {
+  answer: string;
+  sources?: string[];
+  meta?: Record<string, unknown>;
+}
+
 export const aiApi = {
-  health: () => api.get<ApiEnvelope<any>>('/ai/health'),
+  health: () => api.get<Env<{ status: string }>>('/ai/health'),
 
   analyzeBehavior: () =>
-    api.post<ApiEnvelope<any>>('/ai/behavior/analyze'),
+    api.post<Env<{ archetype: string; summary: string }>>(
+      '/ai/behavior/analyze',
+    ),
 
   tagTransactions: () =>
-    api.post<ApiEnvelope<any>>('/ai/behavior/tag-transactions'),
+    api.post<Env<{ tagged: number }>>('/ai/behavior/tag-transactions'),
 
   getHealthScore: () =>
-    api.post<ApiEnvelope<any>>('/ai/health-score/calculate'),
+    api.post<Env<HealthScoreResult>>('/ai/health-score/calculate'),
 
-  detectLeaks: () => api.post<ApiEnvelope<any>>('/ai/leaks/detect'),
+  detectLeaks: () => api.post<Env<MoneyLeaksResult>>('/ai/leaks/detect'),
 
-  ask: (query: string, context?: any) =>
-    api.post<ApiEnvelope<any>>('/ai/assistant/query', { query, context }),
+  ask: (query: string, context?: Record<string, unknown>) =>
+    api.post<Env<AiAnswer>>('/ai/assistant/query', { query, context }),
 
   determineArchetype: () =>
-    api.post<ApiEnvelope<any>>('/ai/profile/archetype'),
+    api.post<Env<{ archetype: string; confidence?: number }>>(
+      '/ai/profile/archetype',
+    ),
 
   generateActionCards: () =>
-    api.post<ApiEnvelope<any>>('/ai/action-cards/generate'),
+    api.post<Env<{ created: number }>>('/ai/action-cards/generate'),
 
   getPersonalizedDashboard: () =>
-    api.post<ApiEnvelope<any>>('/ai/dashboard/personalized'),
+    api.post<Env<Record<string, unknown>>>('/ai/dashboard/personalized'),
 };
 
-// ============================================================
+// =============================================================
 // WEEKLY SUMMARY
-// ============================================================
+// =============================================================
+export interface WeeklySummary {
+  id: string;
+  weekStart: string;
+  weekEnd: string;
+  totalIncome: number;
+  totalSpent: number;
+  netSavings: number;
+  highlights?: string[];
+  lowlights?: string[];
+  createdAt: string;
+}
+
 export const weeklySummaryApi = {
   getList: (limit?: number) =>
-    api.get<ApiEnvelope<any[]>>('/weekly-summary', { params: { limit } }),
+    api.get<Env<WeeklySummary[]>>('/weekly-summary', { params: { limit } }),
 
   getCurrent: () =>
-    api.get<ApiEnvelope<any>>('/weekly-summary/current'),
+    api.get<Env<WeeklySummary | null>>('/weekly-summary/current'),
 
   getById: (id: string) =>
-    api.get<ApiEnvelope<any>>(`/weekly-summary/${id}`),
+    api.get<Env<WeeklySummary>>(`/weekly-summary/${id}`),
 
   generate: (forDate?: string) =>
-    api.post<ApiEnvelope<any>>('/weekly-summary/generate', null, {
+    api.post<Env<WeeklySummary>>('/weekly-summary/generate', null, {
       params: { forDate },
     }),
 
   delete: (id: string) =>
-    api.delete<ApiEnvelope<any>>(`/weekly-summary/${id}`),
+    api.delete<Env<{ ok: true }>>(`/weekly-summary/${id}`),
 };

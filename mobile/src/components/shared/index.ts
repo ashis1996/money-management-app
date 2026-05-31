@@ -6,3 +6,4 @@ export { Badge } from './Badge';
 export { Input } from './Input';
 export { Header } from './Header';
 export { EmptyState } from './EmptyState';
+export { ErrorBoundary } from './ErrorBoundary';
