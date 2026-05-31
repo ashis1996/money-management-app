@@ -11,17 +11,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, Header, EmptyState } from '../../components/shared';
-import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
-import {
-  useTransaction,
-  useUpdateTransaction,
-  useDeleteTransaction,
-} from '../../hooks';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import { useTransaction, useUpdateTransaction, useDeleteTransaction } from '../../hooks';
 
 interface TransactionDetail {
   id: string;
@@ -115,10 +106,7 @@ export function TransactionDetailScreen({ navigation, route }: any) {
   const updateTx = useUpdateTransaction();
   const deleteTx = useDeleteTransaction();
 
-  const tx: TransactionDetail = useMemo(
-    () => backendToTxDetail(txQuery.data),
-    [txQuery.data],
-  );
+  const tx: TransactionDetail = useMemo(() => backendToTxDetail(txQuery.data), [txQuery.data]);
 
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [showEditNote, setShowEditNote] = useState(false);
@@ -149,7 +137,7 @@ export function TransactionDetailScreen({ navigation, route }: any) {
     ]);
   };
 
-  const handleChangeCategory = (cat: typeof CATEGORIES[0]) => {
+  const handleChangeCategory = (cat: (typeof CATEGORIES)[0]) => {
     if (!tx.id) return;
     updateTx.mutate({ id: tx.id, data: { categoryId: cat.id } });
     setShowCategoryPicker(false);
@@ -215,15 +203,13 @@ export function TransactionDetailScreen({ navigation, route }: any) {
           <Card style={styles.behaviorCard}>
             <Text style={styles.sectionLabel}>🧠 Behavioral Insights</Text>
             <View style={styles.behaviorTags}>
-              {tx.isImpulse && (
-                <Badge text="🎯 Impulse" variant="warning" />
-              )}
+              {tx.isImpulse && <Badge text="🎯 Impulse" variant="warning" />}
               {tx.isLateNight && <Badge text="🌙 Late Night" variant="info" />}
               {tx.isWeekend && <Badge text="🎉 Weekend" variant="primary" />}
             </View>
             <Text style={styles.behaviorHint}>
-              This transaction was flagged because it was made after 10 PM and
-              fits an impulse pattern.
+              This transaction was flagged because it was made after 10 PM and fits an impulse
+              pattern.
             </Text>
             <TouchableOpacity onPress={handleMarkImpulse}>
               <Text style={styles.linkText}>
@@ -240,13 +226,7 @@ export function TransactionDetailScreen({ navigation, route }: any) {
           <DetailRow
             label="Capture Mode"
             value={tx.captureMode}
-            icon={
-              tx.captureMode === 'AUTO'
-                ? '⚡'
-                : tx.captureMode === 'ASSISTED'
-                ? '🤖'
-                : '✍️'
-            }
+            icon={tx.captureMode === 'AUTO' ? '⚡' : tx.captureMode === 'ASSISTED' ? '🤖' : '✍️'}
           />
           <DetailRow
             label="Category"
@@ -286,7 +266,11 @@ export function TransactionDetailScreen({ navigation, route }: any) {
 
         {/* Quick Actions */}
         <View style={styles.actionsRow}>
-          <ActionButton icon="🔄" label="Repeat" onPress={() => Alert.alert('Repeat', 'Add similar transaction')} />
+          <ActionButton
+            icon="🔄"
+            label="Repeat"
+            onPress={() => Alert.alert('Repeat', 'Add similar transaction')}
+          />
           <ActionButton icon="🧾" label="Split" onPress={handleSplit} />
           <ActionButton icon="🏷️" label="Tag" onPress={() => Alert.alert('Tags', 'Add tags')} />
           <ActionButton icon="💾" label="Save" onPress={() => Alert.alert('Saved')} />
@@ -295,10 +279,7 @@ export function TransactionDetailScreen({ navigation, route }: any) {
         {/* Raw SMS */}
         {tx.rawSms && (
           <Card style={styles.rawCard}>
-            <TouchableOpacity
-              style={styles.rawHeader}
-              onPress={() => setShowRawSms(!showRawSms)}
-            >
+            <TouchableOpacity style={styles.rawHeader} onPress={() => setShowRawSms(!showRawSms)}>
               <Text style={styles.sectionLabel}>📩 Original SMS</Text>
               <Text style={styles.linkText}>{showRawSms ? 'Hide' : 'Show'}</Text>
             </TouchableOpacity>
@@ -323,9 +304,7 @@ export function TransactionDetailScreen({ navigation, route }: any) {
             </TouchableOpacity>
           ))}
           <View style={styles.relatedFooter}>
-            <Text style={styles.relatedTotal}>
-              Total at Swiggy this month: ₹8,200
-            </Text>
+            <Text style={styles.relatedTotal}>Total at Swiggy this month: ₹8,200</Text>
           </View>
         </Card>
 
@@ -351,18 +330,12 @@ export function TransactionDetailScreen({ navigation, route }: any) {
               {CATEGORIES.map((cat) => (
                 <TouchableOpacity
                   key={cat.id}
-                  style={[
-                    styles.catCard,
-                    tx.category === cat.label && styles.catCardActive,
-                  ]}
+                  style={[styles.catCard, tx.category === cat.label && styles.catCardActive]}
                   onPress={() => handleChangeCategory(cat)}
                 >
                   <Text style={styles.catIcon}>{cat.icon}</Text>
                   <Text
-                    style={[
-                      styles.catLabel,
-                      tx.category === cat.label && styles.catLabelActive,
-                    ]}
+                    style={[styles.catLabel, tx.category === cat.label && styles.catLabelActive]}
                   >
                     {cat.label}
                   </Text>
@@ -433,10 +406,7 @@ function DetailRow({
       <Text style={styles.detailIcon}>{icon}</Text>
       <View style={{ flex: 1 }}>
         <Text style={styles.detailLabel}>{label}</Text>
-        <Text
-          style={styles.detailValue}
-          numberOfLines={multiline ? undefined : 1}
-        >
+        <Text style={styles.detailValue} numberOfLines={multiline ? undefined : 1}>
           {value}
         </Text>
       </View>
@@ -521,9 +491,9 @@ const styles = StyleSheet.create({
   behaviorCard: {
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.base,
-    backgroundColor: '#FFFBEB',
+    backgroundColor: Tints.warningBg,
     borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderColor: Tints.warningBorder,
   },
   behaviorTags: {
     flexDirection: 'row',
@@ -702,7 +672,7 @@ const styles = StyleSheet.create({
   },
   catCardActive: {
     borderColor: Colors.primary,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
   },
   catIcon: {
     fontSize: 28,

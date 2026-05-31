@@ -12,18 +12,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, ProgressBar, EmptyState, Header } from '../../components/shared';
-import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
-import {
-  useBudgets,
-  useCreateBudget,
-  useUpdateBudget,
-  useDeleteBudget,
-} from '../../hooks';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import { useBudgets, useCreateBudget, useUpdateBudget, useDeleteBudget } from '../../hooks';
 
 interface Budget {
   id: string;
@@ -155,9 +145,7 @@ export function BudgetsScreen({ navigation }: any) {
           </Text>
           <ProgressBar
             progress={(totals.totalSpent / totals.totalLimit) * 100}
-            color={
-              totals.totalSpent > totals.totalLimit ? Colors.error : Colors.primary
-            }
+            color={totals.totalSpent > totals.totalLimit ? Colors.error : Colors.primary}
             height={10}
             style={{ marginVertical: Spacing.sm }}
           />
@@ -166,11 +154,7 @@ export function BudgetsScreen({ navigation }: any) {
               {Math.round((totals.totalSpent / totals.totalLimit) * 100)}% used
             </Text>
             {totals.overBudget > 0 && (
-              <Badge
-                text={`${totals.overBudget} over budget`}
-                variant="error"
-                size="sm"
-              />
+              <Badge text={`${totals.overBudget} over budget`} variant="error" size="sm" />
             )}
           </View>
         </Card>
@@ -248,13 +232,8 @@ export function BudgetsScreen({ navigation }: any) {
               {CATEGORIES_FOR_NEW.map((cat) => (
                 <TouchableOpacity
                   key={cat.id}
-                  style={[
-                    styles.catChip,
-                    newBudget.category === cat.id && styles.catChipActive,
-                  ]}
-                  onPress={() =>
-                    setNewBudget({ ...newBudget, category: cat.id, icon: cat.icon })
-                  }
+                  style={[styles.catChip, newBudget.category === cat.id && styles.catChipActive]}
+                  onPress={() => setNewBudget({ ...newBudget, category: cat.id, icon: cat.icon })}
                 >
                   <Text style={styles.catChipIcon}>{cat.icon}</Text>
                   <Text
@@ -344,12 +323,7 @@ function BudgetCard({ budget, onUpdateLimit, onDelete }: BudgetCardProps) {
       {/* Spending progress */}
       <View style={styles.bProgress}>
         <View style={styles.bProgressRow}>
-          <Text
-            style={[
-              styles.bSpent,
-              { color: isOver ? Colors.error : Colors.textPrimary },
-            ]}
-          >
+          <Text style={[styles.bSpent, { color: isOver ? Colors.error : Colors.textPrimary }]}>
             ₹{budget.spent.toLocaleString()}
           </Text>
           <Text style={styles.bLimit}>of ₹{tempLimit.toLocaleString()}</Text>
@@ -360,16 +334,15 @@ function BudgetCard({ budget, onUpdateLimit, onDelete }: BudgetCardProps) {
           height={10}
         />
         <View style={styles.bProgressFooter}>
-          <Text
-            style={[
-              styles.bUsage,
-              { color: isOver ? Colors.error : Colors.textSecondary },
-            ]}
-          >
+          <Text style={[styles.bUsage, { color: isOver ? Colors.error : Colors.textSecondary }]}>
             {Math.round(usage)}% used
           </Text>
           {isOver ? (
-            <Badge text={`Over by ₹${(budget.spent - tempLimit).toLocaleString()}`} variant="error" size="sm" />
+            <Badge
+              text={`Over by ₹${(budget.spent - tempLimit).toLocaleString()}`}
+              variant="error"
+              size="sm"
+            />
           ) : (
             <Text style={styles.bRemaining}>₹{remaining.toLocaleString()} left</Text>
           )}
@@ -384,17 +357,11 @@ function BudgetCard({ budget, onUpdateLimit, onDelete }: BudgetCardProps) {
           <View style={[styles.sliderThumb, { left: `${sliderPos}%` }]} />
         </View>
         <View style={styles.sliderActions}>
-          <TouchableOpacity
-            style={styles.sliderBtn}
-            onPress={() => handleSliderChange(-1)}
-          >
+          <TouchableOpacity style={styles.sliderBtn} onPress={() => handleSliderChange(-1)}>
             <Text style={styles.sliderBtnText}>−</Text>
           </TouchableOpacity>
           <Text style={styles.sliderValue}>₹{tempLimit.toLocaleString()}</Text>
-          <TouchableOpacity
-            style={styles.sliderBtn}
-            onPress={() => handleSliderChange(1)}
-          >
+          <TouchableOpacity style={styles.sliderBtn} onPress={() => handleSliderChange(1)}>
             <Text style={styles.sliderBtnText}>+</Text>
           </TouchableOpacity>
         </View>
@@ -404,9 +371,7 @@ function BudgetCard({ budget, onUpdateLimit, onDelete }: BudgetCardProps) {
       <View style={styles.bFooter}>
         <View style={styles.bFooterItem}>
           <Text style={styles.bFooterLabel}>Daily allowance</Text>
-          <Text style={styles.bFooterValue}>
-            ₹{dailyAllowance.toLocaleString()}
-          </Text>
+          <Text style={styles.bFooterValue}>₹{dailyAllowance.toLocaleString()}</Text>
         </View>
         <View style={styles.bFooterDivider} />
         <View style={styles.bFooterItem}>
@@ -484,9 +449,9 @@ const styles = StyleSheet.create({
   aiAlert: {
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.base,
-    backgroundColor: '#FFFBEB',
+    backgroundColor: Tints.warningBg,
     borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderColor: Tints.warningBorder,
   },
   aiAlertContent: {
     flexDirection: 'row',
@@ -724,7 +689,7 @@ const styles = StyleSheet.create({
   },
   catChipActive: {
     borderColor: Colors.primary,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
   },
   catChipIcon: {
     fontSize: 16,
@@ -739,7 +704,7 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
   aiSuggest: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
     padding: Spacing.sm,
     borderRadius: BorderRadius.base,
   },

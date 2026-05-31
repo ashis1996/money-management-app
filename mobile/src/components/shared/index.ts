@@ -7,3 +7,4 @@ export { Input } from './Input';
 export { Header } from './Header';
 export { EmptyState } from './EmptyState';
 export { ErrorBoundary } from './ErrorBoundary';
+export { Glass } from './Glass';

@@ -10,17 +10,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, ProgressBar, EmptyState } from '../../components/shared';
-import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
-import {
-  useSubscriptions,
-  useCancelSubscription,
-  usePauseSubscription,
-} from '../../hooks';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import { useSubscriptions, useCancelSubscription, usePauseSubscription } from '../../hooks';
 
 type Frequency = 'MONTHLY' | 'YEARLY' | 'WEEKLY' | 'QUARTERLY';
 type Status = 'ACTIVE' | 'PAUSED' | 'CANCELLED';
@@ -74,9 +65,7 @@ export function SubscriptionsScreen({ navigation }: any) {
       totalPaid: Number(s.totalAmountPaid ?? 0),
       paymentCount: s.totalPaymentsCount ?? 0,
       originalAmount: s.originalAmount ? Number(s.originalAmount) : undefined,
-      priceIncreasePercent: s.priceIncreasePercent
-        ? Number(s.priceIncreasePercent)
-        : undefined,
+      priceIncreasePercent: s.priceIncreasePercent ? Number(s.priceIncreasePercent) : undefined,
       usageScore: s.usageScore ? Number(s.usageScore) : 0.5,
       isLowUsage: !!s.isLowUsage,
       isDuplicate: !!s.isDuplicate,
@@ -99,7 +88,9 @@ export function SubscriptionsScreen({ navigation }: any) {
     }, 0);
     const yearlyTotal = monthlyTotal * 12;
     const leakSavings = active
-      .filter((s) => s.isLowUsage || (s.isDuplicate && s.duplicateGroup === 'music' && s.id === '3'))
+      .filter(
+        (s) => s.isLowUsage || (s.isDuplicate && s.duplicateGroup === 'music' && s.id === '3'),
+      )
       .reduce((sum, s) => sum + (s.frequency === 'MONTHLY' ? s.amount : s.amount / 12), 0);
 
     return {
@@ -119,13 +110,12 @@ export function SubscriptionsScreen({ navigation }: any) {
     } else if (filter === 'upcoming') {
       list = list.filter((s) => {
         const days = Math.ceil(
-          (new Date(s.nextBillingDate).getTime() - Date.now()) / (24 * 3600 * 1000)
+          (new Date(s.nextBillingDate).getTime() - Date.now()) / (24 * 3600 * 1000),
         );
         return days <= 7;
       });
       list.sort(
-        (a, b) =>
-          new Date(a.nextBillingDate).getTime() - new Date(b.nextBillingDate).getTime()
+        (a, b) => new Date(a.nextBillingDate).getTime() - new Date(b.nextBillingDate).getTime(),
       );
     } else if (filter === 'active') {
       list.sort((a, b) => b.amount - a.amount);
@@ -162,7 +152,7 @@ export function SubscriptionsScreen({ navigation }: any) {
             setSelectedSub(sub);
           },
         },
-      ]
+      ],
     );
   };
 
@@ -181,9 +171,7 @@ export function SubscriptionsScreen({ navigation }: any) {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Subscriptions</Text>
-          <Text style={styles.subtitle}>
-            Track and optimize your recurring payments
-          </Text>
+          <Text style={styles.subtitle}>Track and optimize your recurring payments</Text>
         </View>
 
         {/* Stats card */}
@@ -208,13 +196,16 @@ export function SubscriptionsScreen({ navigation }: any) {
 
         {/* Leaks alert */}
         {stats.leakSavings > 0 && (
-          <Card style={[styles.alertCard, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
+          <Card
+            style={[
+              styles.alertCard,
+              { backgroundColor: Tints.errorBg, borderColor: Tints.errorBorder },
+            ]}
+          >
             <View style={styles.alertRow}>
               <Text style={styles.alertIcon}>💧</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.alertTitle}>
-                  Save ₹{stats.leakSavings}/month
-                </Text>
+                <Text style={styles.alertTitle}>Save ₹{stats.leakSavings}/month</Text>
                 <Text style={styles.alertSubtitle}>
                   Cancel low-usage and duplicate subscriptions
                 </Text>
@@ -243,9 +234,8 @@ export function SubscriptionsScreen({ navigation }: any) {
                   {subs
                     .slice(1)
                     .reduce(
-                      (sum, s) =>
-                        sum + (s.frequency === 'MONTHLY' ? s.amount : s.amount / 12),
-                      0
+                      (sum, s) => sum + (s.frequency === 'MONTHLY' ? s.amount : s.amount / 12),
+                      0,
                     )
                     .toFixed(0)}
                   /month
@@ -283,10 +273,7 @@ export function SubscriptionsScreen({ navigation }: any) {
               onPress={() => setFilter(tab.key)}
             >
               <Text
-                style={[
-                  styles.filterTabText,
-                  filter === tab.key && styles.filterTabTextActive,
-                ]}
+                style={[styles.filterTabText, filter === tab.key && styles.filterTabTextActive]}
               >
                 {tab.label}
               </Text>
@@ -378,7 +365,7 @@ interface SubscriptionCardProps {
 
 function SubscriptionCard({ subscription, onCancel, onPause }: SubscriptionCardProps) {
   const daysUntilBilling = Math.ceil(
-    (new Date(subscription.nextBillingDate).getTime() - Date.now()) / (24 * 3600 * 1000)
+    (new Date(subscription.nextBillingDate).getTime() - Date.now()) / (24 * 3600 * 1000),
   );
 
   return (
@@ -393,15 +380,18 @@ function SubscriptionCard({ subscription, onCancel, onPause }: SubscriptionCardP
             <Text style={styles.subAmount}>
               ₹{subscription.amount}
               <Text style={styles.subFreq}>
-                /{subscription.frequency === 'MONTHLY' ? 'mo' : subscription.frequency === 'YEARLY' ? 'yr' : 'wk'}
+                /
+                {subscription.frequency === 'MONTHLY'
+                  ? 'mo'
+                  : subscription.frequency === 'YEARLY'
+                    ? 'yr'
+                    : 'wk'}
               </Text>
             </Text>
           </View>
           <Text style={styles.subCategory}>{subscription.category}</Text>
           <View style={styles.subBadgeRow}>
-            {subscription.isLowUsage && (
-              <Badge text="🔇 Low Usage" variant="warning" size="sm" />
-            )}
+            {subscription.isLowUsage && <Badge text="🔇 Low Usage" variant="warning" size="sm" />}
             {subscription.priceIncreasePercent && subscription.priceIncreasePercent > 10 && (
               <Badge
                 text={`📈 +${subscription.priceIncreasePercent.toFixed(0)}%`}
@@ -409,15 +399,9 @@ function SubscriptionCard({ subscription, onCancel, onPause }: SubscriptionCardP
                 size="sm"
               />
             )}
-            {subscription.isDuplicate && (
-              <Badge text="🔁 Duplicate" variant="info" size="sm" />
-            )}
+            {subscription.isDuplicate && <Badge text="🔁 Duplicate" variant="info" size="sm" />}
             {daysUntilBilling <= 3 && daysUntilBilling >= 0 && (
-              <Badge
-                text={`⏰ Due in ${daysUntilBilling}d`}
-                variant="warning"
-                size="sm"
-              />
+              <Badge text={`⏰ Due in ${daysUntilBilling}d`} variant="warning" size="sm" />
             )}
           </View>
         </View>
@@ -435,8 +419,8 @@ function SubscriptionCard({ subscription, onCancel, onPause }: SubscriptionCardP
                   subscription.usageScore < 0.3
                     ? Colors.error
                     : subscription.usageScore < 0.6
-                    ? Colors.warning
-                    : Colors.success,
+                      ? Colors.warning
+                      : Colors.success,
               },
             ]}
           >
@@ -449,8 +433,8 @@ function SubscriptionCard({ subscription, onCancel, onPause }: SubscriptionCardP
             subscription.usageScore < 0.3
               ? Colors.error
               : subscription.usageScore < 0.6
-              ? Colors.warning
-              : Colors.success
+                ? Colors.warning
+                : Colors.success
           }
           height={4}
         />
@@ -469,9 +453,7 @@ function SubscriptionCard({ subscription, onCancel, onPause }: SubscriptionCardP
         </View>
         <View style={styles.subFooterItem}>
           <Text style={styles.subFooterLabel}>Total paid</Text>
-          <Text style={styles.subFooterValue}>
-            ₹{subscription.totalPaid.toLocaleString()}
-          </Text>
+          <Text style={styles.subFooterValue}>₹{subscription.totalPaid.toLocaleString()}</Text>
         </View>
         <View style={styles.subFooterItem}>
           <Text style={styles.subFooterLabel}>Payments</Text>
@@ -609,9 +591,9 @@ const styles = StyleSheet.create({
   duplicateCard: {
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.base,
-    backgroundColor: '#FFFBEB',
+    backgroundColor: Tints.warningBg,
     borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderColor: Tints.warningBorder,
   },
   duplicateHeader: {
     flexDirection: 'row',
@@ -782,14 +764,14 @@ const styles = StyleSheet.create({
   },
   // Price hike
   priceHikeAlert: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: Tints.errorBg,
     padding: Spacing.sm,
     borderRadius: BorderRadius.base,
     marginTop: Spacing.sm,
   },
   priceHikeText: {
     fontSize: Typography.sizes.sm,
-    color: '#991B1B',
+    color: Colors.error,
     fontWeight: Typography.weights.medium,
   },
   // Actions
@@ -830,7 +812,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   modalSavings: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: Tints.successBg,
     padding: Spacing.lg,
     borderRadius: BorderRadius.md,
     alignItems: 'center',

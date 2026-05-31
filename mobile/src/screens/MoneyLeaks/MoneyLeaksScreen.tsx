@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, ProgressRing, Header, EmptyState } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius } from '../../styles/theme';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
 import { useMoneyLeaks } from '../../hooks';
 
 type LeakType =
@@ -412,8 +412,8 @@ const styles = StyleSheet.create({
   fixedCard: {
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.base,
-    backgroundColor: '#D1FAE5',
-    borderColor: '#A7F3D0',
+    backgroundColor: Tints.successBg,
+    borderColor: Tints.successBorder,
     borderWidth: 1,
   },
   fixedRow: {
@@ -427,11 +427,11 @@ const styles = StyleSheet.create({
   fixedTitle: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
-    color: '#065F46',
+    color: Colors.success,
   },
   fixedSubtitle: {
     fontSize: Typography.sizes.sm,
-    color: '#047857',
+    color: Colors.success,
     marginTop: 2,
   },
   // Savings banner
@@ -518,7 +518,7 @@ const styles = StyleSheet.create({
   // Savings row
   savingsRow: {
     flexDirection: 'row',
-    backgroundColor: '#D1FAE5',
+    backgroundColor: Tints.successBg,
     padding: Spacing.sm,
     borderRadius: BorderRadius.base,
     marginVertical: Spacing.sm,
@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
   },
   savingsItemLabel: {
     fontSize: Typography.sizes.xs,
-    color: '#065F46',
+    color: Colors.success,
   },
   savingsItemValue: {
     fontSize: Typography.sizes.lg,
@@ -580,7 +580,7 @@ const styles = StyleSheet.create({
   // Tips
   tipsCard: {
     marginHorizontal: Spacing.lg,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
     borderWidth: 1,
     borderColor: Colors.primaryLight,
   },

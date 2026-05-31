@@ -1,12 +1,27 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Card, Badge, ProgressRing, ProgressBar, Header, EmptyState } from '../../components/shared';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+} from 'react-native';
+import {
+  Card,
+  Badge,
+  ProgressRing,
+  ProgressBar,
+  Header,
+  EmptyState,
+} from '../../components/shared';
 import {
   Colors,
   Typography,
   Spacing,
   BorderRadius,
   HealthScoreColors,
+  Tints,
 } from '../../styles/theme';
 import { useHealthScore } from '../../hooks';
 
@@ -22,10 +37,7 @@ interface HealthComponent {
   icon: string;
 }
 
-const COMPONENT_DEFS: Record<
-  string,
-  Pick<HealthComponent, 'key' | 'name' | 'weight' | 'icon'>
-> = {
+const COMPONENT_DEFS: Record<string, Pick<HealthComponent, 'key' | 'name' | 'weight' | 'icon'>> = {
   savings_rate: { key: 'savings_rate', name: 'Savings Rate', weight: 25, icon: '💰' },
   budget_adherence: {
     key: 'budget_adherence',
@@ -71,27 +83,23 @@ function statusFromScore(score: number): HealthComponent['status'] {
 function buildHealthData(apiResponse: any) {
   if (!apiResponse) return null;
   const score = Number(apiResponse.score ?? apiResponse.healthScore ?? 0);
-  const componentsRaw =
-    apiResponse.components ?? apiResponse.componentScores ?? {};
-  const components: HealthComponent[] = Object.entries(COMPONENT_DEFS).map(
-    ([key, def]) => {
-      const componentData = componentsRaw[key] ?? {};
-      const compScore = Number(
-        typeof componentData === 'number' ? componentData : componentData.score ?? 0,
-      );
-      return {
-        ...def,
-        score: compScore,
-        status: statusFromScore(compScore),
-        description: componentData.description ?? '',
-        details: componentData.details ?? '',
-        improvementTips: componentData.tips ?? componentData.improvementTips ?? [],
-      };
-    },
-  );
+  const componentsRaw = apiResponse.components ?? apiResponse.componentScores ?? {};
+  const components: HealthComponent[] = Object.entries(COMPONENT_DEFS).map(([key, def]) => {
+    const componentData = componentsRaw[key] ?? {};
+    const compScore = Number(
+      typeof componentData === 'number' ? componentData : (componentData.score ?? 0),
+    );
+    return {
+      ...def,
+      score: compScore,
+      status: statusFromScore(compScore),
+      description: componentData.description ?? '',
+      details: componentData.details ?? '',
+      improvementTips: componentData.tips ?? componentData.improvementTips ?? [],
+    };
+  });
 
-  const history: number[] =
-    apiResponse.history ?? apiResponse.scoreHistory ?? [score];
+  const history: number[] = apiResponse.history ?? apiResponse.scoreHistory ?? [score];
 
   return {
     score,
@@ -130,10 +138,7 @@ function getStatusColor(status: string) {
 
 export function HealthScoreScreen({ navigation }: any) {
   const healthQuery = useHealthScore();
-  const healthData = useMemo(
-    () => buildHealthData(healthQuery.data),
-    [healthQuery.data],
-  );
+  const healthData = useMemo(() => buildHealthData(healthQuery.data), [healthQuery.data]);
 
   if (healthQuery.isLoading) {
     return (
@@ -161,19 +166,11 @@ export function HealthScoreScreen({ navigation }: any) {
   const ratingInfo = getRatingInfo(healthData.score);
 
   // Sort components by weighted contribution (lowest score first)
-  const sortedComponents = [...healthData.components].sort(
-    (a, b) => a.score - b.score
-  );
+  const sortedComponents = [...healthData.components].sort((a, b) => a.score - b.score);
 
   // Calculate next-level threshold
   const nextLevel =
-    healthData.score >= 85
-      ? null
-      : healthData.score >= 70
-      ? 85
-      : healthData.score >= 55
-      ? 70
-      : 55;
+    healthData.score >= 85 ? null : healthData.score >= 70 ? 85 : healthData.score >= 55 ? 70 : 55;
 
   return (
     <View style={styles.container}>
@@ -211,16 +208,14 @@ export function HealthScoreScreen({ navigation }: any) {
                     healthData.trend === 'up'
                       ? Colors.success
                       : healthData.trend === 'down'
-                      ? Colors.error
-                      : Colors.textSecondary,
+                        ? Colors.error
+                        : Colors.textSecondary,
                 },
               ]}
             >
               {healthData.trend === 'up' ? '↑' : healthData.trend === 'down' ? '↓' : '→'}
             </Text>
-            <Text style={styles.trendText}>
-              +{healthData.trendValue} from last week
-            </Text>
+            <Text style={styles.trendText}>+{healthData.trendValue} from last week</Text>
           </View>
         </Card>
 
@@ -239,9 +234,7 @@ export function HealthScoreScreen({ navigation }: any) {
                       styles.sparkBarFill,
                       {
                         height: `${heightRatio * 100}%`,
-                        backgroundColor: isLatest
-                          ? ratingInfo.color
-                          : Colors.gray300,
+                        backgroundColor: isLatest ? ratingInfo.color : Colors.gray300,
                       },
                     ]}
                   />
@@ -263,11 +256,7 @@ export function HealthScoreScreen({ navigation }: any) {
                 </Text>
                 <Text style={styles.nextLevelSubtitle}>
                   Reach {nextLevel} to be{' '}
-                  {nextLevel === 85
-                    ? 'Excellent'
-                    : nextLevel === 70
-                    ? 'Good'
-                    : 'Fair'}
+                  {nextLevel === 85 ? 'Excellent' : nextLevel === 70 ? 'Good' : 'Fair'}
                 </Text>
               </View>
             </View>
@@ -283,9 +272,7 @@ export function HealthScoreScreen({ navigation }: any) {
         {/* Component breakdown */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Score Breakdown</Text>
-          <Text style={styles.sectionSubtitle}>
-            Lowest scores first - focus on these
-          </Text>
+          <Text style={styles.sectionSubtitle}>Lowest scores first - focus on these</Text>
           {sortedComponents.map((comp) => (
             <ComponentCard key={comp.key} component={comp} />
           ))}
@@ -295,7 +282,8 @@ export function HealthScoreScreen({ navigation }: any) {
         <Card style={styles.explainCard}>
           <Text style={styles.explainTitle}>📚 What is the Health Score?</Text>
           <Text style={styles.explainText}>
-            Your Financial Health Score is like CIBIL but for spending behavior. It evaluates your habits across 7 dimensions weighted by importance.
+            Your Financial Health Score is like CIBIL but for spending behavior. It evaluates your
+            habits across 7 dimensions weighted by importance.
           </Text>
           <View style={styles.scoreRanges}>
             <ScoreRange label="Excellent" range="85-100" color={HealthScoreColors.excellent} />
@@ -330,9 +318,7 @@ function ComponentCard({ component: comp }: { component: HealthComponent }) {
 
       {/* Score */}
       <View style={styles.compScoreRow}>
-        <Text style={[styles.compScoreValue, { color: statusColor }]}>
-          {comp.score}
-        </Text>
+        <Text style={[styles.compScoreValue, { color: statusColor }]}>{comp.score}</Text>
         <Text style={styles.compScoreMax}>/100</Text>
         <View style={styles.compScoreBadge}>
           <Badge
@@ -341,10 +327,10 @@ function ComponentCard({ component: comp }: { component: HealthComponent }) {
               comp.status === 'EXCELLENT'
                 ? 'success'
                 : comp.status === 'GOOD'
-                ? 'success'
-                : comp.status === 'FAIR'
-                ? 'warning'
-                : 'error'
+                  ? 'success'
+                  : comp.status === 'FAIR'
+                    ? 'warning'
+                    : 'error'
             }
             size="sm"
           />
@@ -463,7 +449,7 @@ const styles = StyleSheet.create({
   nextLevelCard: {
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.base,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
     borderWidth: 1,
     borderColor: Colors.primaryLight,
   },

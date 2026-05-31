@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, ProgressBar, EmptyState } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius } from '../../styles/theme';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
 import { useSpendingInsights, useBehaviorAnalysis, useCategoryBreakdown } from '../../hooks';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -814,7 +814,7 @@ const styles = StyleSheet.create({
   },
   // Lifestyle
   lifestyleCard: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
     borderWidth: 1,
     borderColor: Colors.primaryLight,
   },

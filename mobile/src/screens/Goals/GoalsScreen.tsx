@@ -10,19 +10,16 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { Card, Badge, Button, ProgressRing, ProgressBar, EmptyState } from '../../components/shared';
 import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
-import {
-  useGoals,
-  useCreateGoal,
-  useContributeGoal,
-  useDeleteGoal,
-} from '../../hooks';
+  Card,
+  Badge,
+  Button,
+  ProgressRing,
+  ProgressBar,
+  EmptyState,
+} from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import { useGoals, useCreateGoal, useContributeGoal, useDeleteGoal } from '../../hooks';
 
 interface Goal {
   id: string;
@@ -69,9 +66,7 @@ export function GoalsScreen({ navigation }: any) {
       const cat = GOAL_CATEGORIES.find((c) => c.id === g.category);
       const monthly =
         g.monthsToGoal && g.monthsToGoal > 0
-          ? Math.round(
-              Math.max(0, g.targetAmount - g.currentAmount) / g.monthsToGoal,
-            )
+          ? Math.round(Math.max(0, g.targetAmount - g.currentAmount) / g.monthsToGoal)
           : 0;
       return {
         ...g,
@@ -237,9 +232,7 @@ export function GoalsScreen({ navigation }: any) {
             <View style={styles.overviewStats}>
               <View style={styles.overviewStat}>
                 <Text style={styles.overviewStatLabel}>Saved</Text>
-                <Text style={styles.overviewStatValue}>
-                  ₹{stats.totalSaved.toLocaleString()}
-                </Text>
+                <Text style={styles.overviewStatValue}>₹{stats.totalSaved.toLocaleString()}</Text>
               </View>
               <View style={styles.overviewStat}>
                 <Text style={styles.overviewStatLabel}>Target</Text>
@@ -270,7 +263,8 @@ export function GoalsScreen({ navigation }: any) {
           <View style={{ flex: 1 }}>
             <Text style={styles.aiTipTitle}>AI Suggestion</Text>
             <Text style={styles.aiTipText}>
-              You can save ₹4,500/month by fixing money leaks. Allocate it to your Goa goal to reach it 1 month earlier!
+              You can save ₹4,500/month by fixing money leaks. Allocate it to your Goa goal to reach
+              it 1 month earlier!
             </Text>
           </View>
         </Card>
@@ -283,17 +277,12 @@ export function GoalsScreen({ navigation }: any) {
               style={[styles.filterTab, filter === f && styles.filterTabActive]}
               onPress={() => setFilter(f)}
             >
-              <Text
-                style={[
-                  styles.filterTabText,
-                  filter === f && styles.filterTabTextActive,
-                ]}
-              >
+              <Text style={[styles.filterTabText, filter === f && styles.filterTabTextActive]}>
                 {f === 'active'
                   ? `Active (${stats.activeCount})`
                   : f === 'completed'
-                  ? `Completed (${stats.completedCount})`
-                  : 'All'}
+                    ? `Completed (${stats.completedCount})`
+                    : 'All'}
               </Text>
             </TouchableOpacity>
           ))}
@@ -306,7 +295,7 @@ export function GoalsScreen({ navigation }: any) {
             title={filter === 'completed' ? 'No completed goals yet' : 'No active goals'}
             message={
               filter === 'completed'
-                ? 'Keep saving! You\'ll get there.'
+                ? "Keep saving! You'll get there."
                 : 'Create your first goal to start saving with purpose'
             }
             actionLabel={filter !== 'completed' ? 'Create Goal' : undefined}
@@ -419,27 +408,15 @@ export function GoalsScreen({ navigation }: any) {
 
               <TouchableOpacity
                 style={styles.autoToggle}
-                onPress={() =>
-                  setNewGoal({ ...newGoal, autoAllocate: !newGoal.autoAllocate })
-                }
+                onPress={() => setNewGoal({ ...newGoal, autoAllocate: !newGoal.autoAllocate })}
               >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.autoLabel}>🤖 Auto-allocate from savings</Text>
-                  <Text style={styles.autoHint}>
-                    AI will automatically add money each month
-                  </Text>
+                  <Text style={styles.autoHint}>AI will automatically add money each month</Text>
                 </View>
-                <View
-                  style={[
-                    styles.toggle,
-                    newGoal.autoAllocate && styles.toggleActive,
-                  ]}
-                >
+                <View style={[styles.toggle, newGoal.autoAllocate && styles.toggleActive]}>
                   <View
-                    style={[
-                      styles.toggleThumb,
-                      newGoal.autoAllocate && styles.toggleThumbActive,
-                    ]}
+                    style={[styles.toggleThumb, newGoal.autoAllocate && styles.toggleThumbActive]}
                   />
                 </View>
               </TouchableOpacity>
@@ -447,9 +424,8 @@ export function GoalsScreen({ navigation }: any) {
               {newGoal.targetAmount && (
                 <View style={styles.calculation}>
                   <Text style={styles.calculationText}>
-                    💡 Save ₹
-                    {Math.round(parseFloat(newGoal.targetAmount) / 12).toLocaleString()}/month
-                    to reach goal in 12 months
+                    💡 Save ₹{Math.round(parseFloat(newGoal.targetAmount) / 12).toLocaleString()}
+                    /month to reach goal in 12 months
                   </Text>
                 </View>
               )}
@@ -540,8 +516,7 @@ function GoalCard({ goal, onContribute, onDelete }: GoalCardProps) {
   const monthsLeft = Math.max(
     1,
     Math.ceil(
-      (new Date(goal.targetDate ?? Date.now()).getTime() - Date.now()) /
-        (30 * 24 * 3600 * 1000),
+      (new Date(goal.targetDate ?? Date.now()).getTime() - Date.now()) / (30 * 24 * 3600 * 1000),
     ),
   );
   const monthlyContribution = goal.monthlyContribution ?? 0;
@@ -551,12 +526,7 @@ function GoalCard({ goal, onContribute, onDelete }: GoalCardProps) {
     <Card style={[styles.goalCard, goal.isCompleted && styles.goalCardCompleted]}>
       <View style={styles.goalHeader}>
         <View style={styles.goalLeft}>
-          <ProgressRing
-            progress={progress}
-            size={70}
-            strokeWidth={7}
-            color={goal.color}
-          >
+          <ProgressRing progress={progress} size={70} strokeWidth={7} color={goal.color}>
             <Text style={styles.goalRingIcon}>{goal.icon}</Text>
           </ProgressRing>
         </View>
@@ -572,12 +542,7 @@ function GoalCard({ goal, onContribute, onDelete }: GoalCardProps) {
               ₹{goal.targetAmount.toLocaleString()}
             </Text>
           </Text>
-          <ProgressBar
-            progress={progress}
-            color={goal.color}
-            height={6}
-            style={{ marginTop: 4 }}
-          />
+          <ProgressBar progress={progress} color={goal.color} height={6} style={{ marginTop: 4 }} />
         </View>
       </View>
 
@@ -586,9 +551,7 @@ function GoalCard({ goal, onContribute, onDelete }: GoalCardProps) {
           <View style={styles.goalStats}>
             <View style={styles.goalStat}>
               <Text style={styles.goalStatLabel}>Remaining</Text>
-              <Text style={styles.goalStatValue}>
-                ₹{remaining.toLocaleString()}
-              </Text>
+              <Text style={styles.goalStatValue}>₹{remaining.toLocaleString()}</Text>
             </View>
             <View style={styles.goalStat}>
               <Text style={styles.goalStatLabel}>Time left</Text>
@@ -599,10 +562,7 @@ function GoalCard({ goal, onContribute, onDelete }: GoalCardProps) {
             <View style={styles.goalStat}>
               <Text style={styles.goalStatLabel}>Monthly</Text>
               <Text
-                style={[
-                  styles.goalStatValue,
-                  { color: onTrack ? Colors.success : Colors.warning },
-                ]}
+                style={[styles.goalStatValue, { color: onTrack ? Colors.success : Colors.warning }]}
               >
                 ₹{monthlyContribution.toLocaleString()}
               </Text>
@@ -612,7 +572,8 @@ function GoalCard({ goal, onContribute, onDelete }: GoalCardProps) {
           {!onTrack && (
             <View style={styles.warningBanner}>
               <Text style={styles.warningText}>
-                ⚠️ Increase to ₹{Math.ceil(remaining / monthsLeft).toLocaleString()}/mo to stay on track
+                ⚠️ Increase to ₹{Math.ceil(remaining / monthsLeft).toLocaleString()}/mo to stay on
+                track
               </Text>
             </View>
           )}
@@ -703,14 +664,14 @@ const styles = StyleSheet.create({
   completedBanner: {
     marginTop: Spacing.sm,
     padding: Spacing.sm,
-    backgroundColor: '#D1FAE5',
+    backgroundColor: Tints.successBg,
     borderRadius: BorderRadius.base,
     alignItems: 'center',
   },
   completedText: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.semiBold,
-    color: '#065F46',
+    color: Colors.success,
   },
   // AI Tip
   aiTip: {
@@ -718,7 +679,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.base,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
     borderWidth: 1,
     borderColor: Colors.primaryLight,
   },
@@ -822,14 +783,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   warningBanner: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: Tints.warningBg,
     padding: Spacing.sm,
     borderRadius: BorderRadius.base,
     marginBottom: Spacing.sm,
   },
   warningText: {
     fontSize: Typography.sizes.sm,
-    color: '#92400E',
+    color: Colors.warning,
     fontWeight: Typography.weights.medium,
   },
   goalActions: {
@@ -947,7 +908,7 @@ const styles = StyleSheet.create({
     transform: [{ translateX: 20 }],
   },
   calculation: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
     padding: Spacing.sm,
     borderRadius: BorderRadius.base,
     marginBottom: Spacing.base,

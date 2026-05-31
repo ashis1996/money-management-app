@@ -11,13 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, EmptyState } from '../../components/shared';
-import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-  Shadows,
-} from '../../styles/theme';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, Tints } from '../../styles/theme';
 import { useTransactions, useUpdateTransaction } from '../../hooks';
 
 type CaptureMode = 'AUTO' | 'MANUAL' | 'ASSISTED';
@@ -108,7 +102,7 @@ export function TransactionsScreen({ navigation }: any) {
   }, [txQuery.data]);
 
   const pendingAICount = transactions.filter(
-    (t) => t.captureMode === 'ASSISTED' && !t.isUserConfirmed
+    (t) => t.captureMode === 'ASSISTED' && !t.isUserConfirmed,
   ).length;
 
   const filteredTransactions = useMemo(() => {
@@ -198,12 +192,8 @@ export function TransactionsScreen({ navigation }: any) {
           <View style={styles.aiBannerContent}>
             <Text style={styles.aiBannerIcon}>🤖</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.aiBannerTitle}>
-                {pendingAICount} AI suggestions waiting
-              </Text>
-              <Text style={styles.aiBannerSubtitle}>
-                Swipe to approve or reject categorization
-              </Text>
+              <Text style={styles.aiBannerTitle}>{pendingAICount} AI suggestions waiting</Text>
+              <Text style={styles.aiBannerSubtitle}>Swipe to approve or reject categorization</Text>
             </View>
           </View>
         </Card>
@@ -218,18 +208,10 @@ export function TransactionsScreen({ navigation }: any) {
         {FILTER_TABS.map((tab) => (
           <TouchableOpacity
             key={tab.key}
-            style={[
-              styles.filterTab,
-              filter === tab.key && styles.filterTabActive,
-            ]}
+            style={[styles.filterTab, filter === tab.key && styles.filterTabActive]}
             onPress={() => setFilter(tab.key as any)}
           >
-            <Text
-              style={[
-                styles.filterTabText,
-                filter === tab.key && styles.filterTabTextActive,
-              ]}
-            >
+            <Text style={[styles.filterTabText, filter === tab.key && styles.filterTabTextActive]}>
               {tab.label}
             </Text>
           </TouchableOpacity>
@@ -260,9 +242,7 @@ export function TransactionsScreen({ navigation }: any) {
                   transaction={tx}
                   onConfirm={() => handleConfirmAI(tx.id)}
                   onReject={() => handleRejectAI(tx.id)}
-                  onPress={() =>
-                    navigation.navigate('TransactionDetail', { id: tx.id })
-                  }
+                  onPress={() => navigation.navigate('TransactionDetail', { id: tx.id })}
                 />
               ))}
             </View>
@@ -291,17 +271,11 @@ export function TransactionsScreen({ navigation }: any) {
               {(['ALL', 'CREDIT', 'DEBIT'] as const).map((type) => (
                 <TouchableOpacity
                   key={type}
-                  style={[
-                    styles.typeChip,
-                    typeFilter === type && styles.typeChipActive,
-                  ]}
+                  style={[styles.typeChip, typeFilter === type && styles.typeChipActive]}
                   onPress={() => setTypeFilter(type)}
                 >
                   <Text
-                    style={[
-                      styles.typeChipText,
-                      typeFilter === type && styles.typeChipTextActive,
-                    ]}
+                    style={[styles.typeChipText, typeFilter === type && styles.typeChipTextActive]}
                   >
                     {type}
                   </Text>
@@ -330,20 +304,12 @@ interface TransactionItemProps {
   onPress: () => void;
 }
 
-function TransactionItem({
-  transaction: tx,
-  onConfirm,
-  onReject,
-  onPress,
-}: TransactionItemProps) {
+function TransactionItem({ transaction: tx, onConfirm, onReject, onPress }: TransactionItemProps) {
   const isPendingAI = tx.captureMode === 'ASSISTED' && !tx.isUserConfirmed;
   const icon = CATEGORY_ICONS[tx.category] || CATEGORY_ICONS.Other;
 
   return (
-    <Card
-      onPress={onPress}
-      style={[styles.txItem, isPendingAI && styles.txItemPending]}
-    >
+    <Card onPress={onPress} style={[styles.txItem, isPendingAI && styles.txItemPending]}>
       <View style={styles.txMain}>
         <View style={[styles.txIcon, { backgroundColor: getCategoryColor(tx.category) }]}>
           <Text style={styles.txIconText}>{icon}</Text>
@@ -383,8 +349,8 @@ function TransactionItem({
         <View style={styles.aiActions}>
           <View style={styles.aiInfo}>
             <Text style={styles.aiInfoText}>
-              🤖 AI suggests: <Text style={styles.aiCategory}>{tx.aiSuggestedCategory}</Text>{' '}
-              ({Math.round((tx.aiConfidence || 0) * 100)}% confident)
+              🤖 AI suggests: <Text style={styles.aiCategory}>{tx.aiSuggestedCategory}</Text> (
+              {Math.round((tx.aiConfidence || 0) * 100)}% confident)
             </Text>
           </View>
           <View style={styles.aiButtons}>
@@ -412,13 +378,13 @@ function formatTime(dateStr: string): string {
 
 function getCategoryColor(category: string): string {
   const colors: Record<string, string> = {
-    Food: '#FEE2E2',
-    Shopping: '#EDE9FE',
-    Transport: '#DBEAFE',
-    Entertainment: '#FCE7F3',
-    Bills: '#FEF3C7',
-    Health: '#D1FAE5',
-    Salary: '#D1FAE5',
+    Food: Tints.errorBg,
+    Shopping: 'rgba(167, 139, 250, 0.16)',
+    Transport: Tints.aiBg,
+    Entertainment: 'rgba(244, 114, 182, 0.16)',
+    Bills: Tints.warningBg,
+    Health: Tints.successBg,
+    Salary: Tints.successBg,
     Other: Colors.gray100,
   };
   return colors[category] || Colors.gray100;
@@ -486,7 +452,7 @@ const styles = StyleSheet.create({
   aiBanner: {
     marginHorizontal: Spacing.lg,
     marginTop: Spacing.base,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
     borderWidth: 1,
     borderColor: Colors.primaryLight,
   },

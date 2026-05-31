@@ -12,12 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { Button } from '../../components/shared';
-import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
 import { registerForPushNotifications } from '../../services/push';
 import { smsReadingAvailability } from '../../services/sms';
 
@@ -39,21 +34,21 @@ const SLIDES: Slide[] = [
     emoji: '💰',
     title: 'Welcome to MoneyMind',
     description:
-      "More than expense tracking — your AI-powered financial control system that detects, predicts, and acts.",
+      'More than expense tracking — your AI-powered financial control system that detects, predicts, and acts.',
     bullets: [
       'Detect hidden money leaks',
       'Predict your financial future',
       'Get AI-powered recommendations',
     ],
     color: Colors.primary,
-    background: '#EEF2FF',
+    background: Tints.primaryBg,
   },
   {
     id: 'capture',
     emoji: '📩',
     title: 'Auto-capture transactions',
     description:
-      "Forget manual entry. We automatically detect transactions from SMS, email, and UPI notifications.",
+      'Forget manual entry. We automatically detect transactions from SMS, email, and UPI notifications.',
     bullets: [
       'Bank SMS (HDFC, ICICI, SBI, Axis...)',
       'UPI (GPay, PhonePe, Paytm)',
@@ -61,35 +56,35 @@ const SLIDES: Slide[] = [
       'Or use voice: "Spent ₹200 on chai"',
     ],
     color: Colors.success,
-    background: '#D1FAE5',
+    background: Tints.successBg,
   },
   {
     id: 'leaks',
     emoji: '💧',
     title: 'Find money leaks',
     description:
-      "We expose hidden costs draining your wallet — silent price hikes, unused subscriptions, duplicate services.",
+      'We expose hidden costs draining your wallet — silent price hikes, unused subscriptions, duplicate services.',
     bullets: [
       "Netflix went from ₹199 → ₹649? You'll know.",
       'Spotify + YT Music? Cancel one, save ₹100.',
       'Cult.fit unused 30 days? Cancel and save ₹999.',
     ],
     color: Colors.warning,
-    background: '#FEF3C7',
+    background: Tints.warningBg,
   },
   {
     id: 'ai',
     emoji: '🤖',
     title: 'AI Financial Assistant',
     description:
-      "Ask questions in plain English. Get personalized insights, predictions, and money-saving tips.",
+      'Ask questions in plain English. Get personalized insights, predictions, and money-saving tips.',
     bullets: [
       '"Where did I waste money this month?"',
       '"Can I afford a ₹50,000 phone?"',
       '"How can I save ₹10,000/month?"',
     ],
     color: Colors.info,
-    background: '#DBEAFE',
+    background: Tints.aiBg,
   },
 ];
 
@@ -167,9 +162,7 @@ export function OnboardingScreen({ navigation }: any) {
   };
 
   const togglePermission = (id: string) => {
-    setPermissions((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p))
-    );
+    setPermissions((prev) => prev.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p)));
   };
 
   const handleComplete = async () => {
@@ -193,24 +186,18 @@ export function OnboardingScreen({ navigation }: any) {
     if (enabledIds.includes('sms')) {
       const sms = smsReadingAvailability();
       if (!sms.available) {
-        Alert.alert(
-          'SMS auto-capture',
-          `${sms.message}\n\n${sms.fallback ?? ''}`,
-          [{ text: 'Got it' }],
-        );
+        Alert.alert('SMS auto-capture', `${sms.message}\n\n${sms.fallback ?? ''}`, [
+          { text: 'Got it' },
+        ]);
       }
     }
 
-    Alert.alert(
-      'All set! 🎉',
-      "Let's create your account",
-      [
-        {
-          text: 'Continue',
-          onPress: () => navigation.replace('Register'),
-        },
-      ]
-    );
+    Alert.alert('All set! 🎉', "Let's create your account", [
+      {
+        text: 'Continue',
+        onPress: () => navigation.replace('Register'),
+      },
+    ]);
   };
 
   // ==================== PERMISSIONS VIEW ====================
@@ -227,18 +214,15 @@ export function OnboardingScreen({ navigation }: any) {
             <Text style={styles.permEmoji}>🔐</Text>
             <Text style={styles.permTitle}>Permissions</Text>
             <Text style={styles.permSubtitle}>
-              We use these to give you the best experience. You can change these
-              anytime in Settings.
+              We use these to give you the best experience. You can change these anytime in
+              Settings.
             </Text>
           </View>
 
           {permissions.map((p) => (
             <TouchableOpacity
               key={p.id}
-              style={[
-                styles.permCard,
-                p.enabled && styles.permCardActive,
-              ]}
+              style={[styles.permCard, p.enabled && styles.permCardActive]}
               onPress={() => togglePermission(p.id)}
               activeOpacity={0.7}
             >
@@ -246,24 +230,12 @@ export function OnboardingScreen({ navigation }: any) {
               <View style={{ flex: 1 }}>
                 <View style={styles.permTitleRow}>
                   <Text style={styles.permItemTitle}>{p.title}</Text>
-                  {p.required && (
-                    <Text style={styles.permRequired}>required</Text>
-                  )}
+                  {p.required && <Text style={styles.permRequired}>required</Text>}
                 </View>
                 <Text style={styles.permItemDesc}>{p.description}</Text>
               </View>
-              <View
-                style={[
-                  styles.permToggle,
-                  p.enabled && styles.permToggleActive,
-                ]}
-              >
-                <View
-                  style={[
-                    styles.permToggleThumb,
-                    p.enabled && styles.permToggleThumbActive,
-                  ]}
-                />
+              <View style={[styles.permToggle, p.enabled && styles.permToggleActive]}>
+                <View style={[styles.permToggleThumb, p.enabled && styles.permToggleThumbActive]} />
               </View>
             </TouchableOpacity>
           ))}
@@ -273,14 +245,18 @@ export function OnboardingScreen({ navigation }: any) {
             <View style={{ flex: 1 }}>
               <Text style={styles.permPrivacyTitle}>Your data is private</Text>
               <Text style={styles.permPrivacyText}>
-                Bank-level encryption. We never sell your data. Read-only
-                access. You can revoke anytime.
+                Bank-level encryption. We never sell your data. Read-only access. You can revoke
+                anytime.
               </Text>
             </View>
           </View>
 
           <Button
-            title={enabledCount > 0 ? `Continue (${enabledCount} enabled)` : 'Continue without permissions'}
+            title={
+              enabledCount > 0
+                ? `Continue (${enabledCount} enabled)`
+                : 'Continue without permissions'
+            }
             onPress={handleComplete}
             variant="primary"
             size="lg"
@@ -300,9 +276,7 @@ export function OnboardingScreen({ navigation }: any) {
   const currentSlide = SLIDES[page];
 
   return (
-    <View
-      style={[styles.container, { backgroundColor: currentSlide.background }]}
-    >
+    <View style={[styles.container, { backgroundColor: currentSlide.background }]}>
       {/* Skip button */}
       <View style={styles.topBar}>
         <View />
@@ -317,29 +291,22 @@ export function OnboardingScreen({ navigation }: any) {
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-          { useNativeDriver: false, listener: handleScroll }
-        )}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
+          useNativeDriver: false,
+          listener: handleScroll,
+        })}
         scrollEventThrottle={16}
       >
         {SLIDES.map((slide) => (
-          <View
-            key={slide.id}
-            style={[styles.slide, { backgroundColor: slide.background }]}
-          >
+          <View key={slide.id} style={[styles.slide, { backgroundColor: slide.background }]}>
             <Text style={styles.slideEmoji}>{slide.emoji}</Text>
-            <Text style={[styles.slideTitle, { color: slide.color }]}>
-              {slide.title}
-            </Text>
+            <Text style={[styles.slideTitle, { color: slide.color }]}>{slide.title}</Text>
             <Text style={styles.slideDescription}>{slide.description}</Text>
             {slide.bullets && (
               <View style={styles.bullets}>
                 {slide.bullets.map((b, idx) => (
                   <View key={idx} style={styles.bulletRow}>
-                    <View
-                      style={[styles.bulletDot, { backgroundColor: slide.color }]}
-                    />
+                    <View style={[styles.bulletDot, { backgroundColor: slide.color }]} />
                     <Text style={styles.bulletText}>{b}</Text>
                   </View>
                 ))}
@@ -360,8 +327,7 @@ export function OnboardingScreen({ navigation }: any) {
               style={[
                 styles.dot,
                 {
-                  backgroundColor:
-                    idx === page ? currentSlide.color : Colors.gray300,
+                  backgroundColor: idx === page ? currentSlide.color : Colors.gray300,
                   width: idx === page ? 24 : 8,
                 },
               ]}
@@ -372,10 +338,7 @@ export function OnboardingScreen({ navigation }: any) {
         {/* Buttons */}
         <View style={styles.buttons}>
           {page > 0 && (
-            <TouchableOpacity
-              onPress={() => goToPage(page - 1)}
-              style={styles.backBtn}
-            >
+            <TouchableOpacity onPress={() => goToPage(page - 1)} style={styles.backBtn}>
               <Text style={styles.backBtnText}>← Back</Text>
             </TouchableOpacity>
           )}
@@ -524,7 +487,7 @@ const styles = StyleSheet.create({
   },
   permCardActive: {
     borderColor: Colors.primary,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
   },
   permIcon: {
     fontSize: 32,
@@ -544,7 +507,7 @@ const styles = StyleSheet.create({
     fontSize: Typography.sizes.xs,
     color: Colors.error,
     fontWeight: Typography.weights.semiBold,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: Tints.errorBg,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: BorderRadius.sm,
@@ -577,12 +540,12 @@ const styles = StyleSheet.create({
   },
   permPrivacy: {
     flexDirection: 'row',
-    backgroundColor: '#D1FAE5',
+    backgroundColor: Tints.successBg,
     padding: Spacing.base,
     borderRadius: BorderRadius.md,
     marginTop: Spacing.lg,
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: Tints.successBorder,
   },
   permPrivacyIcon: {
     fontSize: 24,
@@ -591,11 +554,11 @@ const styles = StyleSheet.create({
   permPrivacyTitle: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
-    color: '#065F46',
+    color: Colors.success,
   },
   permPrivacyText: {
     fontSize: Typography.sizes.sm,
-    color: '#065F46',
+    color: Colors.success,
     marginTop: 4,
     lineHeight: Typography.sizes.sm * 1.5,
   },

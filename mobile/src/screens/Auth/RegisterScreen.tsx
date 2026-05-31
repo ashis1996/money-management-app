@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useAuthStore } from '../../store/auth.store';
 import { Button, Input } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius } from '../../styles/theme';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
 
 const STEPS = [
   { id: 'account', label: 'Account' },
@@ -78,26 +78,13 @@ export function RegisterScreen({ navigation }: any) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         {/* Progress dots */}
         <View style={styles.progressBar}>
           {STEPS.map((s, idx) => (
             <View key={s.id} style={styles.progressItem}>
-              <View
-                style={[
-                  styles.progressDot,
-                  idx <= step && styles.progressDotActive,
-                ]}
-              />
-              <Text
-                style={[
-                  styles.progressLabel,
-                  idx <= step && styles.progressLabelActive,
-                ]}
-              >
+              <View style={[styles.progressDot, idx <= step && styles.progressDotActive]} />
+              <Text style={[styles.progressLabel, idx <= step && styles.progressLabelActive]}>
                 {s.label}
               </Text>
             </View>
@@ -107,10 +94,7 @@ export function RegisterScreen({ navigation }: any) {
         {/* Step header */}
         <View style={styles.header}>
           {step > 0 && (
-            <TouchableOpacity
-              onPress={() => setStep(step - 1)}
-              style={styles.backBtn}
-            >
+            <TouchableOpacity onPress={() => setStep(step - 1)} style={styles.backBtn}>
               <Text style={styles.backIcon}>←</Text>
             </TouchableOpacity>
           )}
@@ -186,15 +170,11 @@ export function RegisterScreen({ navigation }: any) {
             {/* Permissions preview */}
             <View style={styles.permissionsCard}>
               <Text style={styles.permissionsTitle}>📨 Auto-capture permissions</Text>
-              <Text style={styles.permissionsText}>
-                We'll request permission to:
-              </Text>
+              <Text style={styles.permissionsText}>We'll request permission to:</Text>
               <Text style={styles.permissionItem}>• Read bank SMS messages</Text>
               <Text style={styles.permissionItem}>• Detect UPI notifications</Text>
               <Text style={styles.permissionItem}>• Access transaction emails</Text>
-              <Text style={styles.permissionsFooter}>
-                You can configure later in Settings.
-              </Text>
+              <Text style={styles.permissionsFooter}>You can configure later in Settings.</Text>
             </View>
           </View>
         )}
@@ -206,18 +186,12 @@ export function RegisterScreen({ navigation }: any) {
               {goalOptions.map((goal) => (
                 <TouchableOpacity
                   key={goal.id}
-                  style={[
-                    styles.goalCard,
-                    primaryGoal === goal.id && styles.goalCardActive,
-                  ]}
+                  style={[styles.goalCard, primaryGoal === goal.id && styles.goalCardActive]}
                   onPress={() => setPrimaryGoal(goal.id)}
                 >
                   <Text style={styles.goalIcon}>{goal.icon}</Text>
                   <Text
-                    style={[
-                      styles.goalLabel,
-                      primaryGoal === goal.id && styles.goalLabelActive,
-                    ]}
+                    style={[styles.goalLabel, primaryGoal === goal.id && styles.goalLabelActive]}
                   >
                     {goal.label}
                   </Text>
@@ -228,7 +202,8 @@ export function RegisterScreen({ navigation }: any) {
             <View style={styles.aiPreview}>
               <Text style={styles.aiPreviewIcon}>🤖</Text>
               <Text style={styles.aiPreviewText}>
-                Based on your goals, we'll personalize your dashboard and detect what matters most for you.
+                Based on your goals, we'll personalize your dashboard and detect what matters most
+                for you.
               </Text>
             </View>
           </View>
@@ -335,7 +310,7 @@ const styles = StyleSheet.create({
   },
   // Permissions
   permissionsCard: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
     padding: Spacing.base,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
@@ -388,7 +363,7 @@ const styles = StyleSheet.create({
   },
   goalCardActive: {
     borderColor: Colors.primary,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
   },
   goalIcon: {
     fontSize: 32,
