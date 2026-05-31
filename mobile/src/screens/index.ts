@@ -23,3 +23,7 @@ export { WeeklySummaryScreen } from './WeeklySummary/WeeklySummaryScreen';
 export { AccountsScreen } from './Accounts/AccountsScreen';
 export { SplitExpenseScreen } from './SplitExpense/SplitExpenseScreen';
 export { SmsForwardScreen } from './SmsForward/SmsForwardScreen';
+
+// Dev screens — visible only when STORYBOOK env flag is set, but the
+// export is unconditional so debug builds can deeplink to it.
+export { StoryBookScreen } from './_dev/StoryBookScreen';

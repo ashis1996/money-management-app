@@ -12,6 +12,7 @@ import {
   Activity,
   Droplet,
   CalendarRange,
+  CalendarClock,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -60,6 +61,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/budgets', label: 'Budgets', icon: PieChart },
       { href: '/goals', label: 'Goals', icon: Target },
       { href: '/subscriptions', label: 'Subscriptions', icon: Repeat },
+      { href: '/calendar', label: 'Renewal calendar', icon: CalendarClock },
       { href: '/money-leaks', label: 'Money leaks', icon: Droplet },
     ],
   },

@@ -10,9 +10,10 @@
     "web"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:ai-service\"",
+    "dev": "concurrently -n backend,web -c blue,magenta \"npm run dev:backend\" \"npm run dev:web\"",
     "dev:backend": "npm run dev --workspace=backend",
-    "dev:ai-service": "npm run dev --workspace=ai-service",
+    "dev:ai-service": "cd ai-service && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "dev:full": "concurrently -n backend,web,ai -c blue,magenta,cyan \"npm run dev:backend\" \"npm run dev:web\" \"npm run dev:ai-service\"",
     "dev:mobile": "npm run start --workspace=mobile",
     "dev:web": "npm run dev --workspace=web",
     "build": "npm run build --workspaces",
