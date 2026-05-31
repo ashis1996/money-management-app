@@ -189,6 +189,7 @@ export const transactionsApi = {
 export const subscriptionsApi = {
   getAll: (status?: SubscriptionStatus | string) =>
     request<Env<Subscription[]>>('/subscriptions', { query: { status } }),
+  getById: (id: string) => request<Env<Subscription>>(`/subscriptions/${id}`),
   getSummary: () =>
     request<Env<{ active: number; monthlyTotal: number; upcomingDues: number }>>(
       '/subscriptions/summary',
@@ -197,6 +198,13 @@ export const subscriptionsApi = {
     request<Env<Subscription[]>>('/subscriptions/upcoming', {
       query: { days },
     }),
+  cancel: (id: string) =>
+    request<Env<Subscription>>(`/subscriptions/${id}/cancel`, { method: 'POST' }),
+  pause: (id: string) =>
+    request<Env<Subscription>>(`/subscriptions/${id}/pause`, { method: 'POST' }),
+  resume: (id: string) =>
+    request<Env<Subscription>>(`/subscriptions/${id}/resume`, { method: 'POST' }),
+  detect: () => request<Env<{ created: number }>>('/subscriptions/detect', { method: 'POST' }),
 };
 
 export const insightsApi = {
@@ -205,6 +213,8 @@ export const insightsApi = {
     request<Env<Insight & Record<string, unknown>>>('/insights/spending', {
       query: { period },
     }),
+  getRecommendations: () =>
+    request<Env<Array<{ id: string; title: string; body: string }>>>('/insights/recommendations'),
 };
 
 export const goalsApi = {
@@ -231,6 +241,12 @@ export const notificationsApi = {
   getUnreadCount: () => request<Env<{ count: number }>>('/notifications/unread/count'),
 };
 
+export interface AiAnswer {
+  answer: string;
+  sources?: string[];
+  meta?: Record<string, unknown>;
+}
+
 export const aiApi = {
   health: () => request<Env<{ status: string }>>('/ai/health'),
   getHealthScore: () =>
@@ -246,4 +262,11 @@ export const aiApi = {
       '/ai/profile/archetype',
       { method: 'POST' },
     ),
+  analyzeBehavior: () =>
+    request<Env<Record<string, unknown>>>('/ai/behavior/analyze', { method: 'POST' }),
+  ask: (query: string, context?: Record<string, unknown>) =>
+    request<Env<AiAnswer & Record<string, unknown>>>('/ai/assistant/query', {
+      method: 'POST',
+      body: { query, context },
+    }),
 };
