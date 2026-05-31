@@ -107,7 +107,7 @@ describe('UserController (e2e)', () => {
   });
 
   describe('GET /api/v1/users/:id', () => {
-    it('should return user by ID', async () => {
+    it("should return the caller's own record when id matches", async () => {
       mockPrisma.user.findUnique.mockResolvedValue(mockUser);
 
       const res = await request(server)
@@ -118,15 +118,15 @@ describe('UserController (e2e)', () => {
       expect(res.body.id).toBe(mockUser.id);
     });
 
-    it('should return 404 for unknown ID', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
-
+    it('should return 403 when requesting another user by ID', async () => {
       const res = await request(server)
-        .get('/api/v1/users/unknown-id')
+        .get('/api/v1/users/some-other-user-id')
         .set(authHeader())
-        .expect(404);
+        .expect(403);
 
-      expect(res.body.message).toMatch(/not found/i);
+      expect(res.body.message).toMatch(/own user record/i);
+      // We must NOT have hit the database for the other user.
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
     });
   });
 });

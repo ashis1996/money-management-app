@@ -27,6 +27,22 @@ spec:
           env:
             - name: PYTHONUNBUFFERED
               value: "1"
+            - name: ENVIRONMENT
+              value: "production"
+            # In production the AI service refuses to boot without this.
+            # The backend Deployment must reference the same Secret key so
+            # the two pods share the value.
+            - name: INTERNAL_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: money-secrets
+                  key: internal-api-token
+            - name: ALLOWED_ORIGINS
+              valueFrom:
+                secretKeyRef:
+                  name: money-secrets
+                  key: ai-allowed-origins
+                  optional: true
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -46,6 +62,9 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "1000m"
+          # /health is the AI service's bare healthcheck route (no /api/v1
+          # prefix) and is exempt from internal-token auth, so probes work
+          # even when INTERNAL_API_TOKEN is enforced.
           livenessProbe:
             httpGet:
               path: /health

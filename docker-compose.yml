@@ -73,10 +73,17 @@ services:
       REDIS_PORT: 6379
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       RABBITMQ_SMS_QUEUE: sms.processing
-      JWT_SECRET: development-jwt-secret-change-in-production
+      # NOTE: These are LOCAL-DEV-ONLY secrets. They are 64+ characters of
+      # random-looking material, long enough to pass the runtime length
+      # check, and they are NOT on the placeholder denylist. Never reuse
+      # these values for any deployed environment — generate new ones with
+      # `openssl rand -hex 32`.
+      JWT_SECRET: dev_only_a7f3b2c8d4e6f1a9b3c5d7e9f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9
       JWT_EXPIRES_IN: 15m
-      REFRESH_TOKEN_SECRET: development-refresh-secret
+      REFRESH_TOKEN_SECRET: dev_only_b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9
       REFRESH_TOKEN_EXPIRES_IN: 7d
+      INTERNAL_API_TOKEN: dev_only_c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2
+      ALLOWED_ORIGINS: http://localhost:3000,http://localhost:8081,http://localhost:19006
       BCRYPT_ROUNDS: 10
       AI_SERVICE_URL: http://ai-service:8000/api/v1
       AI_TIMEOUT_MS: 30000
@@ -108,6 +115,10 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       LOG_LEVEL: INFO
+      ENVIRONMENT: development
+      # Must match the backend's INTERNAL_API_TOKEN above.
+      INTERNAL_API_TOKEN: dev_only_c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2
+      ALLOWED_ORIGINS: http://localhost:3000,http://localhost:8081
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:

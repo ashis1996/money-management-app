@@ -5,8 +5,10 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'crypto';
 import { PrismaService } from '../../config/prisma.service';
 import { HashUtils } from '../../common/utils/hash';
+import { requireSecret } from '../../config/secret-validation';
 import { LoginDto, AuthResponseDto, UserResponseDto } from '@money-management/shared/dto';
 
 @Injectable()
@@ -16,6 +18,16 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {}
+
+  /**
+   * Refresh tokens are stored as SHA-256 hashes, never plaintext. Bcrypt is
+   * deliberately avoided here because we need an O(1) lookup by hash on the
+   * refresh path; the underlying token already has full JWT entropy so a
+   * fast keyed digest is sufficient to defend against DB-read attacks.
+   */
+  private hashRefreshToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
 
   async validateUser(email: string, password: string): Promise<UserResponseDto | null> {
     const user = await this.prisma.user.findUnique({ where: { email } });
@@ -100,8 +112,9 @@ export class AuthService {
   }
 
   async refreshTokens(refreshToken: string): Promise<AuthResponseDto> {
+    const tokenHash = this.hashRefreshToken(refreshToken);
     const storedToken = await this.prisma.refreshToken.findUnique({
-      where: { token: refreshToken },
+      where: { tokenHash },
       include: { user: true },
     });
 
@@ -126,7 +139,8 @@ export class AuthService {
 
   async logout(userId: string, refreshToken?: string): Promise<void> {
     if (refreshToken) {
-      await this.prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
+      const tokenHash = this.hashRefreshToken(refreshToken);
+      await this.prisma.refreshToken.deleteMany({ where: { tokenHash } });
     } else {
       await this.prisma.refreshToken.deleteMany({ where: { userId } });
     }
@@ -153,7 +167,10 @@ export class AuthService {
       this.jwtService.signAsync(
         { sub: userId, email, type: 'refresh' },
         {
-          secret: this.configService.get<string>('REFRESH_TOKEN_SECRET', 'refresh-secret'),
+          // No fallback. requireSecret() throws if REFRESH_TOKEN_SECRET is
+          // missing or a known placeholder, ensuring we never sign refresh
+          // tokens with a publicly known string.
+          secret: requireSecret(this.configService, 'REFRESH_TOKEN_SECRET'),
           expiresIn: this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN', '7d'),
         },
       ),
@@ -167,7 +184,7 @@ export class AuthService {
     expiresAt.setDate(expiresAt.getDate() + 7);
 
     await this.prisma.refreshToken.create({
-      data: { userId, token, expiresAt },
+      data: { userId, tokenHash: this.hashRefreshToken(token), expiresAt },
     });
   }
 }

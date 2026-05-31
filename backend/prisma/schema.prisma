@@ -167,11 +167,15 @@ model User {
   @@index([deletedAt])
 }
 
-/// RefreshToken: JWT refresh token storage
+/// RefreshToken: JWT refresh token storage.
+///
+/// SECURITY: We store the SHA-256 hash of the refresh token, never the
+/// plaintext value. A DB read should not be sufficient to hijack a session.
+/// Lookup happens via `tokenHash` on the `/auth/refresh` path.
 model RefreshToken {
   id        String   @id @default(uuid())
   userId    String
-  token     String   @unique
+  tokenHash String   @unique
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime @default(now())
@@ -179,18 +183,22 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@index([token])
+  @@index([tokenHash])
   @@index([expiresAt])
 }
 
-/// Account: Bank accounts, wallets, credit cards
+/// Account: Bank accounts, wallets, credit cards.
+///
+/// SECURITY: We deliberately do NOT store the full account number. Only the
+/// last 4 digits are kept (`maskedAccountNumber`) for display purposes. If
+/// you need to reintroduce the full number, add a column with field-level
+/// AES-GCM encryption — never store it in plaintext.
 model Account {
   id                  String        @id @default(uuid())
   userId              String
   accountType         AccountType
   accountName         String
-  accountNumber       String?       // Encrypted full number
-  maskedAccountNumber String?       // Last 4 digits
+  maskedAccountNumber String?       // Last 4 digits only — never the full PAN/account number
   providerName        String?       // Bank/provider name
   ifscCode            String?       // Indian bank IFSC
   balance             Decimal       @default(0) @db.Decimal(15, 2)

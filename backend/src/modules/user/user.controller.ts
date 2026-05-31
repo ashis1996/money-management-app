@@ -1,8 +1,16 @@
-import { Controller, Get, Put, Body, Param, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Put,
+  Body,
+  Param,
+  UseGuards,
+  ForbiddenException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { UserService } from './user.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { User } from '../../common/decorators/user.decorator';
+import { User, RequestUser } from '../../common/decorators/user.decorator';
 
 @ApiTags('users')
 @Controller('users')
@@ -13,25 +21,36 @@ export class UserController {
 
   @Get('me')
   @ApiOperation({ summary: 'Get current user profile' })
-  getProfile(@User() user: any) {
+  getProfile(@User() user: RequestUser) {
     return this.userService.findById(user.id);
   }
 
   @Put('me')
   @ApiOperation({ summary: 'Update current user profile' })
-  updateProfile(@User() user: any, @Body() updateData: any) {
+  updateProfile(@User() user: RequestUser, @Body() updateData: any) {
     return this.userService.update(user.id, updateData);
   }
 
   @Get('dashboard')
   @ApiOperation({ summary: 'Get dashboard statistics' })
-  getDashboard(@User() user: any) {
+  getDashboard(@User() user: RequestUser) {
     return this.userService.getDashboardStats(user.id);
   }
 
+  /**
+   * Lookup by ID is restricted to the caller's own ID. The route is kept
+   * for backward compatibility and parity with /users/me, but cross-user
+   * access is forbidden — without this check any authenticated user could
+   * read any other user's profile.
+   */
   @Get(':id')
-  @ApiOperation({ summary: 'Get user by ID' })
-  getUserById(@Param('id') id: string) {
+  @ApiOperation({ summary: "Get user by ID (only the caller's own ID is allowed)" })
+  getUserById(@User() user: RequestUser, @Param('id') id: string) {
+    if (id !== user.id) {
+      throw new ForbiddenException(
+        'You can only retrieve your own user record. Use /users/me.',
+      );
+    }
     return this.userService.findById(id);
   }
 }

@@ -165,9 +165,10 @@ describe('AuthService', () => {
       expect(mockPrismaService.account.create).toHaveBeenCalledWith({
         data: {
           userId: 'user-1',
-          name: 'Main Account',
-          type: 'BANK',
+          accountName: 'Main Account',
+          accountType: 'BANK',
           balance: 0,
+          isPrimary: true,
         },
       });
     });
@@ -181,9 +182,11 @@ describe('AuthService', () => {
 
   describe('refreshTokens', () => {
     it('should generate new tokens when refresh token is valid', async () => {
+      // The service stores hashes, so the lookup is by tokenHash, not the
+      // raw token. Match that shape in the mock.
       mockPrismaService.refreshToken.findUnique.mockResolvedValue({
         id: 'rt-1',
-        token: 'valid-refresh-token',
+        tokenHash: 'any-hash',
         expiresAt: new Date(Date.now() + 86400000),
         user: mockUser,
       });
@@ -203,7 +206,7 @@ describe('AuthService', () => {
     it('should throw UnauthorizedException when refresh token is expired', async () => {
       mockPrismaService.refreshToken.findUnique.mockResolvedValue({
         id: 'rt-1',
-        token: 'expired-token',
+        tokenHash: 'expired-hash',
         expiresAt: new Date(Date.now() - 86400000),
         user: mockUser,
       });
@@ -219,13 +222,13 @@ describe('AuthService', () => {
   });
 
   describe('logout', () => {
-    it('should delete specific refresh token when provided', async () => {
+    it('should delete the matching refresh token by hash when one is provided', async () => {
       mockPrismaService.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
 
       await service.logout('user-1', 'refresh-token');
 
       expect(mockPrismaService.refreshToken.deleteMany).toHaveBeenCalledWith({
-        where: { token: 'refresh-token' },
+        where: { tokenHash: expect.any(String) },
       });
     });
 
@@ -243,8 +246,11 @@ describe('AuthService', () => {
   describe('generateTokens', () => {
     it('should generate access and refresh tokens', async () => {
       mockJwtService.signAsync.mockResolvedValueOnce('access-token').mockResolvedValueOnce('refresh-token');
+      // requireSecret enforces a real secret; supply one that's long enough
+      // and not on the placeholder denylist.
+      const realSecret = 'a'.repeat(40);
       mockConfigService.get.mockImplementation((key: string, defaultValue?: any) => {
-        if (key === 'REFRESH_TOKEN_SECRET') return 'refresh-secret';
+        if (key === 'REFRESH_TOKEN_SECRET') return realSecret;
         if (key === 'REFRESH_TOKEN_EXPIRES_IN') return '7d';
         return defaultValue;
       });
@@ -258,7 +264,7 @@ describe('AuthService', () => {
   });
 
   describe('saveRefreshToken', () => {
-    it('should create refresh token with 7 day expiry', async () => {
+    it('should persist the SHA-256 hash of the refresh token, never the raw value', async () => {
       mockPrismaService.refreshToken.create.mockResolvedValue({ id: 'rt-1' });
 
       await (service as any).saveRefreshToken('user-1', 'refresh-token');
@@ -266,10 +272,14 @@ describe('AuthService', () => {
       expect(mockPrismaService.refreshToken.create).toHaveBeenCalledWith({
         data: {
           userId: 'user-1',
-          token: 'refresh-token',
+          tokenHash: expect.any(String),
           expiresAt: expect.any(Date),
         },
       });
+      const callArg = mockPrismaService.refreshToken.create.mock.calls[0][0].data;
+      // SHA-256 hex digest is 64 chars and must NOT equal the raw token.
+      expect(callArg.tokenHash).toHaveLength(64);
+      expect(callArg.tokenHash).not.toBe('refresh-token');
     });
   });
 });
