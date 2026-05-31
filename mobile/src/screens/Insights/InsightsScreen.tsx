@@ -9,17 +9,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, ProgressBar, EmptyState } from '../../components/shared';
-import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
-import {
-  useSpendingInsights,
-  useBehaviorAnalysis,
-  useCategoryBreakdown,
-} from '../../hooks';
+import { Colors, Typography, Spacing, BorderRadius } from '../../styles/theme';
+import { useSpendingInsights, useBehaviorAnalysis, useCategoryBreakdown } from '../../hooks';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -106,22 +97,18 @@ export function InsightsScreen({ navigation }: any) {
     const insights = insightsQuery.data;
     if (!insights) return EMPTY_DATA;
 
-    const spending = insights.spending ?? insights;
+    const spending: any = (insights as any).spending ?? insights;
     const totalSpent = Number(spending.totalSpent ?? 0);
     const totalIncome = Number(spending.totalIncome ?? 0);
     const savings = Number(spending.netSavings ?? totalIncome - totalSpent);
     const savingsRate = Number(spending.savingsRate ?? 0);
 
-    const cmp = spending.comparisonToPrevious ?? {};
+    const cmp: any = spending.comparisonToPrevious ?? {};
     const spentChangePct = Number(cmp.spentChange ?? 0);
     const savingsChangePct = Number(cmp.savingsChange ?? 0);
 
-    const prevSpent =
-      spentChangePct !== 0 ? totalSpent / (1 + spentChangePct / 100) : totalSpent;
-    const prevSavings =
-      savingsChangePct !== 0
-        ? savings / (1 + savingsChangePct / 100)
-        : savings;
+    const prevSpent = spentChangePct !== 0 ? totalSpent / (1 + spentChangePct / 100) : totalSpent;
+    const prevSavings = savingsChangePct !== 0 ? savings / (1 + savingsChangePct / 100) : savings;
 
     const topMerchants = (spending.topMerchants ?? []).map((m: any) => ({
       name: m.merchantName || m.name || 'Unknown',
@@ -145,10 +132,7 @@ export function InsightsScreen({ navigation }: any) {
     const behavioralPatterns: BehavioralPattern[] = [];
     if (behavior) {
       const lateAmount = Number(
-        behavior.lateNightSpending ??
-          behavior.late_night_spending ??
-          behavior.lateNightAmount ??
-          0,
+        behavior.lateNightSpending ?? behavior.late_night_spending ?? behavior.lateNightAmount ?? 0,
       );
       if (lateAmount > 0) {
         behavioralPatterns.push({
@@ -161,9 +145,7 @@ export function InsightsScreen({ navigation }: any) {
           icon: '🌙',
         });
       }
-      const weekendAmount = Number(
-        behavior.weekendSpending ?? behavior.weekend_spending ?? 0,
-      );
+      const weekendAmount = Number(behavior.weekendSpending ?? behavior.weekend_spending ?? 0);
       if (weekendAmount > 0) {
         behavioralPatterns.push({
           type: 'weekend',
@@ -175,9 +157,7 @@ export function InsightsScreen({ navigation }: any) {
           icon: '🎉',
         });
       }
-      const impulseAmount = Number(
-        behavior.impulseSpending ?? behavior.impulse_spending ?? 0,
-      );
+      const impulseAmount = Number(behavior.impulseSpending ?? behavior.impulse_spending ?? 0);
       if (impulseAmount > 0) {
         behavioralPatterns.push({
           type: 'impulse',
@@ -242,12 +222,7 @@ export function InsightsScreen({ navigation }: any) {
               style={[styles.periodTab, period === p && styles.periodTabActive]}
               onPress={() => setPeriod(p)}
             >
-              <Text
-                style={[
-                  styles.periodTabText,
-                  period === p && styles.periodTabTextActive,
-                ]}
-              >
+              <Text style={[styles.periodTabText, period === p && styles.periodTabTextActive]}>
                 {p[0].toUpperCase() + p.slice(1)}
               </Text>
             </TouchableOpacity>
@@ -281,9 +256,7 @@ export function InsightsScreen({ navigation }: any) {
               const isHighSpend = d.day === 'Sat' || d.day === 'Sun';
               return (
                 <View key={idx} style={styles.chartBarContainer}>
-                  <Text style={styles.chartAmount}>
-                    ₹{(d.amount / 1000).toFixed(1)}k
-                  </Text>
+                  <Text style={styles.chartAmount}>₹{(d.amount / 1000).toFixed(1)}k</Text>
                   <View style={styles.chartBarTrack}>
                     <View
                       style={[
@@ -302,9 +275,7 @@ export function InsightsScreen({ navigation }: any) {
           </View>
           <View style={styles.chartLegend}>
             <View style={styles.legendItem}>
-              <View
-                style={[styles.legendDot, { backgroundColor: Colors.warning }]}
-              />
+              <View style={[styles.legendDot, { backgroundColor: Colors.warning }]} />
               <Text style={styles.legendText}>Weekend (40% higher)</Text>
             </View>
           </View>
@@ -343,9 +314,7 @@ export function InsightsScreen({ navigation }: any) {
                   />
                 ))}
               </View>
-              <Text style={styles.donutTotal}>
-                ₹{data.totalSpent.toLocaleString()}
-              </Text>
+              <Text style={styles.donutTotal}>₹{data.totalSpent.toLocaleString()}</Text>
               <Text style={styles.donutLabel}>Total spent</Text>
             </View>
           </View>
@@ -360,48 +329,50 @@ export function InsightsScreen({ navigation }: any) {
         <Card style={styles.section}>
           <Text style={styles.sectionTitle}>🏪 Top Merchants</Text>
           <Text style={styles.sectionSubtitle}>Where your money goes</Text>
-          {data.topMerchants.map((m: { name: string; amount: number; count: number }, idx: number) => {
-            const maxAmount = data.topMerchants[0]?.amount ?? 1;
-            return (
-              <View key={m.name} style={styles.merchantRow}>
-                <View style={styles.merchantRank}>
-                  <Text style={styles.merchantRankText}>{idx + 1}</Text>
-                </View>
-                <View style={styles.merchantInfo}>
-                  <View style={styles.merchantTop}>
-                    <Text style={styles.merchantName}>{m.name}</Text>
-                    <Text style={styles.merchantAmount}>
-                      ₹{m.amount.toLocaleString()}
+          {data.topMerchants.map(
+            (m: { name: string; amount: number; count: number }, idx: number) => {
+              const maxAmount = data.topMerchants[0]?.amount ?? 1;
+              return (
+                <View key={m.name} style={styles.merchantRow}>
+                  <View style={styles.merchantRank}>
+                    <Text style={styles.merchantRankText}>{idx + 1}</Text>
+                  </View>
+                  <View style={styles.merchantInfo}>
+                    <View style={styles.merchantTop}>
+                      <Text style={styles.merchantName}>{m.name}</Text>
+                      <Text style={styles.merchantAmount}>₹{m.amount.toLocaleString()}</Text>
+                    </View>
+                    <ProgressBar
+                      progress={(m.amount / maxAmount) * 100}
+                      color={Colors.primary}
+                      height={4}
+                      style={{ marginTop: 4 }}
+                    />
+                    <Text style={styles.merchantMeta}>
+                      {m.count} transactions • Avg ₹
+                      {Math.round(m.amount / m.count).toLocaleString()}
                     </Text>
                   </View>
-                  <ProgressBar
-                    progress={(m.amount / maxAmount) * 100}
-                    color={Colors.primary}
-                    height={4}
-                    style={{ marginTop: 4 }}
-                  />
-                  <Text style={styles.merchantMeta}>
-                    {m.count} transactions • Avg ₹
-                    {Math.round(m.amount / m.count).toLocaleString()}
-                  </Text>
                 </View>
-              </View>
-            );
-          })}
+              );
+            },
+          )}
         </Card>
 
         {/* Lifestyle Insights */}
         <Card style={[styles.section, styles.lifestyleCard]}>
           <Text style={styles.lifestyleTitle}>💡 Lifestyle Insights</Text>
           <Text style={styles.lifestyleText}>
-            You spend <Text style={styles.lifestyleHighlight}>32% more on food delivery</Text> than similar users in your income bracket.
+            You spend <Text style={styles.lifestyleHighlight}>32% more on food delivery</Text> than
+            similar users in your income bracket.
           </Text>
           <Text style={styles.lifestyleText}>
-            Your <Text style={styles.lifestyleHighlight}>savings rate of 40%</Text> is{' '}
-            in the top 25% — keep it up!
+            Your <Text style={styles.lifestyleHighlight}>savings rate of 40%</Text> is in the top
+            25% — keep it up!
           </Text>
           <Text style={styles.lifestyleText}>
-            Cut <Text style={styles.lifestyleHighlight}>₹3,200/month</Text> in small purchases under ₹100 that you might not notice.
+            Cut <Text style={styles.lifestyleHighlight}>₹3,200/month</Text> in small purchases under
+            ₹100 that you might not notice.
           </Text>
         </Card>
 
@@ -431,9 +402,7 @@ function SummaryCard({
   return (
     <View style={styles.summaryCard}>
       <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={[styles.summaryValue, { color }]}>
-        ₹{value.toLocaleString()}
-      </Text>
+      <Text style={[styles.summaryValue, { color }]}>₹{value.toLocaleString()}</Text>
       <View style={styles.summaryChange}>
         <Text
           style={[
@@ -450,39 +419,27 @@ function SummaryCard({
 }
 
 function CategoryRow({ category }: { category: CategorySpending }) {
-  const trendIcon =
-    category.trend === 'up' ? '↑' : category.trend === 'down' ? '↓' : '→';
+  const trendIcon = category.trend === 'up' ? '↑' : category.trend === 'down' ? '↓' : '→';
   const trendColor =
     category.trend === 'up' && category.changePercent > 10
       ? Colors.error
       : category.trend === 'down'
-      ? Colors.success
-      : Colors.textSecondary;
+        ? Colors.success
+        : Colors.textSecondary;
 
   return (
     <TouchableOpacity style={styles.categoryRow}>
-      <View
-        style={[
-          styles.categoryIcon,
-          { backgroundColor: category.color + '20' },
-        ]}
-      >
+      <View style={[styles.categoryIcon, { backgroundColor: category.color + '20' }]}>
         <Text style={styles.categoryIconText}>{category.icon}</Text>
       </View>
       <View style={styles.categoryInfo}>
         <View style={styles.categoryTop}>
           <Text style={styles.categoryName}>{category.category}</Text>
-          <Text style={styles.categoryAmount}>
-            ₹{category.amount.toLocaleString()}
-          </Text>
+          <Text style={styles.categoryAmount}>₹{category.amount.toLocaleString()}</Text>
         </View>
         <View style={styles.categoryBottom}>
           <View style={styles.categoryProgressContainer}>
-            <ProgressBar
-              progress={category.percentage}
-              color={category.color}
-              height={4}
-            />
+            <ProgressBar progress={category.percentage} color={category.color} height={4} />
           </View>
           <Text style={[styles.categoryTrend, { color: trendColor }]}>
             {trendIcon} {Math.abs(category.changePercent)}%
@@ -495,12 +452,7 @@ function CategoryRow({ category }: { category: CategorySpending }) {
 
 function BehavioralCard({ pattern }: { pattern: BehavioralPattern }) {
   return (
-    <Card
-      style={[
-        styles.behaviorCard,
-        pattern.severity === 'high' && styles.behaviorCardHigh,
-      ]}
-    >
+    <Card style={[styles.behaviorCard, pattern.severity === 'high' && styles.behaviorCardHigh]}>
       <View style={styles.behaviorHeader}>
         <Text style={styles.behaviorIcon}>{pattern.icon}</Text>
         <View style={{ flex: 1 }}>
@@ -513,8 +465,8 @@ function BehavioralCard({ pattern }: { pattern: BehavioralPattern }) {
             pattern.severity === 'high'
               ? 'error'
               : pattern.severity === 'medium'
-              ? 'warning'
-              : 'info'
+                ? 'warning'
+                : 'info'
           }
           size="sm"
         />
@@ -522,9 +474,7 @@ function BehavioralCard({ pattern }: { pattern: BehavioralPattern }) {
       <View style={styles.behaviorStats}>
         <View style={styles.behaviorStat}>
           <Text style={styles.behaviorStatLabel}>Amount</Text>
-          <Text style={styles.behaviorStatValue}>
-            ₹{pattern.amount.toLocaleString()}
-          </Text>
+          <Text style={styles.behaviorStatValue}>₹{pattern.amount.toLocaleString()}</Text>
         </View>
         <View style={styles.behaviorStat}>
           <Text style={styles.behaviorStatLabel}>% of spending</Text>

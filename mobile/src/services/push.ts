@@ -6,17 +6,27 @@ import { api, ApiEnvelope } from './api';
 
 /**
  * Configure how foreground notifications are presented.
- * Default behaviour shows banner + plays sound + sets badge.
+ *
+ * SDK 50 still accepts the legacy `shouldShowAlert` flag (deprecated in
+ * SDK 51). We forward both shapes to make the upgrade path painless.
+ * The cast keeps things compatible across versions of expo-notifications
+ * without dragging in the union of all possible handler types.
  */
+type NotificationBehaviour = Parameters<
+  typeof Notifications.setNotificationHandler
+>[0] extends { handleNotification: (...a: never[]) => Promise<infer R> }
+  ? R
+  : never;
+
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    // SDK 50+ shape
-    shouldShowBanner: true,
-    shouldShowList: true,
-  } as any),
+  handleNotification: async () =>
+    ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    } as NotificationBehaviour),
 });
 
 export interface PushRegistrationResult {
