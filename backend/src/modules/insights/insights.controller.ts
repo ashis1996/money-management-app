@@ -2,7 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { InsightsService } from './insights.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { User } from '../../common/decorators/user.decorator';
+import { User, RequestUser } from '../../common/decorators/user.decorator';
 import { InsightPeriod } from '@money-management/shared/dto';
 
 @ApiTags('insights')
@@ -15,31 +15,31 @@ export class InsightsController {
   @Get('spending')
   @ApiOperation({ summary: 'Get spending insights' })
   @ApiQuery({ name: 'period', required: false, enum: InsightPeriod })
-  getSpending(@User() user: any, @Query('period') period?: InsightPeriod) {
+  getSpending(@User() user: RequestUser, @Query('period') period?: InsightPeriod) {
     return this.insightsService.getSpendingInsights(user.id, period || InsightPeriod.MONTH);
   }
 
   @Get('recommendations')
   @ApiOperation({ summary: 'Get financial recommendations' })
-  getRecommendations(@User() user: any) {
+  getRecommendations(@User() user: RequestUser) {
     return this.insightsService.getRecommendations(user.id);
   }
 
   @Get('predictions')
   @ApiOperation({ summary: 'Get spending predictions' })
-  getPredictions(@User() user: any) {
+  getPredictions(@User() user: RequestUser) {
     return this.insightsService.getPredictions(user.id);
   }
 
   @Get('anomalies')
   @ApiOperation({ summary: 'Get spending anomalies' })
-  getAnomalies(@User() user: any) {
+  getAnomalies(@User() user: RequestUser) {
     return this.insightsService.getAnomalies(user.id);
   }
 
   @Get()
   @ApiOperation({ summary: 'Get all insights' })
-  getAllInsights(@User() user: any) {
+  getAllInsights(@User() user: RequestUser) {
     return this.insightsService.getAllInsights(user.id);
   }
 }

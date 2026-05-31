@@ -2,7 +2,7 @@ import { Controller, Post, Get, Body, Param, Query, UseGuards } from '@nestjs/co
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SmsService } from './sms.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { User } from '../../common/decorators/user.decorator';
+import { User, RequestUser } from '../../common/decorators/user.decorator';
 import { SmsIngestDto, SmsParseResponseDto } from '@money-management/shared/dto';
 
 @ApiTags('sms')
@@ -14,13 +14,13 @@ export class SmsController {
 
   @Post('ingest')
   @ApiOperation({ summary: 'Ingest SMS for transaction extraction' })
-  ingestSms(@User() user: any, @Body() dto: SmsIngestDto) {
+  ingestSms(@User() user: RequestUser, @Body() dto: SmsIngestDto) {
     return this.smsService.ingestSms(user.id, dto);
   }
 
   @Post('ingest/batch')
   @ApiOperation({ summary: 'Ingest multiple SMS messages' })
-  async ingestBatch(@User() user: any, @Body() body: { messages: SmsIngestDto[] }) {
+  async ingestBatch(@User() user: RequestUser, @Body() body: { messages: SmsIngestDto[] }) {
     const results = await Promise.all(
       body.messages.map((msg) => this.smsService.ingestSms(user.id, msg)),
     );
@@ -36,7 +36,7 @@ export class SmsController {
 
   @Get('unprocessed')
   @ApiOperation({ summary: 'Get unprocessed SMS messages' })
-  getUnprocessed(@User() user: any, @Query('limit') limit?: string) {
+  getUnprocessed(@User() user: RequestUser, @Query('limit') limit?: string) {
     return this.smsService.getUnprocessedSms(user.id, limit ? parseInt(limit, 10) : 100);
   }
 
@@ -44,7 +44,11 @@ export class SmsController {
   @ApiOperation({ summary: 'Get SMS history' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  getHistory(@User() user: any, @Query('page') page?: string, @Query('limit') limit?: string) {
+  getHistory(
+    @User() user: RequestUser,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
     return this.smsService.getSmsHistory(
       user.id,
       page ? parseInt(page, 10) : 1,
@@ -54,10 +58,10 @@ export class SmsController {
 
   @Post('reprocess/:id')
   @ApiOperation({ summary: 'Reprocess an SMS message' })
-  async reprocess(@User() user: any, @Param('id') id: string) {
-    const smsLog = await this.smsService.getSmsHistory(user.id, 1, 1000).then((r) =>
-      r.data.find((s) => s.id === id),
-    );
+  async reprocess(@User() user: RequestUser, @Param('id') id: string) {
+    const smsLog = await this.smsService
+      .getSmsHistory(user.id, 1, 1000)
+      .then((r) => r.data.find((s) => s.id === id));
 
     if (!smsLog) {
       return { success: false, message: 'SMS not found' };

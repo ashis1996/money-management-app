@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { UpdateUserDto } from '@money-management/shared/dto';
 import { UserService } from './user.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { User, RequestUser } from '../../common/decorators/user.decorator';
@@ -30,9 +31,16 @@ export class UserController {
     return this.userService.findById(user.id);
   }
 
+  /**
+   * Update the caller's profile. Body is a typed UpdateUserDto, so the
+   * global ValidationPipe with `whitelist: true` + `forbidNonWhitelisted`
+   * rejects unknown keys (e.g. a client trying to PATCH `tokenVersion`
+   * or `passwordHash`). Previously this used `@Body() updateData: any`
+   * which made every field on the User row reachable by guessing names.
+   */
   @Put('me')
   @ApiOperation({ summary: 'Update current user profile' })
-  updateProfile(@User() user: RequestUser, @Body() updateData: any) {
+  updateProfile(@User() user: RequestUser, @Body() updateData: UpdateUserDto) {
     return this.userService.update(user.id, updateData);
   }
 
