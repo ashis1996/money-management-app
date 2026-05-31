@@ -398,4 +398,68 @@ export const aiApi = {
       method: 'POST',
       body: { query, context },
     }),
+  // Note: GET endpoints to match the backend's @Get('fraud') / @Get('streaks').
+  // The legacy POST entries above predate that convention; we'll align them
+  // in a follow-up rather than churn three other call-sites in this PR.
+  detectFraud: (days = 90) =>
+    request<Env<FraudResponse & Record<string, unknown>>>('/ai/fraud', {
+      query: { days },
+    }),
+  getStreaks: (days = 90) =>
+    request<Env<StreakResponse & Record<string, unknown>>>('/ai/streaks', {
+      query: { days },
+    }),
+  parseEmail: (payload: {
+    body: string;
+    sender: string;
+    subject?: string;
+    timestamp?: string;
+  }) =>
+    request<Env<{ parsed: Record<string, unknown>; confidence: number }>>(
+      '/ai/email/parse',
+      { method: 'POST', body: payload },
+    ),
 };
+
+export interface FraudAlert {
+  type: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  title: string;
+  description: string;
+  recommendation: string;
+  potential_recovery: number;
+  detected_at: string;
+  transactions: Array<Record<string, unknown>>;
+  transaction_ids: string[];
+}
+
+export interface FraudResponse {
+  user_id: string;
+  alert_count: number;
+  alerts: FraudAlert[];
+  summary: Record<
+    string,
+    { count: number; potential_recovery: number; highest_severity: string }
+  >;
+  history_days: number;
+  analyzed_at: string;
+}
+
+export interface StreakAchievement {
+  id: string;
+  title: string;
+  description: string;
+  threshold: number;
+}
+
+export interface StreakResponse {
+  user_id: string;
+  current_streak: number;
+  longest_streak: number;
+  good_days: number;
+  bad_days: number;
+  last_break: string | null;
+  last_break_reason: string | null;
+  achievements: StreakAchievement[];
+  calculated_at: string;
+}

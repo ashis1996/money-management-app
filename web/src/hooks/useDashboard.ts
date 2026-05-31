@@ -42,6 +42,24 @@ export function useMoneyLeaks() {
   });
 }
 
+export function useFraudAlerts(days = 90) {
+  return useQuery({
+    queryKey: ['ai', 'fraud', { days }] as const,
+    queryFn: async () => (await aiApi.detectFraud(days)).data,
+    // Fraud is time-sensitive; refetch on focus so a user returning
+    // to the tab after freezing their card sees the updated state.
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useStreaks(days = 90) {
+  return useQuery({
+    queryKey: ['ai', 'streaks', { days }] as const,
+    queryFn: async () => (await aiApi.getStreaks(days)).data,
+    refetchOnWindowFocus: false,
+  });
+}
+
 export function useActionCards(params?: { status?: string }) {
   return useQuery({
     queryKey: QK.actionCards(params),

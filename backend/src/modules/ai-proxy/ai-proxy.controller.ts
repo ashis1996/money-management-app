@@ -30,6 +30,22 @@ class ParseSmsDto {
   timestamp?: string;
 }
 
+class ParseEmailDto {
+  @IsString()
+  body!: string;
+
+  @IsString()
+  sender!: string;
+
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @IsOptional()
+  @IsString()
+  timestamp?: string;
+}
+
 @ApiTags('ai')
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
@@ -53,6 +69,24 @@ export class AiProxyController {
   @ApiOperation({ summary: 'Detect money leaks' })
   leaks(@User() user: any) {
     return this.aiProxy.getLeaks(user.id);
+  }
+
+  @Get('fraud')
+  @ApiOperation({ summary: 'Detect suspicious activity (duplicates, card-testing, etc.)' })
+  fraud(@User() user: any, @Query('days') days?: string) {
+    return this.aiProxy.getFraud(
+      user.id,
+      days ? parseInt(days, 10) : 90,
+    );
+  }
+
+  @Get('streaks')
+  @ApiOperation({ summary: 'Compute current and longest good-day streaks' })
+  streaks(@User() user: any, @Query('days') days?: string) {
+    return this.aiProxy.getStreaks(
+      user.id,
+      days ? parseInt(days, 10) : 90,
+    );
   }
 
   @Get('behavior')
@@ -86,6 +120,17 @@ export class AiProxyController {
   @ApiOperation({ summary: 'Parse a single SMS' })
   parseSms(@Body() dto: ParseSmsDto) {
     return this.aiProxy.parseSms(dto.body, dto.sender, dto.timestamp);
+  }
+
+  @Post('email/parse')
+  @ApiOperation({ summary: 'Parse a single email body for a transaction' })
+  parseEmail(@Body() dto: ParseEmailDto) {
+    return this.aiProxy.parseEmail(
+      dto.body,
+      dto.sender,
+      dto.subject,
+      dto.timestamp,
+    );
   }
 
   @Post('subscriptions/detect')
