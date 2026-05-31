@@ -72,7 +72,12 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
-      RABBITMQ_SMS_QUEUE: sms.processing
+      # One queue per event type. A slow handler on one queue (e.g. the AI
+      # fan-out for transaction.created) can no longer starve unrelated
+      # work like notifications.
+      RABBITMQ_TRANSACTION_QUEUE: transaction.events
+      RABBITMQ_SUBSCRIPTION_QUEUE: subscription.events
+      RABBITMQ_NOTIFICATION_QUEUE: notification.events
       # NOTE: These are LOCAL-DEV-ONLY secrets. They are 64+ characters of
       # random-looking material, long enough to pass the runtime length
       # check, and they are NOT on the placeholder denylist. Never reuse

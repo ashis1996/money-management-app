@@ -167,28 +167,36 @@ export class UserService {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const accounts = await this.prisma.account.findMany({
-      where: { userId, isActive: true, deletedAt: null },
-      select: { balance: true, accountType: true },
-    });
-
-    const monthlyTransactions = await this.prisma.transaction.groupBy({
-      by: ['type'],
-      where: {
-        userId,
-        deletedAt: null,
-        transactionDate: { gte: startOfMonth },
-      },
-      _sum: { amount: true },
-    });
-
-    const subscriptionCount = await this.prisma.subscription.count({
-      where: { userId, status: 'ACTIVE', deletedAt: null },
-    });
-
-    const unreadNotifications = await this.prisma.notification.count({
-      where: { userId, isRead: false },
-    });
+    // Each of these reads is independent. Running them sequentially (as
+    // we did before) made dashboard load wait for ~4× the slowest query
+    // — usually the groupBy on transactions. Promise.all lets the
+    // connection pool fan out and cuts wall-clock to roughly one query.
+    //
+    // No `Promise.allSettled` here: if any of these fails the whole
+    // dashboard is broken anyway and we'd rather surface the error than
+    // ship a partially-populated payload that the UI silently renders.
+    const [accounts, monthlyTransactions, subscriptionCount, unreadNotifications] =
+      await Promise.all([
+        this.prisma.account.findMany({
+          where: { userId, isActive: true, deletedAt: null },
+          select: { balance: true, accountType: true },
+        }),
+        this.prisma.transaction.groupBy({
+          by: ['type'],
+          where: {
+            userId,
+            deletedAt: null,
+            transactionDate: { gte: startOfMonth },
+          },
+          _sum: { amount: true },
+        }),
+        this.prisma.subscription.count({
+          where: { userId, status: 'ACTIVE', deletedAt: null },
+        }),
+        this.prisma.notification.count({
+          where: { userId, isRead: false },
+        }),
+      ]);
 
     const totalBalance = accounts.reduce((sum, acc) => sum + Number(acc.balance), 0);
     const monthlyIncome = monthlyTransactions.find((t) => t.type === 'CREDIT')?._sum.amount || 0;
