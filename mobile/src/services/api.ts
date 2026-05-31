@@ -39,9 +39,7 @@ function resolveBaseUrl(): string {
   const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
   if (fromEnv) return fromEnv;
 
-  const fromConfig = (Constants?.expoConfig?.extra as
-    | { apiUrl?: string }
-    | undefined)?.apiUrl;
+  const fromConfig = (Constants?.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl;
   if (fromConfig) return fromConfig;
 
   if (__DEV__) {
@@ -229,13 +227,11 @@ export const authApi = {
       phone,
     }),
 
-  logout: (refreshToken?: string) =>
-    api.post<Env<{ ok: true }>>('/auth/logout', { refreshToken }),
+  logout: (refreshToken?: string) => api.post<Env<{ ok: true }>>('/auth/logout', { refreshToken }),
 
   getProfile: () => api.get<Env<User>>('/users/me'),
 
-  updateProfile: (data: Partial<User>) =>
-    api.put<Env<User>>('/users/me', data),
+  updateProfile: (data: Partial<User>) => api.put<Env<User>>('/users/me', data),
 };
 
 // =============================================================
@@ -250,19 +246,16 @@ export interface TransactionFilters {
 }
 
 export const transactionsApi = {
-  getAll: (params?: TransactionFilters) =>
-    api.get<Env<Transaction[]>>('/transactions', { params }),
+  getAll: (params?: TransactionFilters) => api.get<Env<Transaction[]>>('/transactions', { params }),
 
   getById: (id: string) => api.get<Env<Transaction>>(`/transactions/${id}`),
 
-  create: (data: CreateTransactionPayload) =>
-    api.post<Env<Transaction>>('/transactions', data),
+  create: (data: CreateTransactionPayload) => api.post<Env<Transaction>>('/transactions', data),
 
   update: (id: string, data: Partial<CreateTransactionPayload>) =>
     api.put<Env<Transaction>>(`/transactions/${id}`, data),
 
-  delete: (id: string) =>
-    api.delete<Env<{ ok: true }>>(`/transactions/${id}`),
+  delete: (id: string) => api.delete<Env<{ ok: true }>>(`/transactions/${id}`),
 
   getCategories: (from?: string, to?: string) =>
     api.get<Env<CategorySpending[]>>('/transactions/analytics/categories', {
@@ -291,8 +284,7 @@ export interface SmsMessage {
 }
 
 export const smsApi = {
-  ingest: (message: SmsMessage) =>
-    api.post<Env<{ ok: true }>>('/sms/ingest', message),
+  ingest: (message: SmsMessage) => api.post<Env<{ ok: true }>>('/sms/ingest', message),
 
   ingestBatch: (messages: SmsMessage[]) =>
     api.post<Env<{ processed: number }>>('/sms/ingest/batch', { messages }),
@@ -315,14 +307,12 @@ export const subscriptionsApi = {
 
   getById: (id: string) => api.get<Env<Subscription>>(`/subscriptions/${id}`),
 
-  create: (data: Partial<Subscription>) =>
-    api.post<Env<Subscription>>('/subscriptions', data),
+  create: (data: Partial<Subscription>) => api.post<Env<Subscription>>('/subscriptions', data),
 
   update: (id: string, data: Partial<Subscription>) =>
     api.put<Env<Subscription>>(`/subscriptions/${id}`, data),
 
-  delete: (id: string) =>
-    api.delete<Env<{ ok: true }>>(`/subscriptions/${id}`),
+  delete: (id: string) => api.delete<Env<{ ok: true }>>(`/subscriptions/${id}`),
 
   detect: () => api.post<Env<{ created: number }>>('/subscriptions/detect'),
 
@@ -336,29 +326,26 @@ export const subscriptionsApi = {
       params: { days },
     }),
 
-  cancel: (id: string) =>
-    api.post<Env<Subscription>>(`/subscriptions/${id}/cancel`),
+  cancel: (id: string) => api.post<Env<Subscription>>(`/subscriptions/${id}/cancel`),
 
-  pause: (id: string) =>
-    api.post<Env<Subscription>>(`/subscriptions/${id}/pause`),
+  pause: (id: string) => api.post<Env<Subscription>>(`/subscriptions/${id}/pause`),
 
-  resume: (id: string) =>
-    api.post<Env<Subscription>>(`/subscriptions/${id}/resume`),
+  resume: (id: string) => api.post<Env<Subscription>>(`/subscriptions/${id}/resume`),
 };
 
 // =============================================================
 // INSIGHTS
 // =============================================================
 export const insightsApi = {
-  getAll: () => api.get<Env<Insight>>('/insights'),
+  getAll: () => api.get<Env<Insight & Record<string, unknown>>>('/insights'),
 
   getSpending: (period?: string) =>
-    api.get<Env<Insight>>('/insights/spending', { params: { period } }),
+    api.get<Env<Insight & Record<string, unknown>>>('/insights/spending', {
+      params: { period },
+    }),
 
   getRecommendations: () =>
-    api.get<Env<Array<{ id: string; title: string; body: string }>>>(
-      '/insights/recommendations',
-    ),
+    api.get<Env<Array<{ id: string; title: string; body: string }>>>('/insights/recommendations'),
 
   getPredictions: () =>
     api.get<Env<{ nextMonthSpend?: number; categories?: CategorySpending[] }>>(
@@ -378,17 +365,13 @@ export const notificationsApi = {
   getAll: (unread?: boolean) =>
     api.get<Env<AppNotification[]>>('/notifications', { params: { unread } }),
 
-  getUnreadCount: () =>
-    api.get<Env<{ count: number }>>('/notifications/unread/count'),
+  getUnreadCount: () => api.get<Env<{ count: number }>>('/notifications/unread/count'),
 
-  markAsRead: (id: string) =>
-    api.put<Env<AppNotification>>(`/notifications/${id}/read`),
+  markAsRead: (id: string) => api.put<Env<AppNotification>>(`/notifications/${id}/read`),
 
-  markAllAsRead: () =>
-    api.post<Env<{ updated: number }>>('/notifications/read-all'),
+  markAllAsRead: () => api.post<Env<{ updated: number }>>('/notifications/read-all'),
 
-  getPreferences: () =>
-    api.get<Env<Record<string, boolean>>>('/notifications/preferences'),
+  getPreferences: () => api.get<Env<Record<string, boolean>>>('/notifications/preferences'),
 
   updatePreferences: (data: Record<string, boolean>) =>
     api.put<Env<Record<string, boolean>>>('/notifications/preferences', data),
@@ -411,14 +394,11 @@ export const goalsApi = {
   getById: (id: string) => api.get<Env<Goal>>(`/goals/${id}`),
 
   getSummary: () =>
-    api.get<Env<{ active: number; completed: number; totalTarget: number }>>(
-      '/goals/summary',
-    ),
+    api.get<Env<{ active: number; completed: number; totalTarget: number }>>('/goals/summary'),
 
   create: (data: Partial<Goal>) => api.post<Env<Goal>>('/goals', data),
 
-  update: (id: string, data: Partial<Goal>) =>
-    api.put<Env<Goal>>(`/goals/${id}`, data),
+  update: (id: string, data: Partial<Goal>) => api.put<Env<Goal>>(`/goals/${id}`, data),
 
   delete: (id: string) => api.delete<Env<{ ok: true }>>(`/goals/${id}`),
 
@@ -442,8 +422,7 @@ export const budgetsApi = {
 
   create: (data: Partial<Budget>) => api.post<Env<Budget>>('/budgets', data),
 
-  update: (id: string, data: Partial<Budget>) =>
-    api.put<Env<Budget>>(`/budgets/${id}`, data),
+  update: (id: string, data: Partial<Budget>) => api.put<Env<Budget>>(`/budgets/${id}`, data),
 
   delete: (id: string) => api.delete<Env<{ ok: true }>>(`/budgets/${id}`),
 };
@@ -458,22 +437,17 @@ export const accountsApi = {
   getById: (id: string) => api.get<Env<Account>>(`/accounts/${id}`),
 
   getNetWorth: () =>
-    api.get<Env<{ total: number; byType: Record<string, number> }>>(
-      '/accounts/net-worth',
-    ),
+    api.get<Env<{ total: number; byType: Record<string, number> }>>('/accounts/net-worth'),
 
   create: (data: Partial<Account>) => api.post<Env<Account>>('/accounts', data),
 
-  update: (id: string, data: Partial<Account>) =>
-    api.put<Env<Account>>(`/accounts/${id}`, data),
+  update: (id: string, data: Partial<Account>) => api.put<Env<Account>>(`/accounts/${id}`, data),
 
   delete: (id: string) => api.delete<Env<{ ok: true }>>(`/accounts/${id}`),
 
-  setPrimary: (id: string) =>
-    api.post<Env<Account>>(`/accounts/${id}/set-primary`),
+  setPrimary: (id: string) => api.post<Env<Account>>(`/accounts/${id}/set-primary`),
 
-  recompute: (id: string) =>
-    api.post<Env<Account>>(`/accounts/${id}/recompute`),
+  recompute: (id: string) => api.post<Env<Account>>(`/accounts/${id}/recompute`),
 };
 
 // =============================================================
@@ -490,20 +464,16 @@ export const actionCardsApi = {
       '/action-cards/summary',
     ),
 
-  create: (data: Partial<ActionCard>) =>
-    api.post<Env<ActionCard>>('/action-cards', data),
+  create: (data: Partial<ActionCard>) => api.post<Env<ActionCard>>('/action-cards', data),
 
   update: (id: string, data: Partial<ActionCard>) =>
     api.put<Env<ActionCard>>(`/action-cards/${id}`, data),
 
-  delete: (id: string) =>
-    api.delete<Env<{ ok: true }>>(`/action-cards/${id}`),
+  delete: (id: string) => api.delete<Env<{ ok: true }>>(`/action-cards/${id}`),
 
-  dismiss: (id: string) =>
-    api.post<Env<ActionCard>>(`/action-cards/${id}/dismiss`),
+  dismiss: (id: string) => api.post<Env<ActionCard>>(`/action-cards/${id}/dismiss`),
 
-  complete: (id: string) =>
-    api.post<Env<ActionCard>>(`/action-cards/${id}/complete`),
+  complete: (id: string) => api.post<Env<ActionCard>>(`/action-cards/${id}/complete`),
 };
 
 // =============================================================
@@ -518,29 +488,28 @@ export interface AiAnswer {
 export const aiApi = {
   health: () => api.get<Env<{ status: string }>>('/ai/health'),
 
-  analyzeBehavior: () =>
-    api.post<Env<{ archetype: string; summary: string }>>(
-      '/ai/behavior/analyze',
-    ),
+  // Wide return type — the Python AI service evolves field names freely
+  // (camelCase vs snake_case, additional behavioural breakdowns), so we
+  // let consumers narrow at the access site rather than having TypeScript
+  // pretend a stale shape is canonical.
+  analyzeBehavior: () => api.post<Env<Record<string, unknown>>>('/ai/behavior/analyze'),
 
-  tagTransactions: () =>
-    api.post<Env<{ tagged: number }>>('/ai/behavior/tag-transactions'),
+  tagTransactions: () => api.post<Env<{ tagged: number }>>('/ai/behavior/tag-transactions'),
 
   getHealthScore: () =>
-    api.post<Env<HealthScoreResult>>('/ai/health-score/calculate'),
+    api.post<Env<HealthScoreResult & Record<string, unknown>>>('/ai/health-score/calculate'),
 
-  detectLeaks: () => api.post<Env<MoneyLeaksResult>>('/ai/leaks/detect'),
+  detectLeaks: () => api.post<Env<MoneyLeaksResult & Record<string, unknown>>>('/ai/leaks/detect'),
 
   ask: (query: string, context?: Record<string, unknown>) =>
     api.post<Env<AiAnswer>>('/ai/assistant/query', { query, context }),
 
   determineArchetype: () =>
-    api.post<Env<{ archetype: string; confidence?: number }>>(
+    api.post<Env<{ archetype: string; confidence?: number } & Record<string, unknown>>>(
       '/ai/profile/archetype',
     ),
 
-  generateActionCards: () =>
-    api.post<Env<{ created: number }>>('/ai/action-cards/generate'),
+  generateActionCards: () => api.post<Env<{ created: number }>>('/ai/action-cards/generate'),
 
   getPersonalizedDashboard: () =>
     api.post<Env<Record<string, unknown>>>('/ai/dashboard/personalized'),
@@ -565,17 +534,14 @@ export const weeklySummaryApi = {
   getList: (limit?: number) =>
     api.get<Env<WeeklySummary[]>>('/weekly-summary', { params: { limit } }),
 
-  getCurrent: () =>
-    api.get<Env<WeeklySummary | null>>('/weekly-summary/current'),
+  getCurrent: () => api.get<Env<WeeklySummary | null>>('/weekly-summary/current'),
 
-  getById: (id: string) =>
-    api.get<Env<WeeklySummary>>(`/weekly-summary/${id}`),
+  getById: (id: string) => api.get<Env<WeeklySummary>>(`/weekly-summary/${id}`),
 
   generate: (forDate?: string) =>
     api.post<Env<WeeklySummary>>('/weekly-summary/generate', null, {
       params: { forDate },
     }),
 
-  delete: (id: string) =>
-    api.delete<Env<{ ok: true }>>(`/weekly-summary/${id}`),
+  delete: (id: string) => api.delete<Env<{ ok: true }>>(`/weekly-summary/${id}`),
 };

@@ -9,12 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, ProgressRing, Header, EmptyState } from '../../components/shared';
-import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
+import { Colors, Typography, Spacing, BorderRadius } from '../../styles/theme';
 import { useMoneyLeaks } from '../../hooks';
 
 type LeakType =
@@ -62,8 +57,7 @@ type FilterType = 'all' | LeakSeverity;
  * Map to UI shape (keys can vary - guard for both snake and camel case).
  */
 function aiToLeak(l: any, idx: number): MoneyLeak {
-  const monthly =
-    Number(l.monthlySavings ?? l.monthly_savings ?? l.potential_savings ?? 0) || 0;
+  const monthly = Number(l.monthlySavings ?? l.monthly_savings ?? l.potential_savings ?? 0) || 0;
   return {
     id: l.id ?? `leak-${idx}`,
     type: (l.type || 'IMPULSE_PURCHASE') as LeakType,
@@ -71,8 +65,7 @@ function aiToLeak(l: any, idx: number): MoneyLeak {
     title: l.title || 'Leak detected',
     description: l.description || '',
     monthlySavings: monthly,
-    yearlySavings:
-      Number(l.yearlySavings ?? l.yearly_savings ?? monthly * 12) || 0,
+    yearlySavings: Number(l.yearlySavings ?? l.yearly_savings ?? monthly * 12) || 0,
     icon: l.icon || '💧',
     merchant: l.merchant,
     recommendation: l.recommendation || 'Review this spending pattern',
@@ -85,7 +78,7 @@ export function MoneyLeaksScreen({ navigation }: any) {
 
   const leaks: MoneyLeak[] = useMemo(() => {
     const data = leaksQuery.data;
-    const items = data?.leaks || data?.data?.leaks || [];
+    const items = data?.leaks ?? [];
     return items.map((l: any, i: number) => aiToLeak(l, i));
   }, [leaksQuery.data]);
 
@@ -110,16 +103,9 @@ export function MoneyLeaksScreen({ navigation }: any) {
 
     // AI service returns score directly; fall back to local heuristic
     const aiScore =
-      Number(
-        (leaksQuery.data as any)?.score ??
-          (leaksQuery.data as any)?.leak_score ??
-          0,
-      ) || 0;
+      Number((leaksQuery.data as any)?.score ?? (leaksQuery.data as any)?.leak_score ?? 0) || 0;
     const totalSpending = 45000;
-    const fallbackScore = Math.min(
-      100,
-      Math.round((monthlySavings / totalSpending) * 100),
-    );
+    const fallbackScore = Math.min(100, Math.round((monthlySavings / totalSpending) * 100));
 
     return {
       activeCount: active.length,
@@ -137,18 +123,13 @@ export function MoneyLeaksScreen({ navigation }: any) {
   }, [visibleLeaks, filter]);
 
   const handleFix = (leak: MoneyLeak) => {
-    Alert.alert(
-      'Fix this leak?',
-      `${leak.recommendation}\n\nSave ₹${leak.monthlySavings}/month`,
-      [
-        { text: 'Not now', style: 'cancel' },
-        {
-          text: 'Mark Fixed',
-          onPress: () =>
-            setFixedIds((prev) => new Set(prev).add(leak.id)),
-        },
-      ],
-    );
+    Alert.alert('Fix this leak?', `${leak.recommendation}\n\nSave ₹${leak.monthlySavings}/month`, [
+      { text: 'Not now', style: 'cancel' },
+      {
+        text: 'Mark Fixed',
+        onPress: () => setFixedIds((prev) => new Set(prev).add(leak.id)),
+      },
+    ]);
   };
 
   const handleDismiss = (id: string) => {
@@ -183,8 +164,8 @@ export function MoneyLeaksScreen({ navigation }: any) {
                 stats.leakScore > 30
                   ? Colors.error
                   : stats.leakScore > 15
-                  ? Colors.warning
-                  : Colors.success
+                    ? Colors.warning
+                    : Colors.success
               }
               backgroundColor={Colors.gray200}
             >
@@ -195,9 +176,7 @@ export function MoneyLeaksScreen({ navigation }: any) {
             <View style={styles.heroStats}>
               <View style={styles.heroStat}>
                 <Text style={styles.heroStatLabel}>Monthly leaks</Text>
-                <Text style={styles.heroStatValue}>
-                  ₹{stats.monthlySavings.toLocaleString()}
-                </Text>
+                <Text style={styles.heroStatValue}>₹{stats.monthlySavings.toLocaleString()}</Text>
               </View>
               <View style={styles.heroStat}>
                 <Text style={styles.heroStatLabel}>Yearly impact</Text>
@@ -233,9 +212,7 @@ export function MoneyLeaksScreen({ navigation }: any) {
         {/* Total potential savings banner */}
         <Card style={styles.savingsBanner}>
           <Text style={styles.savingsLabel}>Potential Monthly Savings</Text>
-          <Text style={styles.savingsAmount}>
-            ₹{stats.monthlySavings.toLocaleString()}
-          </Text>
+          <Text style={styles.savingsAmount}>₹{stats.monthlySavings.toLocaleString()}</Text>
           <Text style={styles.savingsYearly}>
             That's ₹{stats.yearlySavings.toLocaleString()} a year!
           </Text>
@@ -269,10 +246,7 @@ export function MoneyLeaksScreen({ navigation }: any) {
               onPress={() => setFilter(tab.key)}
             >
               <Text
-                style={[
-                  styles.filterTabText,
-                  filter === tab.key && styles.filterTabTextActive,
-                ]}
+                style={[styles.filterTabText, filter === tab.key && styles.filterTabTextActive]}
               >
                 {tab.label} ({tab.count})
               </Text>
@@ -286,9 +260,7 @@ export function MoneyLeaksScreen({ navigation }: any) {
             <Card style={styles.empty}>
               <Text style={styles.emptyIcon}>🎉</Text>
               <Text style={styles.emptyTitle}>No leaks in this category!</Text>
-              <Text style={styles.emptyText}>
-                Great work managing your money.
-              </Text>
+              <Text style={styles.emptyText}>Great work managing your money.</Text>
             </Card>
           ) : (
             filteredLeaks.map((leak) => (
@@ -306,15 +278,9 @@ export function MoneyLeaksScreen({ navigation }: any) {
         <Card style={styles.tipsCard}>
           <Text style={styles.tipsTitle}>💡 Tips to prevent leaks</Text>
           <Text style={styles.tipText}>• Review subscriptions monthly</Text>
-          <Text style={styles.tipText}>
-            • Set spending alerts for late-night purchases
-          </Text>
-          <Text style={styles.tipText}>
-            • Use the 24-hour rule for non-essential buys
-          </Text>
-          <Text style={styles.tipText}>
-            • Track small frequent expenses - they add up
-          </Text>
+          <Text style={styles.tipText}>• Set spending alerts for late-night purchases</Text>
+          <Text style={styles.tipText}>• Use the 24-hour rule for non-essential buys</Text>
+          <Text style={styles.tipText}>• Track small frequent expenses - they add up</Text>
         </Card>
 
         <View style={{ height: Spacing['2xl'] }} />
@@ -350,7 +316,9 @@ function LeakCard({ leak, onFix, onDismiss }: LeakCardProps) {
             <Text style={styles.leakTitle}>{leak.title}</Text>
             <Badge
               text={LEAK_TYPE_LABELS[leak.type]}
-              variant={leak.severity === 'HIGH' ? 'error' : leak.severity === 'MEDIUM' ? 'warning' : 'gray'}
+              variant={
+                leak.severity === 'HIGH' ? 'error' : leak.severity === 'MEDIUM' ? 'warning' : 'gray'
+              }
               size="sm"
             />
           </View>
@@ -382,13 +350,7 @@ function LeakCard({ leak, onFix, onDismiss }: LeakCardProps) {
 
       {/* Actions */}
       <View style={styles.leakActions}>
-        <Button
-          title="Dismiss"
-          onPress={onDismiss}
-          variant="ghost"
-          size="sm"
-          style={{ flex: 1 }}
-        />
+        <Button title="Dismiss" onPress={onDismiss} variant="ghost" size="sm" style={{ flex: 1 }} />
         <Button
           title="Fix Now"
           onPress={onFix}

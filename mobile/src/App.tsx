@@ -1,8 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import {
-  NavigationContainer,
-  NavigationContainerRef,
-} from '@react-navigation/native';
+import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -13,6 +10,7 @@ import { useAuthStore } from './store/auth.store';
 import { Colors, Typography, Spacing } from './styles/theme';
 import { addNotificationListeners } from './services/push';
 import { startSmsAutoCapture } from './services/sms';
+import { ErrorBoundary } from './components/shared';
 import {
   // Auth
   LoginScreen,
@@ -108,8 +106,7 @@ function MainTabs() {
         tabBarInactiveTintColor: Colors.gray400,
         tabBarStyle: styles.tabBar,
         tabBarLabelStyle: styles.tabBarLabel,
-        tabBarIcon: ({ focused }: { focused: boolean }) =>
-          TabIcon({ label: route.name, focused }),
+        tabBarIcon: ({ focused }: { focused: boolean }) => TabIcon({ label: route.name, focused }),
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
@@ -178,8 +175,7 @@ function AuthStack() {
 
 export default function App() {
   const { isAuthenticated, isLoading } = useAuthStore();
-  const navigationRef =
-    useRef<NavigationContainerRef<any>>(null);
+  const navigationRef = useRef<NavigationContainerRef<any>>(null);
 
   // Push notification taps: navigate to the right screen.
   useEffect(() => {
@@ -215,22 +211,20 @@ export default function App() {
       <View style={styles.loadingContainer}>
         <Text style={styles.loadingIcon}>💰</Text>
         <Text style={styles.loadingTitle}>MoneyMind</Text>
-        <ActivityIndicator
-          size="large"
-          color={Colors.primary}
-          style={{ marginTop: Spacing.lg }}
-        />
+        <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: Spacing.lg }} />
       </View>
     );
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <NavigationContainer ref={navigationRef}>
-        <StatusBar style="auto" />
-        {isAuthenticated ? <MainStack /> : <AuthStack />}
-      </NavigationContainer>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <NavigationContainer ref={navigationRef}>
+          <StatusBar style="auto" />
+          {isAuthenticated ? <MainStack /> : <AuthStack />}
+        </NavigationContainer>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

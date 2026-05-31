@@ -18,18 +18,9 @@ export type Priority = 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
 
 export type TransactionType = 'CREDIT' | 'DEBIT';
 
-export type SubscriptionFrequency =
-  | 'DAILY'
-  | 'WEEKLY'
-  | 'MONTHLY'
-  | 'QUARTERLY'
-  | 'YEARLY';
+export type SubscriptionFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
 
-export type SubscriptionStatus =
-  | 'ACTIVE'
-  | 'PAUSED'
-  | 'CANCELLED'
-  | 'EXPIRED';
+export type SubscriptionStatus = 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED';
 
 export interface User {
   id: string;
@@ -144,6 +135,8 @@ export interface HealthScoreFactor {
 
 export interface HealthScoreResult {
   score: number;
+  /** Legacy alias used by some consumers; mirrors `score`. */
+  healthScore?: number;
   grade?: string;
   factors?: HealthScoreFactor[];
   recommendations?: string[];
