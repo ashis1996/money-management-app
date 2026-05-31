@@ -11,12 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, Header, EmptyState } from '../../components/shared';
-import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
 import {
   useAccounts,
   useCreateAccount,
@@ -148,10 +143,8 @@ export function AccountsScreen({ navigation }: any) {
 
   const handleSync = (id: string) => {
     recompute.mutate(id, {
-      onSuccess: () =>
-        Alert.alert('Synced', 'Account refreshed from transaction history'),
-      onError: (e: any) =>
-        Alert.alert('Sync failed', e?.message ?? 'Could not sync account'),
+      onSuccess: () => Alert.alert('Synced', 'Account refreshed from transaction history'),
+      onError: (e: any) => Alert.alert('Sync failed', e?.message ?? 'Could not sync account'),
     });
   };
 
@@ -216,7 +209,7 @@ export function AccountsScreen({ navigation }: any) {
           <Text
             style={[
               styles.netWorthValue,
-              { color: totals.netWorth >= 0 ? Colors.white : '#FCA5A5' },
+              { color: totals.netWorth >= 0 ? Colors.white : Colors.error },
             ]}
           >
             ₹{totals.netWorth.toLocaleString()}
@@ -224,14 +217,14 @@ export function AccountsScreen({ navigation }: any) {
           <View style={styles.nwBreakdown}>
             <View style={styles.nwItem}>
               <Text style={styles.nwLabel}>Assets</Text>
-              <Text style={[styles.nwValue, { color: '#A7F3D0' }]}>
+              <Text style={[styles.nwValue, { color: Tints.successBorder }]}>
                 +₹{totals.assets.toLocaleString()}
               </Text>
             </View>
             <View style={styles.nwDivider} />
             <View style={styles.nwItem}>
               <Text style={styles.nwLabel}>Liabilities</Text>
-              <Text style={[styles.nwValue, { color: '#FCA5A5' }]}>
+              <Text style={[styles.nwValue, { color: Colors.error }]}>
                 -₹{totals.liabilities.toLocaleString()}
               </Text>
             </View>
@@ -259,9 +252,7 @@ export function AccountsScreen({ navigation }: any) {
               style={[styles.tab, filter === tab.key && styles.tabActive]}
               onPress={() => setFilter(tab.key)}
             >
-              <Text
-                style={[styles.tabText, filter === tab.key && styles.tabTextActive]}
-              >
+              <Text style={[styles.tabText, filter === tab.key && styles.tabTextActive]}>
                 {tab.label}
               </Text>
             </TouchableOpacity>
@@ -282,13 +273,11 @@ export function AccountsScreen({ navigation }: any) {
                   onPrimary={() => handleSetPrimary(acc.id)}
                   onSync={() => handleSync(acc.id)}
                   onRemove={() => handleRemove(acc)}
-                  onPress={() =>
-                    Alert.alert(acc.name, `View transactions for ${acc.name}`)
-                  }
+                  onPress={() => Alert.alert(acc.name, `View transactions for ${acc.name}`)}
                 />
               ))}
             </View>
-          )
+          ),
         )}
 
         {filtered.length === 0 && (
@@ -374,9 +363,7 @@ export function AccountsScreen({ navigation }: any) {
                     placeholder="e.g., HDFC Bank, Paytm, Visa"
                     placeholderTextColor={Colors.textTertiary}
                     value={newAccount.provider}
-                    onChangeText={(t) =>
-                      setNewAccount({ ...newAccount, provider: t })
-                    }
+                    onChangeText={(t) => setNewAccount({ ...newAccount, provider: t })}
                   />
 
                   <Text style={styles.fieldLabel}>Last 4 digits (optional)</Text>
@@ -401,18 +388,14 @@ export function AccountsScreen({ navigation }: any) {
                     placeholder="0"
                     placeholderTextColor={Colors.textTertiary}
                     value={newAccount.balance}
-                    onChangeText={(t) =>
-                      setNewAccount({ ...newAccount, balance: t })
-                    }
+                    onChangeText={(t) => setNewAccount({ ...newAccount, balance: t })}
                     keyboardType="numeric"
                   />
 
                   <View style={styles.linkOption}>
                     <Text style={styles.linkOptionIcon}>🔗</Text>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.linkOptionTitle}>
-                        Auto-link via SMS / UPI
-                      </Text>
+                      <Text style={styles.linkOptionTitle}>Auto-link via SMS / UPI</Text>
                       <Text style={styles.linkOptionText}>
                         We'll detect transactions automatically once linked
                       </Text>
@@ -444,13 +427,7 @@ interface AccountCardProps {
   onPress: () => void;
 }
 
-function AccountCard({
-  account,
-  onPrimary,
-  onSync,
-  onRemove,
-  onPress,
-}: AccountCardProps) {
+function AccountCard({ account, onPrimary, onSync, onRemove, onPress }: AccountCardProps) {
   const isCredit = account.type === 'CREDIT_CARD';
   const isLoan = account.type === 'LOAN';
   const utilizationPct =
@@ -459,19 +436,12 @@ function AccountCard({
       : 0;
 
   const dueInDays = account.dueDate
-    ? Math.ceil(
-        (new Date(account.dueDate).getTime() - Date.now()) / (24 * 3600 * 1000)
-      )
+    ? Math.ceil((new Date(account.dueDate).getTime() - Date.now()) / (24 * 3600 * 1000))
     : null;
 
   return (
     <Card style={styles.accCard} onPress={onPress} onLongPress={onRemove}>
-      <View
-        style={[
-          styles.accColorBar,
-          { backgroundColor: account.color },
-        ]}
-      />
+      <View style={[styles.accColorBar, { backgroundColor: account.color }]} />
       <View style={styles.accContent}>
         <View style={styles.accHeader}>
           <View style={[styles.accIcon, { backgroundColor: account.color + '20' }]}>
@@ -480,9 +450,7 @@ function AccountCard({
           <View style={{ flex: 1 }}>
             <View style={styles.accTitleRow}>
               <Text style={styles.accName}>{account.name}</Text>
-              {account.isPrimary && (
-                <Badge text="Primary" variant="primary" size="sm" />
-              )}
+              {account.isPrimary && <Badge text="Primary" variant="primary" size="sm" />}
             </View>
             <Text style={styles.accProvider}>
               {account.provider}
@@ -495,8 +463,7 @@ function AccountCard({
               { color: account.balance >= 0 ? Colors.textPrimary : Colors.error },
             ]}
           >
-            {account.balance < 0 ? '-' : ''}₹
-            {Math.abs(account.balance).toLocaleString()}
+            {account.balance < 0 ? '-' : ''}₹{Math.abs(account.balance).toLocaleString()}
           </Text>
         </View>
 
@@ -520,26 +487,18 @@ function AccountCard({
                       utilizationPct > 70
                         ? Colors.error
                         : utilizationPct > 30
-                        ? Colors.warning
-                        : Colors.success,
+                          ? Colors.warning
+                          : Colors.success,
                   },
                 ]}
               />
             </View>
             <View style={styles.creditFooter}>
-              <Text style={styles.creditFooterText}>
-                {utilizationPct}% used (keep below 30%)
-              </Text>
+              <Text style={styles.creditFooterText}>{utilizationPct}% used (keep below 30%)</Text>
               {dueInDays !== null && account.dueAmount && (
                 <Badge
                   text={`Due in ${dueInDays}d • ₹${account.dueAmount.toLocaleString()}`}
-                  variant={
-                    dueInDays <= 3
-                      ? 'error'
-                      : dueInDays <= 7
-                      ? 'warning'
-                      : 'info'
-                  }
+                  variant={dueInDays <= 3 ? 'error' : dueInDays <= 7 ? 'warning' : 'info'}
                   size="sm"
                 />
               )}
@@ -552,9 +511,7 @@ function AccountCard({
           <View style={styles.creditSection}>
             <View style={styles.creditRow}>
               <Text style={styles.creditLabel}>Next EMI</Text>
-              <Text style={styles.creditValue}>
-                ₹{account.emiAmount.toLocaleString()}
-              </Text>
+              <Text style={styles.creditValue}>₹{account.emiAmount.toLocaleString()}</Text>
             </View>
             <View style={styles.creditFooter}>
               <Text style={styles.creditFooterText}>
@@ -576,9 +533,7 @@ function AccountCard({
 
         {/* Actions */}
         <View style={styles.accActions}>
-          <Text style={styles.lastSync}>
-            🔄 Synced {formatRelativeTime(account.lastSync)}
-          </Text>
+          <Text style={styles.lastSync}>🔄 Synced {formatRelativeTime(account.lastSync)}</Text>
           <View style={styles.accActionBtns}>
             {!account.isPrimary && account.type === 'BANK' && (
               <TouchableOpacity onPress={onPrimary} style={styles.accBtn}>
@@ -885,7 +840,7 @@ const styles = StyleSheet.create({
   typeBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
     padding: Spacing.sm,
     borderRadius: BorderRadius.base,
     marginBottom: Spacing.base,
@@ -908,7 +863,7 @@ const styles = StyleSheet.create({
   linkOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#D1FAE5',
+    backgroundColor: Tints.successBg,
     padding: Spacing.sm,
     borderRadius: BorderRadius.base,
     marginTop: Spacing.sm,
@@ -920,11 +875,11 @@ const styles = StyleSheet.create({
   linkOptionTitle: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.bold,
-    color: '#065F46',
+    color: Colors.success,
   },
   linkOptionText: {
     fontSize: Typography.sizes.xs,
-    color: '#047857',
+    color: Colors.success,
     marginTop: 2,
   },
 });

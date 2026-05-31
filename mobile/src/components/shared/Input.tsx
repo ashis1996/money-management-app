@@ -9,7 +9,7 @@ import {
   StyleProp,
   TouchableOpacity,
 } from 'react-native';
-import { Colors, Typography, Spacing, BorderRadius } from '../../styles/theme';
+import { Colors, Typography, Spacing, BorderRadius, withAlpha } from '../../styles/theme';
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -21,6 +21,11 @@ interface InputProps extends TextInputProps {
   containerStyle?: StyleProp<ViewStyle>;
 }
 
+/**
+ * Form input. The focus state uses the AI-cyan accent + outer glow
+ * (per the design spec) instead of the old "white background" focus
+ * which was a light-mode artifact.
+ */
 export function Input({
   label,
   error,
@@ -37,13 +42,7 @@ export function Input({
   return (
     <View style={[styles.container, containerStyle]}>
       {label && <Text style={styles.label}>{label}</Text>}
-      <View
-        style={[
-          styles.inputContainer,
-          focused && styles.focused,
-          !!error && styles.error,
-        ]}
-      >
+      <View style={[styles.inputContainer, focused && styles.focused, !!error && styles.error]}>
         {icon && <Text style={styles.icon}>{icon}</Text>}
         <TextInput
           style={[styles.input, style]}
@@ -81,11 +80,14 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.base,
     borderWidth: 1.5,
-    borderColor: 'transparent',
+    borderColor: Colors.borderDefault,
   },
   focused: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.white,
+    borderColor: Colors.accentAi,
+    // Soft outer cyan bloom — RN doesn't have CSS box-shadow on Views,
+    // so we approximate with a subtle backgroundColor lift. Phase 3
+    // will replace this with a proper animated glow ring.
+    backgroundColor: withAlpha(Colors.accentAi, 0.04),
   },
   error: {
     borderColor: Colors.error,
@@ -99,6 +101,7 @@ const styles = StyleSheet.create({
   icon: {
     fontSize: Typography.sizes.lg,
     marginHorizontal: Spacing.xs,
+    color: Colors.textSecondary,
   },
   errorText: {
     fontSize: Typography.sizes.sm,

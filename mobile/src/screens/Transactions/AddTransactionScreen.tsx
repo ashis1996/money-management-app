@@ -9,25 +9,20 @@ import {
   Alert,
 } from 'react-native';
 import { Card, Button, Badge, Header } from '../../components/shared';
-import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
 import { useCreateTransaction, useAccounts } from '../../hooks';
 
 type EntryMode = 'manual' | 'assisted' | 'voice';
 type TransactionType = 'CREDIT' | 'DEBIT';
 
 const CATEGORIES = [
-  { id: 'food', label: 'Food', icon: '🍔', color: '#FEE2E2' },
-  { id: 'shopping', label: 'Shopping', icon: '🛍️', color: '#EDE9FE' },
-  { id: 'transport', label: 'Transport', icon: '🚗', color: '#DBEAFE' },
-  { id: 'entertainment', label: 'Entertainment', icon: '🎬', color: '#FCE7F3' },
-  { id: 'bills', label: 'Bills', icon: '⚡', color: '#FEF3C7' },
-  { id: 'health', label: 'Health', icon: '💊', color: '#D1FAE5' },
-  { id: 'subscription', label: 'Subscription', icon: '🔄', color: '#E0E7FF' },
+  { id: 'food', label: 'Food', icon: '🍔', color: Tints.errorBg },
+  { id: 'shopping', label: 'Shopping', icon: '🛍️', color: 'rgba(167, 139, 250, 0.16)' },
+  { id: 'transport', label: 'Transport', icon: '🚗', color: Tints.aiBg },
+  { id: 'entertainment', label: 'Entertainment', icon: '🎬', color: 'rgba(244, 114, 182, 0.16)' },
+  { id: 'bills', label: 'Bills', icon: '⚡', color: Tints.warningBg },
+  { id: 'health', label: 'Health', icon: '💊', color: Tints.successBg },
+  { id: 'subscription', label: 'Subscription', icon: '🔄', color: 'rgba(129, 140, 248, 0.16)' },
   { id: 'other', label: 'Other', icon: '📦', color: Colors.gray100 },
 ];
 
@@ -57,9 +52,10 @@ export function AddTransactionScreen({ navigation }: any) {
     icon: a.icon || '🏦',
     balance: Number(a.balance ?? 0),
   }));
-  const ACCOUNTS_FALLBACK = accounts.length > 0 ? accounts : [
-    { id: '', name: 'No accounts', mask: '', icon: '🏦', balance: 0 },
-  ];
+  const ACCOUNTS_FALLBACK =
+    accounts.length > 0
+      ? accounts
+      : [{ id: '', name: 'No accounts', mask: '', icon: '🏦', balance: 0 }];
 
   const [mode, setMode] = useState<EntryMode>('assisted');
   const [type, setType] = useState<TransactionType>('DEBIT');
@@ -67,9 +63,7 @@ export function AddTransactionScreen({ navigation }: any) {
   const [merchant, setMerchant] = useState('');
   const [description, setDescription] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedAccount, setSelectedAccount] = useState<string>(
-    ACCOUNTS_FALLBACK[0]?.id ?? '',
-  );
+  const [selectedAccount, setSelectedAccount] = useState<string>(ACCOUNTS_FALLBACK[0]?.id ?? '');
   const [voiceInput, setVoiceInput] = useState('');
   const [aiSuggestion, setAiSuggestion] = useState<AISuggestion | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -106,10 +100,8 @@ export function AddTransactionScreen({ navigation }: any) {
         merchantName: merchant || undefined,
         description: description || undefined,
         accountId: selectedAccount || undefined,
-        captureMode:
-          mode === 'manual' ? 'MANUAL' : mode === 'assisted' ? 'ASSISTED' : 'AUTO',
-        source:
-          mode === 'manual' ? 'MANUAL' : mode === 'voice' ? 'VOICE' : 'MANUAL',
+        captureMode: mode === 'manual' ? 'MANUAL' : mode === 'assisted' ? 'ASSISTED' : 'AUTO',
+        source: mode === 'manual' ? 'MANUAL' : mode === 'voice' ? 'VOICE' : 'MANUAL',
         isUserConfirmed: true,
       });
 
@@ -125,7 +117,9 @@ export function AddTransactionScreen({ navigation }: any) {
 
   const handleAcceptAI = () => {
     if (aiSuggestion) {
-      const cat = CATEGORIES.find((c) => c.label.toLowerCase() === aiSuggestion.category.toLowerCase());
+      const cat = CATEGORIES.find(
+        (c) => c.label.toLowerCase() === aiSuggestion.category.toLowerCase(),
+      );
       if (cat) setSelectedCategory(cat.id);
       setMerchant(aiSuggestion.merchant);
     }
@@ -150,10 +144,7 @@ export function AddTransactionScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <Header
-        title="Add Transaction"
-        onBack={() => navigation.goBack()}
-      />
+      <Header title="Add Transaction" onBack={() => navigation.goBack()} />
 
       <ScrollView
         style={styles.content}
@@ -172,11 +163,7 @@ export function AddTransactionScreen({ navigation }: any) {
             active={mode === 'assisted'}
             onPress={() => setMode('assisted')}
           />
-          <ModeButton
-            label="🎤 Voice"
-            active={mode === 'voice'}
-            onPress={() => setMode('voice')}
-          />
+          <ModeButton label="🎤 Voice" active={mode === 'voice'} onPress={() => setMode('voice')} />
         </View>
 
         {/* Voice mode */}
@@ -209,12 +196,7 @@ export function AddTransactionScreen({ navigation }: any) {
             ]}
             onPress={() => setType('DEBIT')}
           >
-            <Text
-              style={[
-                styles.typeOptionText,
-                type === 'DEBIT' && styles.typeOptionTextActive,
-              ]}
-            >
+            <Text style={[styles.typeOptionText, type === 'DEBIT' && styles.typeOptionTextActive]}>
               💸 Expense
             </Text>
           </TouchableOpacity>
@@ -226,12 +208,7 @@ export function AddTransactionScreen({ navigation }: any) {
             ]}
             onPress={() => setType('CREDIT')}
           >
-            <Text
-              style={[
-                styles.typeOptionText,
-                type === 'CREDIT' && styles.typeOptionTextActive,
-              ]}
-            >
+            <Text style={[styles.typeOptionText, type === 'CREDIT' && styles.typeOptionTextActive]}>
               💰 Income
             </Text>
           </TouchableOpacity>
@@ -293,15 +270,19 @@ export function AddTransactionScreen({ navigation }: any) {
                 </View>
                 {aiSuggestion.isRecurring && (
                   <View style={styles.aiAlert}>
-                    <Text style={styles.aiAlertText}>
-                      🔄 This looks like a recurring payment
-                    </Text>
+                    <Text style={styles.aiAlertText}>🔄 This looks like a recurring payment</Text>
                   </View>
                 )}
                 {aiSuggestion.budgetImpact && (
                   <View style={styles.aiAlert}>
                     <Text style={styles.aiAlertText}>
-                      📊 Will use {Math.round(((aiSuggestion.budgetImpact.current + parseFloat(amount || '0')) / aiSuggestion.budgetImpact.limit) * 100)}% of {aiSuggestion.budgetImpact.category} budget
+                      📊 Will use{' '}
+                      {Math.round(
+                        ((aiSuggestion.budgetImpact.current + parseFloat(amount || '0')) /
+                          aiSuggestion.budgetImpact.limit) *
+                          100,
+                      )}
+                      % of {aiSuggestion.budgetImpact.category} budget
                     </Text>
                   </View>
                 )}
@@ -352,10 +333,7 @@ export function AddTransactionScreen({ navigation }: any) {
           {ACCOUNTS_FALLBACK.map((account) => (
             <TouchableOpacity
               key={account.id}
-              style={[
-                styles.accountRow,
-                selectedAccount === account.id && styles.accountRowActive,
-              ]}
+              style={[styles.accountRow, selectedAccount === account.id && styles.accountRowActive]}
               onPress={() => setSelectedAccount(account.id)}
             >
               <Text style={styles.accountIcon}>{account.icon}</Text>
@@ -396,12 +374,17 @@ export function AddTransactionScreen({ navigation }: any) {
   );
 }
 
-function ModeButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function ModeButton({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
   return (
-    <TouchableOpacity
-      style={[styles.modeBtn, active && styles.modeBtnActive]}
-      onPress={onPress}
-    >
+    <TouchableOpacity style={[styles.modeBtn, active && styles.modeBtnActive]} onPress={onPress}>
       <Text style={[styles.modeBtnText, active && styles.modeBtnTextActive]}>{label}</Text>
     </TouchableOpacity>
   );
@@ -600,7 +583,7 @@ const styles = StyleSheet.create({
   // AI Card
   aiCard: {
     marginBottom: Spacing.base,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
     borderWidth: 1,
     borderColor: Colors.primaryLight,
   },
@@ -689,7 +672,7 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   accountRowActive: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
   },
   accountIcon: {
     fontSize: 24,

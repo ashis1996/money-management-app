@@ -9,17 +9,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, Header, EmptyState } from '../../components/shared';
-import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
-import {
-  useNotifications,
-  useMarkAsRead,
-  useMarkAllAsRead,
-} from '../../hooks';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import { useNotifications, useMarkAsRead, useMarkAllAsRead } from '../../hooks';
 
 type NotifType =
   | 'LOW_BALANCE'
@@ -84,18 +75,17 @@ function backendToNotification(n: any): Notification {
     rawType === 'BUDGET_EXCEEDED' ||
     rawType === 'BUDGET_WARNING' ||
     rawType === 'BUDGET_ALERT'
-  ) category = 'risks';
+  )
+    category = 'risks';
   else if (
     rawType === 'BILL_DUE' ||
     rawType === 'EMI_DUE' ||
     rawType === 'SUBSCRIPTION_RENEWAL' ||
     rawType === 'SUBSCRIPTION'
-  ) category = 'reminders';
-  else if (
-    rawType === 'INSIGHT' ||
-    rawType === 'PRICE_INCREASE' ||
-    rawType === 'WEEKLY_SUMMARY'
-  ) category = 'insights';
+  )
+    category = 'reminders';
+  else if (rawType === 'INSIGHT' || rawType === 'PRICE_INCREASE' || rawType === 'WEEKLY_SUMMARY')
+    category = 'insights';
   else if (rawType === 'ACHIEVEMENT' || rawType === 'GOAL_PROGRESS') category = 'wins';
 
   return {
@@ -126,7 +116,7 @@ export function NotificationsScreen({ navigation }: any) {
     return list.map(backendToNotification);
   }, [notifsQuery.data]);
 
-  const [filter, setFilter] = useState<typeof FILTERS[0]['key']>('all');
+  const [filter, setFilter] = useState<(typeof FILTERS)[0]['key']>('all');
 
   const unreadCount = notifs.filter((n) => !n.isRead).length;
 
@@ -195,17 +185,15 @@ export function NotificationsScreen({ navigation }: any) {
             f.key === 'all'
               ? notifs.length
               : f.key === 'unread'
-              ? unreadCount
-              : notifs.filter((n) => n.category === f.key).length;
+                ? unreadCount
+                : notifs.filter((n) => n.category === f.key).length;
           return (
             <TouchableOpacity
               key={f.key}
               style={[styles.tab, filter === f.key && styles.tabActive]}
               onPress={() => setFilter(f.key)}
             >
-              <Text
-                style={[styles.tabText, filter === f.key && styles.tabTextActive]}
-              >
+              <Text style={[styles.tabText, filter === f.key && styles.tabTextActive]}>
                 {f.label} {count > 0 && `(${count})`}
               </Text>
             </TouchableOpacity>
@@ -216,11 +204,7 @@ export function NotificationsScreen({ navigation }: any) {
       {/* List */}
       <ScrollView showsVerticalScrollIndicator={false}>
         {Object.keys(grouped).length === 0 ? (
-          <EmptyState
-            icon="🔔"
-            title="No notifications"
-            message="You're all caught up!"
-          />
+          <EmptyState icon="🔔" title="No notifications" message="You're all caught up!" />
         ) : (
           Object.entries(grouped).map(([group, items]) => (
             <View key={group}>
@@ -281,12 +265,7 @@ function NotificationItem({
         <Text style={styles.notifIcon}>{notif.icon}</Text>
         <View style={{ flex: 1 }}>
           <View style={styles.notifTitleRow}>
-            <Text
-              style={[
-                styles.notifTitle,
-                !notif.isRead && styles.notifTitleUnread,
-              ]}
-            >
+            <Text style={[styles.notifTitle, !notif.isRead && styles.notifTitleUnread]}>
               {notif.title}
             </Text>
             {!notif.isRead && <View style={styles.unreadDot} />}
@@ -294,12 +273,8 @@ function NotificationItem({
           <Text style={styles.notifMessage}>{notif.message}</Text>
           <View style={styles.notifFooter}>
             <Text style={styles.notifTime}>{ago}</Text>
-            {notif.priority === 'URGENT' && (
-              <Badge text="URGENT" variant="error" size="sm" />
-            )}
-            {notif.priority === 'HIGH' && (
-              <Badge text="HIGH" variant="warning" size="sm" />
-            )}
+            {notif.priority === 'URGENT' && <Badge text="URGENT" variant="error" size="sm" />}
+            {notif.priority === 'HIGH' && <Badge text="HIGH" variant="warning" size="sm" />}
             {notif.daysUntil !== undefined && notif.daysUntil <= 3 && (
               <Badge
                 text={`In ${notif.daysUntil} days`}
@@ -316,12 +291,7 @@ function NotificationItem({
           <TouchableOpacity onPress={onDismiss} style={styles.dismissBtn}>
             <Text style={styles.dismissText}>Dismiss</Text>
           </TouchableOpacity>
-          <Button
-            title={notif.actionLabel}
-            onPress={onAction}
-            variant="primary"
-            size="sm"
-          />
+          <Button title={notif.actionLabel} onPress={onAction} variant="primary" size="sm" />
         </View>
       )}
     </Card>
@@ -386,7 +356,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   notifUnread: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
   },
   notifHeader: {
     flexDirection: 'row',

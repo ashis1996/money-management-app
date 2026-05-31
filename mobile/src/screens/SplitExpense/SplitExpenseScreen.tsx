@@ -11,12 +11,7 @@ import {
   Share,
 } from 'react-native';
 import { Card, Badge, Button, Header, EmptyState } from '../../components/shared';
-import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
 
 type SplitMode = 'equal' | 'percentage' | 'custom' | 'shares';
 
@@ -66,7 +61,7 @@ const mockPastSplits: PastSplit[] = [
   },
   {
     id: 'p2',
-    title: "Friday Dinner",
+    title: 'Friday Dinner',
     totalAmount: 4800,
     date: new Date(Date.now() - 12 * 24 * 3600 * 1000).toISOString(),
     people: 3,
@@ -80,9 +75,7 @@ export function SplitExpenseScreen({ navigation, route }: any) {
   const presetMerchant = route?.params?.merchant;
 
   const [title, setTitle] = useState(presetMerchant ? `Split with ${presetMerchant}` : '');
-  const [totalAmount, setTotalAmount] = useState(
-    presetAmount ? String(presetAmount) : ''
-  );
+  const [totalAmount, setTotalAmount] = useState(presetAmount ? String(presetAmount) : '');
   const [splitMode, setSplitMode] = useState<SplitMode>('equal');
   const [people, setPeople] = useState<Person[]>([
     {
@@ -129,7 +122,7 @@ export function SplitExpenseScreen({ navigation, route }: any) {
       const equalPct = Math.round(100 / peopleCount);
       return people.map((p) => {
         const pct = p.percentage ?? equalPct;
-        return { ...p, amount: Math.round((total * pct) / 100 * 100) / 100, percentage: pct };
+        return { ...p, amount: Math.round(((total * pct) / 100) * 100) / 100, percentage: pct };
       });
     }
 
@@ -137,7 +130,7 @@ export function SplitExpenseScreen({ navigation, route }: any) {
       const totalShares = people.reduce((s, p) => s + (p.shares ?? 1), 0);
       return people.map((p) => {
         const sh = p.shares ?? 1;
-        return { ...p, amount: Math.round((total * sh) / totalShares * 100) / 100, shares: sh };
+        return { ...p, amount: Math.round(((total * sh) / totalShares) * 100) / 100, shares: sh };
       });
     }
 
@@ -180,31 +173,23 @@ export function SplitExpenseScreen({ navigation, route }: any) {
   };
 
   const handleTogglePaid = (id: string) => {
-    setPeople((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, isPaid: !p.isPaid } : p))
-    );
+    setPeople((prev) => prev.map((p) => (p.id === id ? { ...p, isPaid: !p.isPaid } : p)));
   };
 
   const handleUpdatePercentage = (id: string, value: string) => {
     const pct = parseFloat(value) || 0;
-    setPeople((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, percentage: pct } : p))
-    );
+    setPeople((prev) => prev.map((p) => (p.id === id ? { ...p, percentage: pct } : p)));
   };
 
   const handleUpdateShares = (id: string, delta: number) => {
     setPeople((prev) =>
-      prev.map((p) =>
-        p.id === id ? { ...p, shares: Math.max(1, (p.shares ?? 1) + delta) } : p
-      )
+      prev.map((p) => (p.id === id ? { ...p, shares: Math.max(1, (p.shares ?? 1) + delta) } : p)),
     );
   };
 
   const handleUpdateCustom = (id: string, value: string) => {
     const amt = parseFloat(value) || 0;
-    setPeople((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, customAmount: amt } : p))
-    );
+    setPeople((prev) => prev.map((p) => (p.id === id ? { ...p, customAmount: amt } : p)));
   };
 
   const handleSendReminder = async (person: Person) => {
@@ -222,8 +207,8 @@ export function SplitExpenseScreen({ navigation, route }: any) {
     }
     if (splitMode === 'custom' && Math.abs(customDiff) > 0.01) {
       Alert.alert(
-        'Amounts don\'t match',
-        `Sum is ₹${customSum.toLocaleString()} but total is ₹${total.toLocaleString()}. Adjust the custom amounts.`
+        "Amounts don't match",
+        `Sum is ₹${customSum.toLocaleString()} but total is ₹${total.toLocaleString()}. Adjust the custom amounts.`,
       );
       return;
     }
@@ -247,12 +232,8 @@ export function SplitExpenseScreen({ navigation, route }: any) {
             style={styles.historyToggle}
             onPress={() => setShowHistory(!showHistory)}
           >
-            <Text style={styles.historyToggleText}>
-              📋 Past Splits ({mockPastSplits.length})
-            </Text>
-            <Text style={styles.historyToggleArrow}>
-              {showHistory ? '▼' : '▶'}
-            </Text>
+            <Text style={styles.historyToggleText}>📋 Past Splits ({mockPastSplits.length})</Text>
+            <Text style={styles.historyToggleArrow}>{showHistory ? '▼' : '▶'}</Text>
           </TouchableOpacity>
         )}
 
@@ -278,9 +259,7 @@ export function SplitExpenseScreen({ navigation, route }: any) {
                   />
                 </View>
                 <View style={styles.pastFooter}>
-                  <Text style={styles.pastAmount}>
-                    Total ₹{past.totalAmount.toLocaleString()}
-                  </Text>
+                  <Text style={styles.pastAmount}>Total ₹{past.totalAmount.toLocaleString()}</Text>
                   <Text style={styles.pastShare}>
                     Your share: ₹{past.yourShare.toLocaleString()}
                   </Text>
@@ -377,10 +356,8 @@ export function SplitExpenseScreen({ navigation, route }: any) {
             style={[
               styles.validCard,
               {
-                backgroundColor:
-                  Math.abs(customDiff) < 0.01 ? '#D1FAE5' : '#FEE2E2',
-                borderColor:
-                  Math.abs(customDiff) < 0.01 ? '#A7F3D0' : '#FECACA',
+                backgroundColor: Math.abs(customDiff) < 0.01 ? Tints.successBg : Tints.errorBg,
+                borderColor: Math.abs(customDiff) < 0.01 ? Tints.successBorder : Tints.errorBorder,
               },
             ]}
           >
@@ -388,8 +365,8 @@ export function SplitExpenseScreen({ navigation, route }: any) {
               {Math.abs(customDiff) < 0.01
                 ? '✓ Amounts add up correctly'
                 : customDiff > 0
-                ? `⚠️ Missing ₹${customDiff.toFixed(2)} (sum is short)`
-                : `⚠️ Over by ₹${Math.abs(customDiff).toFixed(2)}`}
+                  ? `⚠️ Missing ₹${customDiff.toFixed(2)} (sum is short)`
+                  : `⚠️ Over by ₹${Math.abs(customDiff).toFixed(2)}`}
             </Text>
           </Card>
         )}
@@ -400,9 +377,7 @@ export function SplitExpenseScreen({ navigation, route }: any) {
             <Text style={styles.summaryTitle}>📋 Summary</Text>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Total bill</Text>
-              <Text style={styles.summaryValue}>
-                ₹{total.toLocaleString()}
-              </Text>
+              <Text style={styles.summaryValue}>₹{total.toLocaleString()}</Text>
             </View>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Your share</Text>
@@ -489,18 +464,9 @@ function ModeBtn({
   onPress: () => void;
 }) {
   return (
-    <TouchableOpacity
-      style={[styles.modeBtn, active && styles.modeBtnActive]}
-      onPress={onPress}
-    >
-      <Text style={[styles.modeIcon, active && { color: Colors.white }]}>
-        {icon}
-      </Text>
-      <Text
-        style={[styles.modeLabel, active && styles.modeLabelActive]}
-      >
-        {label}
-      </Text>
+    <TouchableOpacity style={[styles.modeBtn, active && styles.modeBtnActive]} onPress={onPress}>
+      <Text style={[styles.modeIcon, active && { color: Colors.white }]}>{icon}</Text>
+      <Text style={[styles.modeLabel, active && styles.modeLabelActive]}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -558,17 +524,11 @@ function PersonRow({
 
         {splitMode === 'shares' && (
           <View style={styles.sharesRow}>
-            <TouchableOpacity
-              onPress={() => onUpdateShares(-1)}
-              style={styles.sharesBtn}
-            >
+            <TouchableOpacity onPress={() => onUpdateShares(-1)} style={styles.sharesBtn}>
               <Text style={styles.sharesBtnText}>−</Text>
             </TouchableOpacity>
             <Text style={styles.sharesValue}>{person.shares ?? 1}</Text>
-            <TouchableOpacity
-              onPress={() => onUpdateShares(1)}
-              style={styles.sharesBtn}
-            >
+            <TouchableOpacity onPress={() => onUpdateShares(1)} style={styles.sharesBtn}>
               <Text style={styles.sharesBtnText}>+</Text>
             </TouchableOpacity>
             <Text style={styles.sharesLabel}>shares</Text>
@@ -594,12 +554,7 @@ function PersonRow({
         {!isMe ? (
           <View style={styles.personActions}>
             <TouchableOpacity onPress={onTogglePaid} style={styles.paidBtn}>
-              <Text
-                style={[
-                  styles.paidBtnText,
-                  person.isPaid && styles.paidBtnTextActive,
-                ]}
-              >
+              <Text style={[styles.paidBtnText, person.isPaid && styles.paidBtnTextActive]}>
                 {person.isPaid ? '✓ Paid' : 'Mark paid'}
               </Text>
             </TouchableOpacity>
@@ -932,7 +887,7 @@ const styles = StyleSheet.create({
   summaryCard: {
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.base,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
     borderWidth: 1,
     borderColor: Colors.primaryLight,
   },

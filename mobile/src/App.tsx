@@ -1,10 +1,22 @@
 import React, { useEffect, useRef } from 'react';
-import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  NavigationContainerRef,
+  DarkTheme as NavDarkTheme,
+} from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
-import { Text, View, StyleSheet, ActivityIndicator } from 'react-native';
+import * as SystemUI from 'expo-system-ui';
+import { Text as RNText, View, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  useFonts,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+} from '@expo-google-fonts/inter';
 
 import { useAuthStore } from './store/auth.store';
 import { Colors, Typography, Spacing } from './styles/theme';
@@ -50,6 +62,31 @@ const RootStack = createStackNavigator<any>();
 const AuthStackNav = createStackNavigator<any>();
 const Tab = createBottomTabNavigator<any>();
 
+// =============================================================
+// Theme glue for React Navigation
+//
+// Without this every navigation container falls back to the default
+// LIGHT theme, which paints the "card" surface white and fights the
+// MoneyMind dark palette wherever a navigator (modal, tab, stack)
+// renders chrome of its own.
+// =============================================================
+const NavigationTheme = {
+  ...NavDarkTheme,
+  colors: {
+    ...NavDarkTheme.colors,
+    background: Colors.background,
+    card: Colors.card,
+    text: Colors.textPrimary,
+    border: Colors.border,
+    primary: Colors.primary,
+    notification: Colors.error,
+  },
+};
+
+// =============================================================
+// Push notification deep-linking
+// =============================================================
+
 /**
  * Map a notification's `data.type` to a route + params.
  * Backend's notification.service stores actionRoute/actionParams in `data`,
@@ -89,9 +126,9 @@ function TabIcon({ label, focused }: { label: string; focused: boolean }) {
 
   return (
     <View style={styles.tabIcon}>
-      <Text style={[styles.tabIconText, focused && styles.tabIconFocused]}>
+      <RNText style={[styles.tabIconText, focused && styles.tabIconFocused]}>
         {icons[label] || '📍'}
-      </Text>
+      </RNText>
     </View>
   );
 }
@@ -103,7 +140,7 @@ function MainTabs() {
         headerShown: false,
         tabBarShowLabel: true,
         tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.gray400,
+        tabBarInactiveTintColor: Colors.textTertiary,
         tabBarStyle: styles.tabBar,
         tabBarLabelStyle: styles.tabBarLabel,
         tabBarIcon: ({ focused }: { focused: boolean }) => TabIcon({ label: route.name, focused }),
@@ -173,9 +210,49 @@ function AuthStack() {
   );
 }
 
+// =============================================================
+// One-shot side effects: set the system UI bg to MoneyMind surface
+// and apply Inter as the default font for every <Text>.
+//
+// `Text.defaultProps.style` is the canonical RN escape hatch for a
+// global text style and is supported on RN 0.73. We apply it once,
+// guarded by a module-level flag so a Fast Refresh cycle doesn't
+// stack the style array indefinitely.
+// =============================================================
+SystemUI.setBackgroundColorAsync(Colors.background).catch(() => {
+  /* iOS: no-op; this only matters on Android */
+});
+
+let textDefaultsApplied = false;
+function applyDefaultTextStyle() {
+  if (textDefaultsApplied) return;
+  const TextAny = RNText as any;
+  TextAny.defaultProps = TextAny.defaultProps || {};
+  TextAny.defaultProps.allowFontScaling = true;
+  TextAny.defaultProps.style = [
+    TextAny.defaultProps.style,
+    { fontFamily: Typography.fonts.regular, color: Colors.textPrimary },
+  ];
+  textDefaultsApplied = true;
+}
+
 export default function App() {
   const { isAuthenticated, isLoading } = useAuthStore();
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
+
+  // Load Inter weights up-front so render-time text doesn't flash
+  // a system fallback before swapping. Phase 3 will add per-weight
+  // family resolution to component styles.
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
+
+  if (fontsLoaded) {
+    applyDefaultTextStyle();
+  }
 
   // Push notification taps: navigate to the right screen.
   useEffect(() => {
@@ -206,11 +283,11 @@ export default function App() {
     return stop;
   }, [isAuthenticated]);
 
-  if (isLoading) {
+  if (isLoading || !fontsLoaded) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.loadingIcon}>💰</Text>
-        <Text style={styles.loadingTitle}>MoneyMind</Text>
+        <RNText style={styles.loadingIcon}>💰</RNText>
+        <RNText style={styles.loadingTitle}>MoneyMind</RNText>
         <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: Spacing.lg }} />
       </View>
     );
@@ -219,8 +296,8 @@ export default function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <NavigationContainer ref={navigationRef}>
-          <StatusBar style="auto" />
+        <NavigationContainer ref={navigationRef} theme={NavigationTheme}>
+          <StatusBar style="light" backgroundColor={Colors.background} />
           {isAuthenticated ? <MainStack /> : <AuthStack />}
         </NavigationContainer>
       </QueryClientProvider>
@@ -256,9 +333,9 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
   tabBar: {
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surfaceContainerLow,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: Colors.borderDefault,
     paddingBottom: 8,
     paddingTop: 8,
     height: 60,

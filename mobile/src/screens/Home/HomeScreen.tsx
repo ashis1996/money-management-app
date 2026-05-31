@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useAuthStore } from '../../store/auth.store';
 import { Card, Badge, Button, ProgressRing, ProgressBar } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius } from '../../styles/theme';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
 import {
   useDashboard,
   useHealthScore,
@@ -920,9 +920,9 @@ const styles = StyleSheet.create({
   },
   // Money Leaks
   leakWidget: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: Tints.errorBg,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: Tints.errorBorder,
   },
   leakIcon: {
     fontSize: 20,

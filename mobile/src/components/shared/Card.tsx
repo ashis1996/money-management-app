@@ -11,6 +11,12 @@ interface CardProps {
   variant?: 'elevated' | 'outlined' | 'flat';
 }
 
+/**
+ * Default card surface. On dark mode we deliberately avoid a heavy
+ * black drop shadow on `elevated` cards — depth is communicated via a
+ * 1px white/6% inner border (per design spec). The `Shadows.base`
+ * still applies a faint shadow so iOS doesn't lose the lift entirely.
+ */
 export function Card({
   children,
   onPress,
@@ -46,15 +52,20 @@ const styles = StyleSheet.create({
   base: {
     borderRadius: BorderRadius.lg,
     backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
   elevated: {
     ...Shadows.base,
   },
   outlined: {
-    borderWidth: 1,
+    // `outlined` keeps a slightly stronger border to differentiate
+    // from the default elevated style (whose border is intentionally
+    // very subtle).
     borderColor: Colors.border,
   },
   flat: {
-    backgroundColor: Colors.gray50,
+    backgroundColor: Colors.surfaceContainerLow,
+    borderColor: 'transparent',
   },
 });

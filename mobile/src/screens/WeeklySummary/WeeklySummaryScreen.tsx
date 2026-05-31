@@ -9,16 +9,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Card, Badge, Button, ProgressBar, Header, EmptyState } from '../../components/shared';
-import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
-import {
-  useCurrentWeeklySummary,
-  useGenerateWeeklySummary,
-} from '../../hooks';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import { useCurrentWeeklySummary, useGenerateWeeklySummary } from '../../hooks';
 
 interface WeekData {
   weekStart: string;
@@ -162,10 +154,7 @@ export function WeeklySummaryScreen({ navigation }: any) {
   const summaryQuery = useCurrentWeeklySummary();
   const generateSummary = useGenerateWeeklySummary();
 
-  const week: WeekData = useMemo(
-    () => backendToWeekData(summaryQuery.data),
-    [summaryQuery.data],
-  );
+  const week: WeekData = useMemo(() => backendToWeekData(summaryQuery.data), [summaryQuery.data]);
 
   const maxDaily = Math.max(1, ...week.daily.map((d) => d.amount));
   const dateRange = formatRange(week.weekStart, week.weekEnd);
@@ -190,10 +179,7 @@ export function WeeklySummaryScreen({ navigation }: any) {
   if (!summaryQuery.data) {
     return (
       <View style={styles.container}>
-        <Header
-          title="Weekly Summary"
-          onBack={() => navigation.goBack()}
-        />
+        <Header title="Weekly Summary" onBack={() => navigation.goBack()} />
         <EmptyState
           icon="📊"
           title="No summary yet"
@@ -252,14 +238,8 @@ export function WeeklySummaryScreen({ navigation }: any) {
             <Text style={styles.sectionTitle}>💪 Savings Rate</Text>
             <Text style={styles.savingsRate}>{week.savingsRate}%</Text>
           </View>
-          <ProgressBar
-            progress={week.savingsRate}
-            color={Colors.success}
-            height={10}
-          />
-          <Text style={styles.sectionHint}>
-            Target: 20%+ • You're crushing it!
-          </Text>
+          <ProgressBar progress={week.savingsRate} color={Colors.success} height={10} />
+          <Text style={styles.sectionHint}>Target: 20%+ • You're crushing it!</Text>
         </Card>
 
         {/* Daily chart */}
@@ -270,9 +250,7 @@ export function WeeklySummaryScreen({ navigation }: any) {
               const heightPct = (d.amount / maxDaily) * 100;
               return (
                 <View key={d.day} style={styles.chartBar}>
-                  <Text style={styles.chartAmount}>
-                    ₹{(d.amount / 1000).toFixed(1)}k
-                  </Text>
+                  <Text style={styles.chartAmount}>₹{(d.amount / 1000).toFixed(1)}k</Text>
                   <View style={styles.chartTrack}>
                     <View
                       style={[
@@ -283,8 +261,8 @@ export function WeeklySummaryScreen({ navigation }: any) {
                             d.amount < 200
                               ? Colors.success
                               : d.amount > 2000
-                              ? Colors.warning
-                              : Colors.primary,
+                                ? Colors.warning
+                                : Colors.primary,
                         },
                       ]}
                     />
@@ -326,9 +304,7 @@ export function WeeklySummaryScreen({ navigation }: any) {
                     <Text style={styles.winTitle}>{imp.title}</Text>
                     <Text style={styles.winDescription}>{imp.description}</Text>
                   </View>
-                  {imp.amount && (
-                    <Text style={styles.impAmount}>+₹{imp.amount}</Text>
-                  )}
+                  {imp.amount && <Text style={styles.impAmount}>+₹{imp.amount}</Text>}
                 </View>
               </Card>
             ))}
@@ -347,9 +323,7 @@ export function WeeklySummaryScreen({ navigation }: any) {
                     <Text style={styles.winTitle}>{u.merchant}</Text>
                     <Text style={styles.winDescription}>{u.reason}</Text>
                   </View>
-                  <Text style={styles.unusualAmount}>
-                    ₹{u.amount.toLocaleString()}
-                  </Text>
+                  <Text style={styles.unusualAmount}>₹{u.amount.toLocaleString()}</Text>
                 </View>
               </Card>
             ))}
@@ -365,9 +339,7 @@ export function WeeklySummaryScreen({ navigation }: any) {
               <View style={{ flex: 1 }}>
                 <View style={styles.catTopRow}>
                   <Text style={styles.catName}>{cat.category}</Text>
-                  <Text style={styles.catAmount}>
-                    ₹{cat.amount.toLocaleString()}
-                  </Text>
+                  <Text style={styles.catAmount}>₹{cat.amount.toLocaleString()}</Text>
                 </View>
                 <View style={styles.catBottomRow}>
                   <View style={{ flex: 1, marginRight: Spacing.sm }}>
@@ -385,13 +357,12 @@ export function WeeklySummaryScreen({ navigation }: any) {
                           cat.trend > 10
                             ? Colors.error
                             : cat.trend < -10
-                            ? Colors.success
-                            : Colors.textSecondary,
+                              ? Colors.success
+                              : Colors.textSecondary,
                       },
                     ]}
                   >
-                    {cat.trend > 0 ? '↑' : cat.trend < 0 ? '↓' : '→'}{' '}
-                    {Math.abs(cat.trend)}%
+                    {cat.trend > 0 ? '↑' : cat.trend < 0 ? '↓' : '→'} {Math.abs(cat.trend)}%
                   </Text>
                 </View>
               </View>
@@ -409,13 +380,9 @@ export function WeeklySummaryScreen({ navigation }: any) {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.merchName}>{m.name}</Text>
-                <Text style={styles.merchMeta}>
-                  {m.transactions} transactions
-                </Text>
+                <Text style={styles.merchMeta}>{m.transactions} transactions</Text>
               </View>
-              <Text style={styles.merchAmount}>
-                ₹{m.amount.toLocaleString()}
-              </Text>
+              <Text style={styles.merchAmount}>₹{m.amount.toLocaleString()}</Text>
             </View>
           ))}
         </Card>
@@ -467,12 +434,7 @@ export function WeeklySummaryScreen({ navigation }: any) {
 
         {/* Share / Done */}
         <View style={styles.actions}>
-          <Button
-            title="📤 Share"
-            onPress={handleShare}
-            variant="outline"
-            style={{ flex: 1 }}
-          />
+          <Button title="📤 Share" onPress={handleShare} variant="outline" style={{ flex: 1 }} />
           <Button
             title="Got it"
             onPress={() => navigation.goBack()}
@@ -505,16 +467,9 @@ function NumberCard({
   return (
     <Card style={styles.numCard}>
       <Text style={styles.numLabel}>{label}</Text>
-      <Text style={[styles.numValue, { color }]}>
-        ₹{value.toLocaleString()}
-      </Text>
+      <Text style={[styles.numValue, { color }]}>₹{value.toLocaleString()}</Text>
       <View style={styles.numChange}>
-        <Text
-          style={[
-            styles.numChangeText,
-            { color: positive ? Colors.success : Colors.error },
-          ]}
-        >
+        <Text style={[styles.numChangeText, { color: positive ? Colors.success : Colors.error }]}>
           {change > 0 ? '↑' : '↓'} {Math.abs(change)}%
         </Text>
         <Text style={styles.numChangeMeta}> vs last week</Text>
@@ -662,20 +617,20 @@ const styles = StyleSheet.create({
   // Wins/Improvements
   winCard: {
     marginBottom: Spacing.sm,
-    backgroundColor: '#D1FAE5',
-    borderColor: '#A7F3D0',
+    backgroundColor: Tints.successBg,
+    borderColor: Tints.successBorder,
     borderWidth: 1,
   },
   improveCard: {
     marginBottom: Spacing.sm,
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FDE68A',
+    backgroundColor: Tints.warningBg,
+    borderColor: Tints.warningBorder,
     borderWidth: 1,
   },
   unusualCard: {
     marginBottom: Spacing.sm,
-    backgroundColor: '#FEE2E2',
-    borderColor: '#FECACA',
+    backgroundColor: Tints.errorBg,
+    borderColor: Tints.errorBorder,
     borderWidth: 1,
   },
   winRow: {
@@ -788,7 +743,7 @@ const styles = StyleSheet.create({
   recCard: {
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.base,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: Tints.primaryBg,
     borderWidth: 1,
     borderColor: Colors.primaryLight,
   },

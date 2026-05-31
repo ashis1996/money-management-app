@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Colors, Typography, Spacing, BorderRadius } from '../../styles/theme';
+import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
 
 type Variant = 'primary' | 'success' | 'warning' | 'error' | 'info' | 'gray';
 
@@ -11,13 +11,20 @@ interface BadgeProps {
   icon?: string;
 }
 
+/**
+ * Badge variant palette.
+ *
+ * Pre-Phase-2 these were hand-picked light pastels (#EEF2FF, #D1FAE5, ...).
+ * They now resolve to the brand `Tints` set, which is dark-mode-correct
+ * and shares its formula with the screen-level tinted-card pattern.
+ */
 const variantColors: Record<Variant, { bg: string; text: string }> = {
-  primary: { bg: '#EEF2FF', text: Colors.primary },
-  success: { bg: '#D1FAE5', text: '#065F46' },
-  warning: { bg: '#FEF3C7', text: '#92400E' },
-  error: { bg: '#FEE2E2', text: '#991B1B' },
-  info: { bg: '#DBEAFE', text: '#1E40AF' },
-  gray: { bg: Colors.gray100, text: Colors.gray700 },
+  primary: { bg: Tints.primaryBg, text: Tints.primaryText },
+  success: { bg: Tints.successBg, text: Tints.successText },
+  warning: { bg: Tints.warningBg, text: Tints.warningText },
+  error: { bg: Tints.errorBg, text: Tints.errorText },
+  info: { bg: Tints.aiBg, text: Tints.aiText },
+  gray: { bg: Tints.neutralBg, text: Colors.onSurfaceVariant },
 };
 
 export function Badge({ text, variant = 'primary', size = 'md', icon }: BadgeProps) {
