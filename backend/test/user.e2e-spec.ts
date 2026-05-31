@@ -30,10 +30,7 @@ describe('UserController (e2e)', () => {
     it('should return current user profile', async () => {
       mockPrisma.user.findUnique.mockResolvedValue(mockUser);
 
-      const res = await request(server)
-        .get('/api/v1/users/me')
-        .set(authHeader())
-        .expect(200);
+      const res = await request(server).get('/api/v1/users/me').set(authHeader()).expect(200);
 
       expect(res.body.email).toBe(mockUser.email);
     });
@@ -41,10 +38,7 @@ describe('UserController (e2e)', () => {
     it('should return 404 for non-existent user', async () => {
       mockPrisma.user.findUnique.mockResolvedValue(null);
 
-      const res = await request(server)
-        .get('/api/v1/users/me')
-        .set(authHeader())
-        .expect(404);
+      const res = await request(server).get('/api/v1/users/me').set(authHeader()).expect(404);
 
       expect(res.body.message).toMatch(/not found/i);
     });
@@ -137,10 +131,110 @@ describe('UserController (e2e)', () => {
       // Bonus: ParseUUIDPipe stops the request before the controller, so
       // a stray static path like `/users/preferences` cannot accidentally
       // be swallowed by `:id`.
-      await request(server)
-        .get('/api/v1/users/not-a-uuid')
+      await request(server).get('/api/v1/users/not-a-uuid').set(authHeader()).expect(400);
+    });
+  });
+
+  describe('GET /api/v1/users/me/export', () => {
+    it("returns the caller's data bundle and writes a USER_DATA_EXPORT audit row", async () => {
+      // The export pulls from many tables in parallel; mock each table
+      // to return a single sentinel row so we can verify the bundle's
+      // shape without caring about the contents.
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: mockUser.id,
+        email: mockUser.email,
+        name: mockUser.name,
+        phone: mockUser.phone,
+        avatarUrl: null,
+        timezone: 'Asia/Kolkata',
+        currency: 'INR',
+        emailVerified: false,
+        phoneVerified: false,
+        archetype: 'BALANCED',
+        notificationPrefs: {},
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastLoginAt: null,
+      });
+      mockPrisma.account.findMany.mockResolvedValue([{ id: 'acc-1' }]);
+      mockPrisma.transaction.findMany.mockResolvedValue([{ id: 'tx-1' }]);
+      mockPrisma.subscription.findMany.mockResolvedValue([{ id: 'sub-1' }]);
+      mockPrisma.budget.findMany.mockResolvedValue([{ id: 'b-1' }]);
+      mockPrisma.goal.findMany.mockResolvedValue([{ id: 'g-1' }]);
+      mockPrisma.notification.findMany.mockResolvedValue([{ id: 'n-1' }]);
+      mockPrisma.smsLog.findMany.mockResolvedValue([{ id: 's-1' }]);
+
+      const res = await request(server)
+        .get('/api/v1/users/me/export')
         .set(authHeader())
-        .expect(400);
+        .expect(200);
+
+      expect(res.body.user).toMatchObject({ id: mockUser.id, email: mockUser.email });
+      expect(res.body.accounts).toHaveLength(1);
+      expect(res.body.transactions).toHaveLength(1);
+      expect(res.body.smsLogs).toHaveLength(1);
+      // The export bundle includes all 7 collection fields the regulator
+      // would expect — keeping this assertion shape-aware so a future
+      // refactor can't silently drop a category.
+      for (const key of [
+        'user',
+        'accounts',
+        'transactions',
+        'subscriptions',
+        'budgets',
+        'goals',
+        'notifications',
+        'smsLogs',
+      ]) {
+        expect(res.body[key]).toBeDefined();
+      }
+
+      // Audit row must be written — without this, "right to access"
+      // requests have no compliance trail.
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: mockUser.id,
+            action: 'USER_DATA_EXPORT',
+            entityType: 'User',
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('DELETE /api/v1/users/me', () => {
+    it('hard-deletes the caller and writes a USER_DELETE_SELF audit row before the delete', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockPrisma.user.delete.mockResolvedValue(mockUser);
+
+      await request(server).delete('/api/v1/users/me').set(authHeader()).expect(204);
+
+      // Audit must run BEFORE delete so the row survives even if the
+      // FK cascade is interrupted (e.g. a constraint violation
+      // somewhere downstream).
+      const auditCall = mockPrisma.auditLog.create.mock.invocationCallOrder[0];
+      const deleteCall = mockPrisma.user.delete.mock.invocationCallOrder[0];
+      expect(auditCall).toBeLessThan(deleteCall);
+
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: mockUser.id,
+            action: 'USER_DELETE_SELF',
+            entityType: 'User',
+          }),
+        }),
+      );
+      expect(mockPrisma.user.delete).toHaveBeenCalledWith({ where: { id: mockUser.id } });
+    });
+
+    it('returns 404 when the user is already gone', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+
+      await request(server).delete('/api/v1/users/me').set(authHeader()).expect(404);
+
+      expect(mockPrisma.user.delete).not.toHaveBeenCalled();
     });
   });
 });

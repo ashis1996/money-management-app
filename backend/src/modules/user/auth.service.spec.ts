@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../../config/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { HashUtils } from '../../common/utils/hash';
 
 jest.mock('../../common/utils/hash');
@@ -61,6 +62,13 @@ describe('AuthService', () => {
     get: jest.fn((key: string, defaultValue?: any) => defaultValue),
   };
 
+  // AuditService is fire-and-forget from the auth flows. The mock just
+  // tracks calls so tests can assert key compliance events were
+  // recorded, without exercising the real PrismaService write path.
+  const mockAuditService = {
+    record: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -68,6 +76,7 @@ describe('AuthService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: AuditService, useValue: mockAuditService },
       ],
     }).compile();
 
@@ -173,7 +182,12 @@ describe('AuthService', () => {
       });
       jest.spyOn(service as any, 'saveRefreshToken').mockResolvedValue(undefined);
 
-      const result = await service.register('new@example.com', 'password', 'New User', '+1234567890');
+      const result = await service.register(
+        'new@example.com',
+        'password',
+        'New User',
+        '+1234567890',
+      );
 
       expect(result).toBeDefined();
       expect(result.user.email).toBe('new@example.com');
@@ -191,7 +205,9 @@ describe('AuthService', () => {
     it('should throw BadRequestException when email already exists', async () => {
       mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
 
-      await expect(service.register('test@example.com', 'password')).rejects.toThrow(BadRequestException);
+      await expect(service.register('test@example.com', 'password')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 

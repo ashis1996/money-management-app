@@ -1,14 +1,12 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { Request } from 'express';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../config/prisma.service';
 import { HashUtils } from '../../common/utils/hash';
 import { requireSecret } from '../../config/secret-validation';
+import { AuditService } from '../audit/audit.service';
 import { LoginDto, AuthResponseDto, UserResponseDto } from '@money-management/shared/dto';
 
 @Injectable()
@@ -17,6 +15,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private audit: AuditService,
   ) {}
 
   /**
@@ -46,9 +45,31 @@ export class AuthService {
     return result as unknown as UserResponseDto;
   }
 
-  async login(loginDto: LoginDto): Promise<AuthResponseDto> {
+  async login(loginDto: LoginDto, request?: Request): Promise<AuthResponseDto> {
     const user = await this.validateUser(loginDto.email, loginDto.password);
-    if (!user) throw new UnauthorizedException('Invalid email or password');
+    if (!user) {
+      // Failed login is one of the most useful audit signals — repeated
+      // failures from the same IP are how brute-force attempts surface.
+      // We deliberately don't include the attempted password (pino redact
+      // would catch it anyway, but it's simpler to never write it).
+      void this.audit.record({
+        userId: null,
+        action: 'AUTH_LOGIN_FAILURE',
+        entityType: 'User',
+        entityId: null,
+        newValues: { email: loginDto.email },
+        request,
+      });
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    void this.audit.record({
+      userId: user.id,
+      action: 'AUTH_LOGIN_SUCCESS',
+      entityType: 'User',
+      entityId: user.id,
+      request,
+    });
 
     // validateUser returns the row sans passwordHash; tokenVersion is
     // present at runtime even though it isn't declared on UserResponseDto.
@@ -67,6 +88,7 @@ export class AuthService {
     password: string,
     name?: string,
     phone?: string,
+    request?: Request,
   ): Promise<AuthResponseDto> {
     const existingUser = await this.prisma.user.findUnique({ where: { email } });
     if (existingUser) throw new BadRequestException('Email already registered');
@@ -102,10 +124,24 @@ export class AuthService {
       },
     });
 
-    return this.issueSessionForUserId(user.id, user.email, user as UserResponseDto, user.tokenVersion);
+    void this.audit.record({
+      userId: user.id,
+      action: 'AUTH_REGISTER',
+      entityType: 'User',
+      entityId: user.id,
+      newValues: { email: user.email, hasPhone: !!user.phone },
+      request,
+    });
+
+    return this.issueSessionForUserId(
+      user.id,
+      user.email,
+      user as UserResponseDto,
+      user.tokenVersion,
+    );
   }
 
-  async refreshTokens(refreshToken: string): Promise<AuthResponseDto> {
+  async refreshTokens(refreshToken: string, request?: Request): Promise<AuthResponseDto> {
     const tokenHash = this.hashRefreshToken(refreshToken);
     const storedToken = await this.prisma.refreshToken.findUnique({
       where: { tokenHash },
@@ -119,6 +155,14 @@ export class AuthService {
     await this.prisma.refreshToken.delete({ where: { id: storedToken.id } });
 
     const { passwordHash: _ph, ...userView } = storedToken.user;
+
+    void this.audit.record({
+      userId: storedToken.user.id,
+      action: 'AUTH_REFRESH',
+      entityType: 'RefreshToken',
+      entityId: storedToken.id,
+      request,
+    });
 
     return this.issueSessionForUserId(
       storedToken.user.id,
@@ -145,10 +189,16 @@ export class AuthService {
    *     We also delete every refresh token. This is the "Sign out of all
    *     devices" / "Reset password" path.
    */
-  async logout(userId: string, refreshToken?: string): Promise<void> {
+  async logout(userId: string, refreshToken?: string, request?: Request): Promise<void> {
     if (refreshToken) {
       const tokenHash = this.hashRefreshToken(refreshToken);
       await this.prisma.refreshToken.deleteMany({ where: { tokenHash } });
+      void this.audit.record({
+        userId,
+        action: 'AUTH_LOGOUT',
+        entityType: 'RefreshToken',
+        request,
+      });
       return;
     }
 
@@ -159,19 +209,29 @@ export class AuthService {
       }),
       this.prisma.refreshToken.deleteMany({ where: { userId } }),
     ]);
+
+    void this.audit.record({
+      userId,
+      action: 'AUTH_LOGOUT_ALL',
+      entityType: 'User',
+      entityId: userId,
+      request,
+    });
   }
 
   /**
    * Convenience used by the LocalAuthGuard login flow where the user has
    * already been validated and we just need a session.
    */
-  async generateSession(user: UserResponseDto): Promise<AuthResponseDto> {
-    return this.issueSessionForUserId(
-      user.id,
-      user.email,
-      user,
-      (user as any).tokenVersion,
-    );
+  async generateSession(user: UserResponseDto, request?: Request): Promise<AuthResponseDto> {
+    void this.audit.record({
+      userId: user.id,
+      action: 'AUTH_LOGIN_SUCCESS',
+      entityType: 'User',
+      entityId: user.id,
+      request,
+    });
+    return this.issueSessionForUserId(user.id, user.email, user, (user as any).tokenVersion);
   }
 
   /**
