@@ -174,6 +174,12 @@ export const transactionsApi = {
       query: filters as Record<string, unknown> | undefined,
     }),
   getById: (id: string) => request<Env<Transaction>>(`/transactions/${id}`),
+  create: (data: Partial<Transaction> & { amount: number; type: TransactionType }) =>
+    request<Env<Transaction>>('/transactions', { method: 'POST', body: data }),
+  update: (id: string, data: Partial<Transaction>) =>
+    request<Env<Transaction>>(`/transactions/${id}`, { method: 'PUT', body: data }),
+  delete: (id: string) => request<Env<{ ok: true }>>(`/transactions/${id}`, { method: 'DELETE' }),
+  search: (q: string) => request<Env<Transaction[]>>('/transactions/search', { query: { q } }),
   getCategories: (from?: string, to?: string) =>
     request<Env<CategorySpending[]>>('/transactions/analytics/categories', {
       query: { from, to },
