@@ -37,15 +37,12 @@ export interface SmsIngestResult {
 }
 
 const isExpoGo =
-  Constants?.executionEnvironment === 'storeClient' ||
-  Constants?.appOwnership === 'expo';
+  Constants?.executionEnvironment === 'storeClient' || Constants?.appOwnership === 'expo';
 
 /**
  * Submit a single SMS to the backend for parsing.
  */
-export async function ingestSms(
-  payload: SmsIngestPayload,
-): Promise<SmsIngestResult> {
+export async function ingestSms(payload: SmsIngestPayload): Promise<SmsIngestResult> {
   try {
     const res = await api.post<ApiEnvelope<SmsIngestResult>>('/sms/ingest', {
       body: payload.body,
@@ -69,16 +66,17 @@ export async function ingestSms(
 export async function ingestSmsBatch(payloads: SmsIngestPayload[]) {
   if (payloads.length === 0) return { success: true, processed: 0 };
   try {
-    const res = await api.post<
-      ApiEnvelope<{ processed: number; transactionsCreated: number }>
-    >('/sms/ingest/batch', {
-      messages: payloads.map((p) => ({
-        body: p.body,
-        sender: p.sender,
-        timestamp: p.timestamp ?? new Date().toISOString(),
-        phoneNumber: p.phoneNumber,
-      })),
-    });
+    const res = await api.post<ApiEnvelope<{ processed: number; transactionsCreated: number }>>(
+      '/sms/ingest/batch',
+      {
+        messages: payloads.map((p) => ({
+          body: p.body,
+          sender: p.sender,
+          timestamp: p.timestamp ?? new Date().toISOString(),
+          phoneNumber: p.phoneNumber,
+        })),
+      },
+    );
     return res.data;
   } catch (err: any) {
     return { success: false, error: err?.message };
@@ -108,20 +106,17 @@ export function canReadSmsInBackground(): boolean {
  * Hook point for plugging in a native SMS listener in a dev build.
  * Returns an unsubscribe function. In Expo Go this is a no-op.
  */
-export function registerNativeSmsListener(
-  handler: (sms: SmsIngestPayload) => void,
-): () => void {
+export function registerNativeSmsListener(handler: (sms: SmsIngestPayload) => void): () => void {
   if (!canReadSmsInBackground()) {
     if (Platform.OS === 'android' && isExpoGo) {
-      console.info(
-        '[sms] Native SMS listener unavailable in Expo Go. Use a dev build.',
-      );
+      console.info('[sms] Native SMS listener unavailable in Expo Go. Use a dev build.');
     }
     return () => undefined;
   }
 
   try {
     // Lazy require keeps Metro from choking when the package isn't installed.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const SmsListener = require('react-native-android-sms-listener');
     const subscription = SmsListener.addListener((message: any) => {
       handler({
@@ -150,9 +145,7 @@ export function startSmsAutoCapture(): () => void {
 
     const result = await ingestSms(sms);
     if (result.transactionCreated) {
-      console.info(
-        `[sms] Auto-captured transaction ${result.transactionId} from ${sms.sender}`,
-      );
+      console.info(`[sms] Auto-captured transaction ${result.transactionId} from ${sms.sender}`);
     }
   });
 }
@@ -177,8 +170,7 @@ export function smsReadingAvailability(): {
   if (isExpoGo) {
     return {
       available: false,
-      message:
-        'SMS auto-capture requires a custom build (not available in Expo Go).',
+      message: 'SMS auto-capture requires a custom build (not available in Expo Go).',
       fallback: 'Manual entry and SMS sharing from your messaging app still work.',
     };
   }
@@ -202,8 +194,11 @@ export async function openSystemSettings() {
  * and tries to extract sender + body before ingesting.
  */
 export async function ingestSharedText(rawText: string) {
-  // Try to detect "SENDER: body" pattern shared from messaging apps
-  const senderMatch = rawText.match(/^([A-Z0-9-]{3,11})\s*[:\-]\s*([\s\S]+)$/);
+  // The senderMatch regex extracts the "SENDER: body" prefix that
+  // messaging apps prepend when a user shares an SMS. The character
+  // class accepts uppercase, digits, and hyphens; `:` and `-` are
+  // listed bare since they're not regex metacharacters inside `[...]`.
+  const senderMatch = rawText.match(/^([A-Z0-9-]{3,11})\s*[:-]\s*([\s\S]+)$/);
   let sender: string;
   let body: string;
   if (senderMatch) {

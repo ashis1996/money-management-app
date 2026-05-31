@@ -17,7 +17,21 @@ import { RefreshTokenGuard } from '../src/common/guards/refresh-token.guard';
 export class MockRabbitMQModule {}
 
 export class TestAuthGuard implements CanActivate {
-  constructor(private testUser = { id: 'test-user-1', email: 'test@example.com' }) {}
+  // Default test user. Note: id MUST be a real UUID v4 because controllers
+  // can apply ParseUUIDPipe on `:id` params (as user.controller.ts does).
+  // The same UUID is mirrored on `mockUser` below so e2e tests can
+  // round-trip self-lookups (`GET /users/:id`).
+  //
+  // tokenVersion is included so AuthService.issueSessionForUserId() can
+  // skip the DB roundtrip — without it the login flow falls into a
+  // findFirst() the e2e mock layer wouldn't satisfy.
+  constructor(
+    private testUser = {
+      id: '11111111-1111-4111-8111-111111111111',
+      email: 'test@example.com',
+      tokenVersion: 0,
+    },
+  ) {}
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest();
     req.user = this.testUser;
@@ -45,6 +59,8 @@ export const createMockPrisma = () => ({
     findFirst: jest.fn(),
     findMany: jest.fn(),
     create: jest.fn(),
+    // SMS dedup uses upsert against (userId, externalReferenceId).
+    upsert: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
     count: jest.fn(),
@@ -162,11 +178,14 @@ export async function createTestApp(options?: {
 }
 
 export const mockUser = {
-  id: 'test-user-1',
+  id: '11111111-1111-4111-8111-111111111111',
   email: 'test@example.com',
   name: 'Test User',
   phone: '+1234567890',
   isActive: true,
+  // Embedded in every issued JWT's `tv` claim and checked by JwtStrategy.
+  // Tests pin to 0 so the default access tokens validate cleanly.
+  tokenVersion: 0,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

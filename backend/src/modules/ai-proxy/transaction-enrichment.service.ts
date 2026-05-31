@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { PrismaService } from '../../config/prisma.service';
 import { ActionCardService } from '../action-card/action-card.service';
 import { AiProxyService } from './ai-proxy.service';
@@ -23,24 +25,29 @@ import { AiProxyService } from './ai-proxy.service';
  * already persisted by the time we get here.
  *
  * Throttling: action cards and health score recompute are heavy. The
- * `userId`-keyed maps below skip duplicate work if multiple transactions
- * land within a short window.
+ * cooldown lives in the shared cache (Redis when configured) so every
+ * backend replica observes the same window. Previously each pod kept its
+ * own in-memory `Map`, which meant a 3-replica deploy ran each fan-out
+ * three times per user.
  */
 @Injectable()
 export class TransactionEnrichmentService {
   private readonly logger = new Logger(TransactionEnrichmentService.name);
 
-  // Per-user cooldown for the heavy AI fan-outs. Behavioral tagging is
-  // cheap and runs every time; action cards + health score regen run at
-  // most once per user per cooldown window to avoid hammering the AI
-  // service when bulk-importing SMS history.
-  private readonly heavyCooldownMs = 60_000;
-  private readonly lastHeavyRunAt = new Map<string, number>();
+  // Cooldown for the heavy AI fan-outs. Behavioral tagging is cheap and
+  // runs every time; action cards + health score regen run at most once
+  // per user per window to avoid hammering the AI service when bulk-
+  // importing SMS history.
+  //
+  // Stored in seconds for cache-manager-redis-store; the cache-manager
+  // helper signature accepts seconds for `ttl` on `set`.
+  private readonly heavyCooldownSeconds = 60;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiProxy: AiProxyService,
     private readonly actionCards: ActionCardService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) {}
 
   /**
@@ -55,22 +62,45 @@ export class TransactionEnrichmentService {
       ),
     );
 
-    // Debounce heavy AI work per user.
-    const now = Date.now();
-    const last = this.lastHeavyRunAt.get(userId) ?? 0;
-    if (now - last < this.heavyCooldownMs) {
+    // Distributed cooldown. The check-then-set is racy across pods, but the
+    // worst case is two pods running enrichment simultaneously instead of
+    // skipping — already a 3x improvement over the previous Map-per-pod.
+    // For perfect mutual exclusion we'd need a Redis SETNX primitive, which
+    // the cache-manager API doesn't expose. The current behavior is the
+    // right cost/complexity tradeoff for the workload.
+    const cooldownKey = this.cooldownKey(userId);
+    const heldByOtherWorker = await this.cache.get<string>(cooldownKey);
+    if (heldByOtherWorker) {
       this.logger.debug(
         `Skipping heavy enrichment for user=${userId}, cooldown active.`,
       );
       return;
     }
-    this.lastHeavyRunAt.set(userId, now);
+    await this.cache.set(cooldownKey, '1', this.heavyCooldownSeconds);
 
     // Fire heavy work in parallel; failures are independent.
     await Promise.allSettled([
       this.recomputeHealthScore(userId),
       this.regenerateActionCards(userId),
     ]);
+
+    // Recompute landed (or at least we tried). Drop every cached AI
+    // response for this user so the next dashboard / health-score read
+    // sees fresh data within the next request, not after the cache TTL.
+    // Failure here is logged but never thrown — the cache miss is
+    // recoverable on its own.
+    try {
+      await this.aiProxy.invalidateUser(userId);
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to invalidate AI cache for user=${userId}: ${err?.message ?? err}`,
+      );
+    }
+  }
+
+  /** Cooldown key for a given user. Namespaced so it can't collide. */
+  private cooldownKey(userId: string): string {
+    return `enrichment:cooldown:${userId}`;
   }
 
   /**

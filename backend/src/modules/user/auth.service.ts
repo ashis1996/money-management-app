@@ -50,15 +50,16 @@ export class AuthService {
     const user = await this.validateUser(loginDto.email, loginDto.password);
     if (!user) throw new UnauthorizedException('Invalid email or password');
 
-    const tokens = await this.generateTokens(user.id, user.email);
-    await this.saveRefreshToken(user.id, tokens.refreshToken);
-
-    return {
-      user,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      expiresIn: parseInt(this.configService.get<string>('JWT_EXPIRES_IN', '15m')),
-    };
+    // validateUser returns the row sans passwordHash; tokenVersion is
+    // present at runtime even though it isn't declared on UserResponseDto.
+    // Pass it through so issueSessionForUserId doesn't have to round-trip
+    // to the DB just to read a value we already have.
+    return this.issueSessionForUserId(
+      user.id,
+      user.email,
+      user as UserResponseDto,
+      (user as any).tokenVersion,
+    );
   }
 
   async register(
@@ -84,6 +85,7 @@ export class AuthService {
         email: true,
         name: true,
         phone: true,
+        tokenVersion: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -100,15 +102,7 @@ export class AuthService {
       },
     });
 
-    const tokens = await this.generateTokens(user.id, user.email);
-    await this.saveRefreshToken(user.id, tokens.refreshToken);
-
-    return {
-      user: user as UserResponseDto,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      expiresIn: parseInt(this.configService.get<string>('JWT_EXPIRES_IN', '15m')),
-    };
+    return this.issueSessionForUserId(user.id, user.email, user as UserResponseDto, user.tokenVersion);
   }
 
   async refreshTokens(refreshToken: string): Promise<AuthResponseDto> {
@@ -124,31 +118,82 @@ export class AuthService {
 
     await this.prisma.refreshToken.delete({ where: { id: storedToken.id } });
 
-    const tokens = await this.generateTokens(storedToken.user.id, storedToken.user.email);
-    await this.saveRefreshToken(storedToken.user.id, tokens.refreshToken);
+    const { passwordHash: _ph, ...userView } = storedToken.user;
 
-    const { passwordHash: _ph, ...user } = storedToken.user;
-
-    return {
-      user: user as unknown as UserResponseDto,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      expiresIn: parseInt(this.configService.get<string>('JWT_EXPIRES_IN', '15m')),
-    };
+    return this.issueSessionForUserId(
+      storedToken.user.id,
+      storedToken.user.email,
+      userView as unknown as UserResponseDto,
+      storedToken.user.tokenVersion,
+    );
   }
 
+  /**
+   * Logout.
+   *
+   * Two modes:
+   *
+   *   - logout(userId, refreshToken): single-device logout. Only the
+   *     specific refresh token is revoked. The access token issued
+   *     alongside it remains valid for the rest of its ~15-min lifetime.
+   *     This matches the typical mobile "Sign out" expectation: the
+   *     device's session ends, other devices keep working.
+   *
+   *   - logout(userId): logout-everywhere. We bump `User.tokenVersion`,
+   *     which immediately invalidates *every* outstanding access token
+   *     for this user (JwtStrategy will reject them on the next request).
+   *     We also delete every refresh token. This is the "Sign out of all
+   *     devices" / "Reset password" path.
+   */
   async logout(userId: string, refreshToken?: string): Promise<void> {
     if (refreshToken) {
       const tokenHash = this.hashRefreshToken(refreshToken);
       await this.prisma.refreshToken.deleteMany({ where: { tokenHash } });
-    } else {
-      await this.prisma.refreshToken.deleteMany({ where: { userId } });
+      return;
     }
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { tokenVersion: { increment: 1 } },
+      }),
+      this.prisma.refreshToken.deleteMany({ where: { userId } }),
+    ]);
   }
 
+  /**
+   * Convenience used by the LocalAuthGuard login flow where the user has
+   * already been validated and we just need a session.
+   */
   async generateSession(user: UserResponseDto): Promise<AuthResponseDto> {
-    const tokens = await this.generateTokens(user.id, user.email);
-    await this.saveRefreshToken(user.id, tokens.refreshToken);
+    return this.issueSessionForUserId(
+      user.id,
+      user.email,
+      user,
+      (user as any).tokenVersion,
+    );
+  }
+
+  /**
+   * Single internal entry point that issues a fresh access+refresh token
+   * pair. Reads the user's current tokenVersion (or accepts it from the
+   * caller to save a roundtrip) and embeds it in the access token's `tv`
+   * claim so JwtStrategy can reject revoked tokens.
+   */
+  private async issueSessionForUserId(
+    userId: string,
+    email: string,
+    user: UserResponseDto,
+    knownTokenVersion?: number,
+  ): Promise<AuthResponseDto> {
+    const tokenVersion: number =
+      knownTokenVersion ??
+      (await this.prisma.user
+        .findFirst({ where: { id: userId }, select: { tokenVersion: true } })
+        .then((u) => u?.tokenVersion ?? 0));
+
+    const tokens = await this.generateTokens(userId, email, tokenVersion);
+    await this.saveRefreshToken(userId, tokens.refreshToken);
 
     return {
       user,
@@ -161,11 +206,12 @@ export class AuthService {
   private async generateTokens(
     userId: string,
     email: string,
+    tokenVersion: number,
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync({ sub: userId, email }),
+      this.jwtService.signAsync({ sub: userId, email, tv: tokenVersion }),
       this.jwtService.signAsync(
-        { sub: userId, email, type: 'refresh' },
+        { sub: userId, email, tv: tokenVersion, type: 'refresh' },
         {
           // No fallback. requireSecret() throws if REFRESH_TOKEN_SECRET is
           // missing or a known placeholder, ensuring we never sign refresh

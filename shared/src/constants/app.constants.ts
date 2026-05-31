@@ -1,7 +1,7 @@
 ﻿// Application constants
 
 export const DEFAULT_CATEGORIES = [
-  { name: 'FOOD', icon: 'restaurant', color: '#FF6B6B' },
+  { name: 'FOOD_DINING', icon: 'restaurant', color: '#FF6B6B' },
   { name: 'SHOPPING', icon: 'shopping-bag', color: '#4ECDC4' },
   { name: 'TRANSPORT', icon: 'car', color: '#45B7D1' },
   { name: 'TRAVEL', icon: 'plane', color: '#96CEB4' },

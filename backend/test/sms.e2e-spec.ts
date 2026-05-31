@@ -40,13 +40,22 @@ describe('SmsController (e2e)', () => {
         isProcessed: false,
       });
       mockPrisma.smsLog.update.mockResolvedValue({ id: 'sms-1', isProcessed: true });
-      mockPrisma.transaction.create.mockResolvedValue({
+      // ingestSms now upserts on (userId, externalReferenceId) instead of
+      // creating directly. Returning a row whose createdAt === updatedAt
+      // signals a fresh insert (not a no-op against an existing row), so
+      // the service publishes transaction.created and reports
+      // transactionCreated: true to the caller.
+      const txTimestamp = new Date('2026-05-01T00:00:00Z');
+      mockPrisma.transaction.findUnique.mockResolvedValue(null); // no dedup hit
+      mockPrisma.transaction.upsert.mockResolvedValue({
         id: 'tx-1',
         userId: mockUser.id,
         amount: 500,
         type: 'DEBIT',
         category: 'SHOPPING',
         merchant: 'Amazon',
+        createdAt: txTimestamp,
+        updatedAt: txTimestamp,
       });
 
       const res = await request(server)

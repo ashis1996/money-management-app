@@ -113,39 +113,66 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, document);
 
   // ------------------------------------------------------------------
-  // Attach RabbitMQ microservice listener so @MessagePattern handlers
-  // (RabbitMQConsumer) actually receive published events. Without this,
-  // every publishTransactionCreated / publishSmsReceived was a no-op
-  // because there was no consumer subscribed to the queue.
+  // Attach one RabbitMQ microservice per event-type queue. Each queue's
+  // consumer runs independently so a slow handler can't starve unrelated
+  // ones, and prefetch can be tuned per workload.
+  //
+  // Heavy work (transaction.created → AI fan-out) gets a low prefetch so
+  // it can't gulp a backlog and lock up the worker; light work
+  // (notifications, subscription.detected) gets a higher prefetch.
   // ------------------------------------------------------------------
   const rabbitUrl = configService.get<string>(
     'RABBITMQ_URL',
     'amqp://guest:guest@localhost:5672',
   );
-  const queue = configService.get<string>('RABBITMQ_SMS_QUEUE', 'sms.processing');
 
-  app.connectMicroservice<MicroserviceOptions>(
+  const queues: Array<{ env: string; fallback: string; prefetch: number; label: string }> = [
     {
-      transport: Transport.RMQ,
-      options: {
-        urls: [rabbitUrl],
-        queue,
-        queueOptions: { durable: true },
-        // noAck:false (default) so failed handlers can be requeued.
-        // prefetchCount keeps the worker from gulping a backlog at once.
-        prefetchCount: 10,
-      },
+      env: 'RABBITMQ_TRANSACTION_QUEUE',
+      fallback: 'transaction.events',
+      prefetch: 5,
+      label: 'transaction',
     },
-    { inheritAppConfig: true },
-  );
+    {
+      env: 'RABBITMQ_SUBSCRIPTION_QUEUE',
+      fallback: 'subscription.events',
+      prefetch: 20,
+      label: 'subscription',
+    },
+    {
+      env: 'RABBITMQ_NOTIFICATION_QUEUE',
+      fallback: 'notification.events',
+      prefetch: 50,
+      label: 'notification',
+    },
+  ];
+
+  const startedQueues: string[] = [];
+  for (const q of queues) {
+    const queue = configService.get<string>(q.env, q.fallback);
+    app.connectMicroservice<MicroserviceOptions>(
+      {
+        transport: Transport.RMQ,
+        options: {
+          urls: [rabbitUrl],
+          queue,
+          queueOptions: { durable: true },
+          // noAck:false (default) so failed handlers can be requeued.
+          prefetchCount: q.prefetch,
+        },
+      },
+      { inheritAppConfig: true },
+    );
+    startedQueues.push(`${q.label}=${queue}`);
+  }
 
   try {
     await app.startAllMicroservices();
-    logger.log(`RabbitMQ consumer listening on queue '${queue}'`);
+    logger.log(`RabbitMQ consumers listening on queues: ${startedQueues.join(', ')}`);
   } catch (error: any) {
     // Don't crash the HTTP server if the broker is briefly unavailable.
     logger.warn(
-      `Could not start RabbitMQ microservice: ${error?.message ?? error}. ` +
+      `Could not start RabbitMQ microservices: ${error?.message ?? error}. ` +
         `HTTP API will still serve, but async event handlers are disabled until the broker is reachable.`,
     );
   }

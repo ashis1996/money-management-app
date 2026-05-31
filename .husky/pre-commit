@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run lint-staged on whatever's staged. This formats/lints touched files
+# only — keeps commit-time fast and avoids surfacing churn on files the
+# author didn't change.
+npx lint-staged

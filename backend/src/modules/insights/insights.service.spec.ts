@@ -104,14 +104,18 @@ describe('InsightsService', () => {
 
   describe('getCategoryBreakdown', () => {
     it('should calculate category percentages', async () => {
+      // The service's groupBy uses `by: ['categoryId']`, so the mock must
+      // return rows keyed by `categoryId` — not the legacy `category`
+      // shorthand. Same for the assertion below.
       mockPrismaService.transaction.groupBy.mockResolvedValue([
-        { category: 'FOOD_DINING', _sum: { amount: 6000 }, _count: { id: 6 } },
-        { category: 'SHOPPING', _sum: { amount: 4000 }, _count: { id: 4 } },
+        { categoryId: 'FOOD_DINING', _sum: { amount: 6000 }, _count: { id: 6 } },
+        { categoryId: 'SHOPPING', _sum: { amount: 4000 }, _count: { id: 4 } },
       ]);
 
       const result = await (service as any).getCategoryBreakdown('user-1', new Date(), new Date());
 
       expect(result).toHaveLength(2);
+      expect(result[0].categoryId).toBe('FOOD_DINING');
       expect(result[0].percentage).toBe(60);
       expect(result[1].percentage).toBe(40);
     });
@@ -127,24 +131,27 @@ describe('InsightsService', () => {
 
   describe('getTopMerchants', () => {
     it('should return top merchants sorted by amount', async () => {
+      // Service groups by ['merchantName'] so each row's key is
+      // `merchantName` (matches the Prisma column). The previous
+      // `merchant` shorthand silently returned undefined.
       mockPrismaService.transaction.groupBy.mockResolvedValue([
-        { merchant: 'Amazon', _sum: { amount: 10000 }, _count: { id: 10 } },
-        { merchant: 'Zomato', _sum: { amount: 5000 }, _count: { id: 5 } },
-        { merchant: 'Uber', _sum: { amount: 3000 }, _count: { id: 3 } },
+        { merchantName: 'Amazon', _sum: { amount: 10000 }, _count: { id: 10 } },
+        { merchantName: 'Zomato', _sum: { amount: 5000 }, _count: { id: 5 } },
+        { merchantName: 'Uber', _sum: { amount: 3000 }, _count: { id: 3 } },
       ]);
 
       const result = await (service as any).getTopMerchants('user-1', new Date(), new Date(), 5);
 
       expect(result).toHaveLength(3);
-      expect(result[0].merchant).toBe('Amazon');
+      expect(result[0].merchantName).toBe('Amazon');
       expect(result[0].amount).toBe(10000);
     });
 
     it('should limit results to specified limit', async () => {
       mockPrismaService.transaction.groupBy.mockResolvedValue([
-        { merchant: 'A', _sum: { amount: 1000 }, _count: { id: 1 } },
-        { merchant: 'B', _sum: { amount: 900 }, _count: { id: 1 } },
-        { merchant: 'C', _sum: { amount: 800 }, _count: { id: 1 } },
+        { merchantName: 'A', _sum: { amount: 1000 }, _count: { id: 1 } },
+        { merchantName: 'B', _sum: { amount: 900 }, _count: { id: 1 } },
+        { merchantName: 'C', _sum: { amount: 800 }, _count: { id: 1 } },
       ]);
 
       const result = await (service as any).getTopMerchants('user-1', new Date(), new Date(), 2);
@@ -196,8 +203,22 @@ describe('InsightsService', () => {
         netSavings: 10000,
         savingsRate: 50,
         byCategory: [
-          { category: 'FOOD_DINING', amount: 5000, percentage: 50, transactionCount: 10, averageTransaction: 500, changeFromPrevious: 0 },
-          { category: 'SHOPPING', amount: 3000, percentage: 30, transactionCount: 5, averageTransaction: 600, changeFromPrevious: 0 },
+          {
+            category: 'FOOD_DINING',
+            amount: 5000,
+            percentage: 50,
+            transactionCount: 10,
+            averageTransaction: 500,
+            changeFromPrevious: 0,
+          },
+          {
+            category: 'SHOPPING',
+            amount: 3000,
+            percentage: 30,
+            transactionCount: 5,
+            averageTransaction: 600,
+            changeFromPrevious: 0,
+          },
         ],
         topMerchants: [],
         dailyAverage: 333,

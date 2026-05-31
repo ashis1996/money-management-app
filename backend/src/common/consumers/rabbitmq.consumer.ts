@@ -1,7 +1,8 @@
-import { Controller, OnModuleInit } from '@nestjs/common';
+import { Controller, Inject, OnModuleInit } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { MessagePattern, Payload } from '@nestjs/microservices';
+import type { Cache } from 'cache-manager';
 import { PrismaService } from '../../config/prisma.service';
-import { SmsService } from '../../modules/sms/sms.service';
 import { SubscriptionService } from '../../modules/subscription/subscription.service';
 import { NotificationService } from '../../modules/notification/notification.service';
 import { TransactionEnrichmentService } from '../../modules/ai-proxy/transaction-enrichment.service';
@@ -18,12 +19,25 @@ interface RabbitMQMessage<T> {
 export class RabbitMQConsumer implements OnModuleInit {
   private readonly logger = new Logger(RabbitMQConsumer.name);
 
+  /**
+   * Per-merchant cooldown for subscription pattern detection. Without this
+   * a backfill of 1 year of SMS could fire detection O(N²) times — every
+   * incoming transaction re-fetches the merchant's full history and
+   * recomputes std-dev / CV / next-billing-date.
+   *
+   * The cooldown lives in the shared cache (Redis when configured) so
+   * every backend replica sees the same window. TTL is 1h: long enough
+   * to absorb a backfill, short enough that legitimate user behavior
+   * changes (e.g. switching plans) get re-detected within the day.
+   */
+  private static readonly SUB_DETECT_COOLDOWN_SECONDS = 60 * 60;
+
   constructor(
-    private smsService: SmsService,
     private subscriptionService: SubscriptionService,
     private notificationService: NotificationService,
     private enrichment: TransactionEnrichmentService,
     private prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) {}
 
   async onModuleInit() {
@@ -31,92 +45,27 @@ export class RabbitMQConsumer implements OnModuleInit {
   }
 
   /**
-   * Consumes SMS_RECEIVED events
-   * Processes raw SMS and creates transactions
+   * NOTE: `sms.received` no longer has a publisher.
+   *
+   * The original design had SmsService publish `sms.received` AND
+   * synchronously create a Transaction, while this consumer ALSO created a
+   * Transaction from the same SMS — a guaranteed double-write race. The
+   * dedup key on Transaction (`userId, externalReferenceId`) papered over
+   * the symptom but left two parser invocations and two notification
+   * round-trips per SMS.
+   *
+   * The single source of truth is now the synchronous path in
+   * SmsService.ingestSms, which upserts the Transaction by dedup hash and
+   * publishes a single `transaction.created` event. The handler that used
+   * to live here has been deleted intentionally; do not re-introduce it.
    */
-  @MessagePattern('sms.received')
-  async handleSmsReceived(@Payload() message: RabbitMQMessage<{ smsId: string; body: string; sender: string; timestamp: Date }>) {
-    this.logger.log(`Processing SMS: ${message.data.smsId}`);
-
-    try {
-      const { smsId, body, sender, timestamp } = message.data;
-
-      // Parse the SMS
-      const parsed = await this.smsService.parseSms(body, sender, timestamp);
-
-      // Update SMS log
-      await this.prisma.smsLog.update({
-        where: { id: smsId },
-        data: {
-          isProcessed: true,
-          parsedData: parsed as any,
-        },
-      });
-
-      // Create transaction if we have valid data
-      if (parsed.amount && parsed.transactionType) {
-        const smsLog = await this.prisma.smsLog.findUnique({
-          where: { id: smsId },
-        });
-
-        if (smsLog) {
-          // Avoid double-creating: SmsService.ingestSms already creates the
-          // transaction and links it. The legacy publish path lands here too;
-          // skip if a transaction is already attached.
-          if (smsLog.transactionId) {
-            this.logger.debug(
-              `SMS ${smsId} already has transaction ${smsLog.transactionId}, skipping consumer create.`,
-            );
-            return;
-          }
-
-          const transaction = await this.prisma.transaction.create({
-            data: {
-              userId: smsLog.userId,
-              amount: parsed.amount,
-              type: parsed.transactionType,
-              categoryId: parsed.category,
-              merchantName: parsed.merchant,
-              transactionDate: parsed.timestamp,
-              rawSmsText: body,
-              smsSenderId: sender,
-              source: 'SMS',
-              aiSuggestedCategory: parsed.category ?? null,
-              aiSuggestedMerchant: parsed.merchant ?? null,
-              aiConfidence: parsed.confidence ?? null,
-            },
-          });
-
-          // Link SMS to transaction
-          await this.prisma.smsLog.update({
-            where: { id: smsId },
-            data: { transactionId: transaction.id },
-          });
-
-          this.logger.log(`Created transaction ${transaction.id} from SMS`);
-
-          // Send notification for large transactions
-          if (parsed.amount >= 1000) {
-            await this.notificationService.sendTransactionNotification(smsLog.userId, {
-              amount: parsed.amount,
-              merchant: parsed.merchant,
-              type: parsed.transactionType,
-              category: parsed.category,
-            });
-          }
-        }
-      }
-    } catch (error: any) {
-      this.logger.error(`Failed to process SMS ${message.data.smsId}: ${error?.message ?? error}`);
-    }
-  }
 
   /**
    * Consumes TRANSACTION_CREATED events.
    *
    * Fans out three concerns, each independent:
    *   1. Transaction notification (existing behavior)
-   *   2. Subscription pattern detection (existing behavior)
+   *   2. Subscription pattern detection (cooldown-throttled)
    *   3. AI enrichment — behavior tagging, health-score recompute,
    *      action card regeneration. See TransactionEnrichmentService.
    */
@@ -159,7 +108,7 @@ export class RabbitMQConsumer implements OnModuleInit {
 
         if (transaction.type === 'DEBIT' && transaction.merchantName) {
           try {
-            await this.checkForSubscriptionPattern(userId, transaction.merchantName);
+            await this.maybeCheckForSubscriptionPattern(userId, transaction.merchantName);
           } catch (err: any) {
             this.logger.warn(
               `Subscription pattern check failed for tx=${transactionId}: ${err?.message ?? err}`,
@@ -184,7 +133,15 @@ export class RabbitMQConsumer implements OnModuleInit {
    * Sends notification to user about new subscription
    */
   @MessagePattern('subscription.detected')
-  async handleSubscriptionDetected(@Payload() message: RabbitMQMessage<{ subscriptionId: string; userId: string; merchant: string; amount: number }>) {
+  async handleSubscriptionDetected(
+    @Payload()
+    message: RabbitMQMessage<{
+      subscriptionId: string;
+      userId: string;
+      merchant: string;
+      amount: number;
+    }>,
+  ) {
     this.logger.log(`Processing subscription detection: ${message.data.subscriptionId}`);
 
     try {
@@ -213,7 +170,15 @@ export class RabbitMQConsumer implements OnModuleInit {
    * Creates notifications in the database
    */
   @MessagePattern('notifications')
-  async handleNotificationRequest(@Payload() message: RabbitMQMessage<{ userId: string; type: string; title: string; body: string }>) {
+  async handleNotificationRequest(
+    @Payload()
+    message: RabbitMQMessage<{
+      userId: string;
+      type: string;
+      title: string;
+      body: string;
+    }>,
+  ) {
     this.logger.log(`Processing notification request for user: ${message.data.userId}`);
 
     try {
@@ -236,7 +201,61 @@ export class RabbitMQConsumer implements OnModuleInit {
   }
 
   /**
-   * Check if a merchant transaction pattern indicates a subscription
+   * Distributed cooldown around `checkForSubscriptionPattern`.
+   *
+   * For a given (userId, merchant) pair we run detection at most once per
+   * `SUB_DETECT_COOLDOWN_SECONDS`. The cache.set acts as the lock; a
+   * concurrent racer that finds the key already set bails out cheaply.
+   *
+   * The race window between get-then-set is small and harmless: at worst
+   * two pods both run detection in parallel, which is still O(merchants)
+   * instead of the previous O(transactions).
+   */
+  private async maybeCheckForSubscriptionPattern(
+    userId: string,
+    merchantName: string,
+  ): Promise<void> {
+    const key = this.subscriptionDetectKey(userId, merchantName);
+
+    let alreadyRunning: string | null | undefined = undefined;
+    try {
+      alreadyRunning = await this.cache.get<string>(key);
+    } catch (err: any) {
+      // Cache miss / outage => fall through and run detection. Better to
+      // do a bit of redundant work than to skip detection entirely.
+      this.logger.debug(
+        `Subscription cooldown lookup failed for ${key}: ${err?.message ?? err}`,
+      );
+    }
+    if (alreadyRunning) {
+      this.logger.debug(
+        `Subscription detection skipped for user=${userId} merchant=${merchantName}: cooldown active.`,
+      );
+      return;
+    }
+
+    // Set the cooldown FIRST, then run detection. If detection fails, the
+    // cooldown still expires after TTL — we don't need to clean it up.
+    try {
+      await this.cache.set(key, '1', RabbitMQConsumer.SUB_DETECT_COOLDOWN_SECONDS * 1000);
+    } catch (err: any) {
+      this.logger.debug(
+        `Subscription cooldown set failed for ${key}: ${err?.message ?? err}`,
+      );
+    }
+
+    await this.checkForSubscriptionPattern(userId, merchantName);
+  }
+
+  private subscriptionDetectKey(userId: string, merchantName: string): string {
+    // Lower-case the merchant so "Netflix" and "netflix" share a cooldown.
+    return `subscription:detect:${userId}:${merchantName.toLowerCase().trim()}`;
+  }
+
+  /**
+   * Check if a merchant transaction pattern indicates a subscription.
+   * Always invoked through `maybeCheckForSubscriptionPattern` so the
+   * cooldown is enforced.
    */
   private async checkForSubscriptionPattern(userId: string, merchantName: string) {
     // Get all transactions for this merchant
@@ -280,7 +299,9 @@ export class RabbitMQConsumer implements OnModuleInit {
     const avgAmount = amounts.reduce((sum, a) => sum + a, 0) / amounts.length;
 
     // Check amount consistency (coefficient of variation)
-    const stdDev = Math.sqrt(amounts.reduce((sum, a) => sum + Math.pow(a - avgAmount, 2), 0) / amounts.length);
+    const stdDev = Math.sqrt(
+      amounts.reduce((sum, a) => sum + Math.pow(a - avgAmount, 2), 0) / amounts.length,
+    );
     const cv = stdDev / avgAmount;
 
     // If amounts are consistent (CV < 0.3), likely a subscription
@@ -310,10 +331,15 @@ export class RabbitMQConsumer implements OnModuleInit {
         amount: avgAmount,
         nextBillingDate: nextBillingDate,
       });
+
+      // Suppress unused-var lint by referencing the freshly-created row.
+      void subscription;
     }
   }
 
-  private analyzeFrequency(dates: Date[]): 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | null {
+  private analyzeFrequency(
+    dates: Date[],
+  ): 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | null {
     if (dates.length < 2) return null;
 
     const intervals: number[] = [];

@@ -89,11 +89,15 @@ describe('AuthController (e2e)', () => {
   describe('POST /api/v1/auth/logout', () => {
     it('should logout successfully', async () => {
       mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      // LogoutDto.refreshToken is @IsJWT()-validated, so we hand it the
+      // same well-formed JWT we'd use elsewhere. The handler still parses
+      // and revokes it; the JWT signature isn't verified for logout.
+      const refreshToken = generateToken(mockUser.id, mockUser.email);
 
       const res = await request(server)
         .post('/api/v1/auth/logout')
         .set('Authorization', `Bearer ${generateToken(mockUser.id, mockUser.email)}`)
-        .send({ refreshToken: 'some-token' })
+        .send({ refreshToken })
         .expect(201);
 
       expect(res.body.message).toMatch(/logged out/i);
@@ -103,11 +107,17 @@ describe('AuthController (e2e)', () => {
   describe('POST /api/v1/auth/refresh', () => {
     it('should refresh tokens', async () => {
       const refreshToken = generateToken(mockUser.id, mockUser.email);
+      // The service stores SHA-256 hashes, not the raw token. The mock just
+      // needs to return a row whose `tokenHash` field is set so the lookup
+      // succeeds — the hash value itself is opaque to the service code path
+      // we're testing here.
       mockPrisma.refreshToken.findUnique.mockResolvedValue({
         id: 'rt-1',
-        token: refreshToken,
+        tokenHash: 'sha256-of-the-token',
         expiresAt: new Date(Date.now() + 86400000),
-        user: { ...mockUser, passwordHash: 'hash' },
+        // tokenVersion is consumed by issueSessionForUserId and embedded
+        // in the new access token's `tv` claim.
+        user: { ...mockUser, passwordHash: 'hash', tokenVersion: 0 },
       });
       mockPrisma.refreshToken.delete.mockResolvedValue({});
       mockPrisma.refreshToken.create.mockResolvedValue({});

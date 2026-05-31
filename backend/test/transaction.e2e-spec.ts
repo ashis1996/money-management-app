@@ -76,7 +76,7 @@ describe('TransactionController (e2e)', () => {
   });
 
   describe('GET /api/v1/transactions', () => {
-    it('should return all transactions', async () => {
+    it('should return paginated transactions', async () => {
       mockPrisma.transaction.findMany.mockResolvedValue([mockTransaction]);
       mockPrisma.transaction.count.mockResolvedValue(1);
 
@@ -85,8 +85,43 @@ describe('TransactionController (e2e)', () => {
         .set(authHeader())
         .expect(200);
 
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body).toHaveLength(1);
+      // The response is now a paginated envelope rather than a bare array.
+      // Without this, a heavy user could OOM the API with a single GET.
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.meta).toMatchObject({
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+      // findMany must be called with skip/take so the DB doesn't return
+      // the full table.
+      expect(mockPrisma.transaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 20 }),
+      );
+    });
+
+    it('should clamp limit to 100 even when caller asks for more', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([]);
+      mockPrisma.transaction.count.mockResolvedValue(0);
+
+      const res = await request(server)
+        .get('/api/v1/transactions?limit=500')
+        .set(authHeader());
+
+      // Make validation failures self-debugging.
+      if (res.status !== 200) {
+        // eslint-disable-next-line no-console
+        console.error('clamp test got', res.status, res.body);
+      }
+      expect(res.status).toBe(200);
+
+      expect(mockPrisma.transaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 100 }),
+      );
     });
 
     it('should filter by category', async () => {
@@ -98,7 +133,7 @@ describe('TransactionController (e2e)', () => {
         .set(authHeader())
         .expect(200);
 
-      expect(Array.isArray(res.body)).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
     });
   });
 

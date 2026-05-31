@@ -48,7 +48,11 @@ describe('SubscriptionController (e2e)', () => {
         .set(authHeader())
         .send({
           name: 'Netflix',
-          merchant: 'netflix',
+          // CreateSubscriptionDto uses `merchantName` (matches the
+          // Prisma column). The legacy `merchant` field name is
+          // rejected by `forbidNonWhitelisted` on the global
+          // ValidationPipe.
+          merchantName: 'netflix',
           amount: 199,
           frequency: 'MONTHLY',
           nextBillingDate: '2024-02-01',
@@ -64,10 +68,7 @@ describe('SubscriptionController (e2e)', () => {
     it('should return all subscriptions', async () => {
       mockPrisma.subscription.findMany.mockResolvedValue([mockSubscription]);
 
-      const res = await request(server)
-        .get('/api/v1/subscriptions')
-        .set(authHeader())
-        .expect(200);
+      const res = await request(server).get('/api/v1/subscriptions').set(authHeader()).expect(200);
 
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body).toHaveLength(1);
@@ -168,9 +169,27 @@ describe('SubscriptionController (e2e)', () => {
   describe('POST /api/v1/subscriptions/detect', () => {
     it('should detect subscriptions from transactions', async () => {
       mockPrisma.transaction.findMany.mockResolvedValue([
-        { id: 'tx-1', merchant: 'Netflix', amount: 199, date: new Date('2024-01-01'), type: 'DEBIT' },
-        { id: 'tx-2', merchant: 'Netflix', amount: 199, date: new Date('2024-02-01'), type: 'DEBIT' },
-        { id: 'tx-3', merchant: 'Netflix', amount: 199, date: new Date('2024-03-01'), type: 'DEBIT' },
+        {
+          id: 'tx-1',
+          merchant: 'Netflix',
+          amount: 199,
+          date: new Date('2024-01-01'),
+          type: 'DEBIT',
+        },
+        {
+          id: 'tx-2',
+          merchant: 'Netflix',
+          amount: 199,
+          date: new Date('2024-02-01'),
+          type: 'DEBIT',
+        },
+        {
+          id: 'tx-3',
+          merchant: 'Netflix',
+          amount: 199,
+          date: new Date('2024-03-01'),
+          type: 'DEBIT',
+        },
       ]);
       mockPrisma.subscription.findFirst.mockResolvedValue(null);
       mockPrisma.subscription.create.mockResolvedValue(mockSubscription);
@@ -188,7 +207,10 @@ describe('SubscriptionController (e2e)', () => {
   describe('POST /api/v1/subscriptions/:id/cancel', () => {
     it('should cancel subscription', async () => {
       mockPrisma.subscription.findFirst.mockResolvedValue(mockSubscription);
-      mockPrisma.subscription.update.mockResolvedValue({ ...mockSubscription, status: 'CANCELLED' });
+      mockPrisma.subscription.update.mockResolvedValue({
+        ...mockSubscription,
+        status: 'CANCELLED',
+      });
 
       const res = await request(server)
         .post(`/api/v1/subscriptions/${mockSubscription.id}/cancel`)

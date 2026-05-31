@@ -1,16 +1,31 @@
 import { HttpService } from '@nestjs/axios';
 import {
+  Inject,
   Injectable,
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { firstValueFrom, timeout, catchError, throwError } from 'rxjs';
 import { PrismaService } from '../../config/prisma.service';
 
 /**
- * Thin client around the FastAPI AI service. Aggregates the data the AI service
- * needs from the database, then forwards the request and returns the response.
+ * Thin client around the FastAPI AI service. Aggregates the data the AI
+ * service needs from the database, then forwards the request and returns
+ * the response.
+ *
+ * Hot reads (dashboard / health-score / leaks / behavior / archetype) are
+ * cached per-user via the shared cache (Redis when configured). The
+ * cache TTL is short — 60-300s depending on volatility — so callers see
+ * freshly-enriched data within a minute of a transaction landing, but a
+ * burst of mobile pull-to-refreshes only hits the AI service once.
+ *
+ * Cache invalidation lives in `invalidateUser()`, which is called by the
+ * transaction-enrichment consumer right after a recompute lands. Without
+ * that hook, users would see stale dashboards for a full TTL after a new
+ * transaction.
  */
 @Injectable()
 export class AiProxyService {
@@ -19,14 +34,39 @@ export class AiProxyService {
   private readonly requestTimeoutMs: number;
   private readonly internalToken?: string;
 
+  // Per-feature TTLs in seconds. Picked to slightly exceed the
+  // TransactionEnrichmentService heavy-cooldown (60s) so a fresh
+  // transaction triggers exactly one recompute that everyone benefits
+  // from for the rest of the window.
+  private static readonly TTL = {
+    dashboard: 90,
+    healthScore: 300,
+    leaks: 300,
+    behavior: 300,
+    archetype: 600,
+  };
+
+  // Hard cap on how many transactions we ever ship to the AI service.
+  // Beyond this we'd blow the JSON payload past anything reasonable; the
+  // AI service models don't benefit from arbitrarily long history. We
+  // page the DB read so the LIMIT is enforced predictably regardless of
+  // index plan, and so we never silently truncate when a user has more.
+  private static readonly TX_PAGE_SIZE = 1000;
+  private static readonly TX_HARD_CAP = 5000;
+
   constructor(
     private readonly http: HttpService,
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) {
-    const rawUrl = this.config.get<string>('AI_SERVICE_URL') ?? 'http://localhost:8000/api/v1';
+    const rawUrl =
+      this.config.get<string>('AI_SERVICE_URL') ?? 'http://localhost:8000/api/v1';
     this.aiBaseUrl = this.normalizeBaseUrl(rawUrl);
-    this.requestTimeoutMs = parseInt(this.config.get<string>('AI_TIMEOUT_MS') ?? '30000', 10);
+    this.requestTimeoutMs = parseInt(
+      this.config.get<string>('AI_TIMEOUT_MS') ?? '30000',
+      10,
+    );
 
     // Shared secret used to authenticate as the trusted backend when calling
     // the AI service. Mirrored from the AI service's INTERNAL_API_TOKEN env
@@ -84,42 +124,119 @@ export class AiProxyService {
     }
   }
 
+  /**
+   * Read-through cache helper. cache-manager v5's `wrap` API has been
+   * brittle across redis-store versions, so we do the get/set dance
+   * explicitly. A failed cache read NEVER blocks the underlying call;
+   * we just degrade to the upstream AI service.
+   */
+  private async withCache<T>(key: string, ttlSeconds: number, fn: () => Promise<T>): Promise<T> {
+    let cached: T | undefined | null = undefined;
+    try {
+      cached = await this.cache.get<T>(key);
+    } catch (err: any) {
+      this.logger.debug(`Cache GET failed for ${key}: ${err?.message ?? err}`);
+    }
+    if (cached !== undefined && cached !== null) {
+      return cached;
+    }
+
+    const value = await fn();
+
+    try {
+      // cache-manager v5's `set` accepts ttl in milliseconds; redis-store
+      // expects the same. We pass ms to be unambiguous.
+      await this.cache.set(key, value, ttlSeconds * 1000);
+    } catch (err: any) {
+      this.logger.debug(`Cache SET failed for ${key}: ${err?.message ?? err}`);
+    }
+    return value;
+  }
+
+  /**
+   * Drop every cached AI response for a user. Called by
+   * TransactionEnrichmentService after a recompute lands so the next
+   * dashboard read sees fresh data within the next request, not after the
+   * full TTL.
+   */
+  async invalidateUser(userId: string): Promise<void> {
+    const keys = [
+      this.dashboardKey(userId),
+      this.healthScoreKey(userId),
+      this.leaksKey(userId),
+      this.archetypeKey(userId),
+    ];
+    // behavior is parameterised by `days`; we don't know which window the
+    // user last queried, so we don't preemptively bust those keys. They'll
+    // expire naturally on their (300s) TTL.
+    await Promise.all(
+      keys.map((k) =>
+        this.cache.del(k).catch((err: any) =>
+          this.logger.debug(`Cache DEL failed for ${k}: ${err?.message ?? err}`),
+        ),
+      ),
+    );
+  }
+
   // ============================================================
   // High-level methods that aggregate data + call the AI service
   // ============================================================
 
   async getDashboard(userId: string) {
-    const ctx = await this.buildUserContext(userId);
-    return this.callAi('/dashboard/personalized', ctx);
+    return this.withCache(this.dashboardKey(userId), AiProxyService.TTL.dashboard, async () => {
+      const ctx = await this.buildUserContext(userId);
+      return this.callAi('/dashboard/personalized', ctx);
+    });
   }
 
   async getHealthScore(userId: string) {
-    const ctx = await this.buildUserContext(userId);
-    return this.callAi('/health-score/calculate', ctx);
+    return this.withCache(
+      this.healthScoreKey(userId),
+      AiProxyService.TTL.healthScore,
+      async () => {
+        const ctx = await this.buildUserContext(userId);
+        return this.callAi('/health-score/calculate', ctx);
+      },
+    );
   }
 
   async getLeaks(userId: string) {
-    const ctx = await this.buildUserContext(userId);
-    return this.callAi('/leaks/detect', ctx);
+    return this.withCache(this.leaksKey(userId), AiProxyService.TTL.leaks, async () => {
+      const ctx = await this.buildUserContext(userId);
+      return this.callAi('/leaks/detect', ctx);
+    });
   }
 
   async analyzeBehavior(userId: string, periodDays = 30) {
-    const ctx = await this.buildUserContext(userId, periodDays);
-    return this.callAi('/behavior/analyze', { ...ctx, period_days: periodDays });
+    return this.withCache(
+      `ai:behavior:${userId}:${periodDays}`,
+      AiProxyService.TTL.behavior,
+      async () => {
+        const ctx = await this.buildUserContext(userId, periodDays);
+        return this.callAi('/behavior/analyze', { ...ctx, period_days: periodDays });
+      },
+    );
   }
 
   async getArchetype(userId: string) {
-    const ctx = await this.buildUserContext(userId);
-    return this.callAi('/profile/archetype', ctx);
+    return this.withCache(this.archetypeKey(userId), AiProxyService.TTL.archetype, async () => {
+      const ctx = await this.buildUserContext(userId);
+      return this.callAi('/profile/archetype', ctx);
+    });
   }
 
   async generateActionCards(userId: string) {
+    // Action cards are explicitly invalidated by enrichment; we don't
+    // also cache them here because the consumer always wants fresh ones
+    // when it bulk-syncs.
     const ctx = await this.buildUserContext(userId);
     const response = await this.callAi<any>('/action-cards/generate', { context: ctx });
     return response;
   }
 
   async ask(userId: string, query: string) {
+    // Free-form Q&A — never cached; every query is unique and the user
+    // expects the answer to reflect the current state.
     const ctx = await this.buildUserContext(userId);
     return this.callAi('/assistant/query', {
       user_id: userId,
@@ -172,6 +289,24 @@ export class AiProxyService {
   }
 
   // ============================================================
+  // Cache key helpers — keep these in one place so invalidateUser()
+  // and the readers can never disagree.
+  // ============================================================
+
+  private dashboardKey(userId: string): string {
+    return `ai:dashboard:${userId}`;
+  }
+  private healthScoreKey(userId: string): string {
+    return `ai:health-score:${userId}`;
+  }
+  private leaksKey(userId: string): string {
+    return `ai:leaks:${userId}`;
+  }
+  private archetypeKey(userId: string): string {
+    return `ai:archetype:${userId}`;
+  }
+
+  // ============================================================
   // Context builders
   // ============================================================
 
@@ -192,21 +327,57 @@ export class AiProxyService {
     };
   }
 
+  /**
+   * Page through the user's recent transactions in chunks rather than
+   * trusting Prisma to honour a 1000-row LIMIT silently.
+   *
+   * Previously we did `findMany({ ..., take: 1000 })` which silently
+   * dropped data for power users with > 1000 transactions in the window.
+   * Now we page in `TX_PAGE_SIZE` chunks and stop when either:
+   *
+   *   - the page is short (no more rows), or
+   *   - we've collected `TX_HARD_CAP` rows (degenerate user / wide window).
+   *
+   * The hard cap is intentional: the AI service models tank on multi-MB
+   * payloads and don't benefit from years of history. We log a warning
+   * when we hit it so power-user behaviour is at least visible.
+   */
   private async fetchTransactions(userId: string, days: number) {
     const since = new Date();
     since.setDate(since.getDate() - days);
 
-    const txns = await this.prisma.transaction.findMany({
-      where: {
-        userId,
-        deletedAt: null,
-        transactionDate: { gte: since },
-      },
-      orderBy: { transactionDate: 'desc' },
-      take: 1000,
-    });
+    const collected: any[] = [];
+    let cursor: { id: string } | undefined;
 
-    return txns.map((t) => ({
+    while (collected.length < AiProxyService.TX_HARD_CAP) {
+      const batch = await this.prisma.transaction.findMany({
+        where: {
+          userId,
+          deletedAt: null,
+          transactionDate: { gte: since },
+        },
+        // Stable sort: transactionDate desc with id as tiebreaker so the
+        // cursor is unambiguous even when many rows share a timestamp.
+        orderBy: [{ transactionDate: 'desc' }, { id: 'desc' }],
+        take: AiProxyService.TX_PAGE_SIZE,
+        ...(cursor ? { cursor, skip: 1 } : {}),
+      });
+
+      if (batch.length === 0) break;
+      collected.push(...batch);
+      if (batch.length < AiProxyService.TX_PAGE_SIZE) break;
+
+      cursor = { id: batch[batch.length - 1].id };
+    }
+
+    if (collected.length >= AiProxyService.TX_HARD_CAP) {
+      this.logger.warn(
+        `fetchTransactions hit TX_HARD_CAP (${AiProxyService.TX_HARD_CAP}) for user=${userId} ` +
+          `over ${days}d. Some history was excluded from the AI payload.`,
+      );
+    }
+
+    return collected.map((t) => ({
       id: t.id,
       amount: Number(t.amount),
       type: t.type,
