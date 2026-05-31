@@ -12,6 +12,7 @@ import {
   Activity,
   Droplet,
   CalendarRange,
+  ShieldAlert,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -61,6 +62,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/goals', label: 'Goals', icon: Target },
       { href: '/subscriptions', label: 'Subscriptions', icon: Repeat },
       { href: '/money-leaks', label: 'Money leaks', icon: Droplet },
+      { href: '/fraud-alerts', label: 'Fraud alerts', icon: ShieldAlert },
     ],
   },
   {

@@ -22,6 +22,9 @@ from app.services.leak_detector import LeakDetectorService
 from app.services.ai_assistant import AIAssistantService
 from app.services.user_profiler import UserProfilerService
 from app.services.action_card_generator import ActionCardGenerator
+from app.services.fraud_detector import FraudDetectorService
+from app.services.email_parser import EmailParserService
+from app.services.streak_calculator import StreakCalculatorService
 from app.utils.response import ApiResponse
 
 # Configure logging
@@ -176,6 +179,9 @@ leak_detector = LeakDetectorService()
 ai_assistant = AIAssistantService()
 user_profiler = UserProfilerService()
 action_card_generator = ActionCardGenerator()
+fraud_detector = FraudDetectorService()
+email_parser = EmailParserService(sms_parser=sms_parser)
+streak_calculator = StreakCalculatorService()
 
 
 # ==================== REQUEST/RESPONSE MODELS ====================
@@ -264,6 +270,9 @@ async def health_check():
                 "ai_assistant": "active",
                 "user_profiler": "active",
                 "action_card_generator": "active",
+                "fraud_detector": "active",
+                "email_parser": "active",
+                "streak_calculator": "active",
             }
         }
     )
@@ -352,6 +361,47 @@ async def classify_transaction(request: SmsParseRequest):
     except Exception as e:
         logger.error(f"Error classifying transaction: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Failed to classify: {str(e)}")
+
+
+# ==================== EMAIL PARSING ENDPOINTS ====================
+
+class EmailParseRequest(BaseModel):
+    body: str
+    sender: str
+    subject: Optional[str] = None
+    timestamp: Optional[datetime] = None
+    is_html: Optional[bool] = None
+
+
+@app.post("/api/v1/email/parse")
+async def parse_email(request: EmailParseRequest):
+    """
+    Parse a single email body for a transaction.
+
+    The endpoint is intentionally close to /sms/parse — the underlying
+    parser is reused, with HTML stripping and subject prepending applied
+    first. Callers should treat a low-confidence response the same way
+    they treat low-confidence SMS: surface to the user for confirmation
+    rather than auto-creating a transaction.
+    """
+    try:
+        parsed = email_parser.parse_email(
+            body=request.body,
+            sender=request.sender,
+            subject=request.subject,
+            timestamp=request.timestamp,
+            is_html=request.is_html,
+        )
+        return ApiResponse(
+            success=True,
+            data={
+                "parsed": parsed,
+                "confidence": float(parsed.get("confidence", 0.0)),
+            },
+        )
+    except Exception as e:
+        logger.error(f"Error parsing email: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to parse email: {str(e)}")
 
 
 # ==================== SUBSCRIPTION DETECTION ENDPOINTS ====================
@@ -996,6 +1046,84 @@ async def detect_money_leaks(request: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Error detecting leaks: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Failed to detect leaks: {str(e)}")
+
+
+# ==================== FRAUD DETECTION ENDPOINTS ====================
+
+@app.post("/api/v1/fraud/detect")
+async def detect_fraud(request: Dict[str, Any]):
+    """
+    Detect suspicious activity in a user's transaction stream.
+
+    Args:
+        user_id: User identifier
+        transactions: List of transactions
+        history_days: Window the caller already trimmed to (default 90)
+
+    Returns:
+        Alert list, summary by alert type, and ids of every flagged
+        transaction so the caller can highlight rows in their UI.
+    """
+    try:
+        user_id = request.get("user_id")
+        transactions = request.get("transactions", [])
+        history_days = int(request.get("history_days", 90))
+
+        result = fraud_detector.detect_fraud(
+            user_id,
+            transactions,
+            history_days,
+        )
+
+        return ApiResponse(success=True, data=result)
+    except Exception as e:
+        logger.error(f"Error detecting fraud: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to detect fraud: {str(e)}",
+        )
+
+
+# ==================== STREAK / GAMIFICATION ENDPOINTS ====================
+
+@app.post("/api/v1/streaks/calculate")
+async def calculate_streaks(request: Dict[str, Any]):
+    """
+    Compute "good day" streaks for gamification.
+
+    Args:
+        user_id: User identifier
+        transactions: Transaction history (any window — caller decides)
+        as_of: Optional ISO date the streak should end on. Defaults to
+            today UTC. Tests pass this so they can simulate calendars.
+
+    Returns:
+        Current streak, longest streak, good/bad day counts, last break
+        date and reason, and a list of earned achievement milestones.
+    """
+    try:
+        user_id = request.get("user_id")
+        transactions = request.get("transactions", [])
+        as_of_raw = request.get("as_of")
+        as_of = None
+        if as_of_raw:
+            try:
+                as_of = datetime.fromisoformat(
+                    str(as_of_raw).replace("Z", "+00:00")
+                ).date()
+            except ValueError:
+                as_of = None
+
+        result = streak_calculator.calculate_streaks(
+            user_id, transactions, as_of=as_of
+        )
+        return ApiResponse(success=True, data=result)
+    except Exception as e:
+        logger.error(f"Error calculating streaks: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to calculate streaks: {str(e)}",
+        )
 
 
 # ==================== AI ASSISTANT ENDPOINTS ====================

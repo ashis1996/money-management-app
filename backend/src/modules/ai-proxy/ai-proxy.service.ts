@@ -207,6 +207,60 @@ export class AiProxyService {
     });
   }
 
+  async getFraud(userId: string, days = 90) {
+    // Cache fraud results briefly so a refresh-storm doesn't re-run the
+    // rules. We deliberately use a shorter TTL than leaks (60s vs 300s)
+    // because fraud alerts are time-sensitive — if a user freezes their
+    // card and pulls down to refresh, they expect the alerts list to
+    // reflect that promptly.
+    return this.withCache(
+      `ai:fraud:${userId}:${days}`,
+      60,
+      async () => {
+        const ctx = await this.buildUserContext(userId, days);
+        return this.callAi('/fraud/detect', {
+          user_id: userId,
+          transactions: ctx.transactions,
+          history_days: days,
+        });
+      },
+    );
+  }
+
+  async getStreaks(userId: string, days = 90) {
+    // Streaks are cheap to compute and the result is heavily user-
+    // facing (it drives an animated badge), so we cache for 5 minutes.
+    // The window-days cache key shape mirrors `behavior` and `fraud`
+    // so the parameterised reads don't get to invalidateUser().
+    return this.withCache(
+      `ai:streaks:${userId}:${days}`,
+      300,
+      async () => {
+        const ctx = await this.buildUserContext(userId, days);
+        return this.callAi('/streaks/calculate', {
+          user_id: userId,
+          transactions: ctx.transactions,
+        });
+      },
+    );
+  }
+
+  async parseEmail(
+    body: string,
+    sender: string,
+    subject?: string,
+    timestamp?: string,
+    isHtml?: boolean,
+  ) {
+    return this.callAi('/email/parse', {
+      body,
+      sender,
+      subject,
+      timestamp: timestamp ?? new Date().toISOString(),
+      is_html: isHtml,
+    });
+  }
+
   async analyzeBehavior(userId: string, periodDays = 30) {
     return this.withCache(
       `ai:behavior:${userId}:${periodDays}`,
