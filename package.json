@@ -6,13 +6,15 @@
   "workspaces": [
     "backend",
     "mobile",
-    "shared"
+    "shared",
+    "web"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:ai-service\"",
     "dev:backend": "npm run dev --workspace=backend",
     "dev:ai-service": "npm run dev --workspace=ai-service",
     "dev:mobile": "npm run start --workspace=mobile",
+    "dev:web": "npm run dev --workspace=web",
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
     "lint": "eslint . --ext .ts,.tsx",
@@ -44,6 +46,12 @@
     "*.{json,md,yml,yaml}": [
       "prettier --write"
     ]
+  },
+  "overrides": {
+    "@types/react": "~18.2.45",
+    "@types/react-dom": "~18.2.18",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
   },
   "engines": {
     "node": ">=18.0.0",

@@ -54,6 +54,19 @@ jobs:
         run: npx tsc -p tsconfig.json --noEmit
         working-directory: mobile
 
+      - name: Typecheck web
+        run: npx tsc -p tsconfig.json --noEmit
+        working-directory: web
+
+      - name: Build web (Next.js)
+        # Catches client/server boundary mistakes (e.g. importing a
+        # server-only module from a client component) that pure tsc
+        # doesn't see. Output is discarded.
+        run: npx next build
+        working-directory: web
+        env:
+          INTERNAL_API_URL: http://localhost:3000/api/v1
+
       - name: Lint
         # Lint is intentionally non-blocking right now (warnings only).
         # Once existing files are cleaned up, drop the `|| true` and
