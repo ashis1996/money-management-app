@@ -1,0 +1,182 @@
+# MoneyMind canonical design tokens.
+# This file is the source of truth. Mobile/web theme files derive from it.
+# Keep it short, machine-readable, and free of editorial commentary —
+# the prose lives in 02-design-tokens.md.
+
+name: MoneyMind
+version: 1.0.0
+mode: dark
+
+color:
+  # Material 3 surface roles (structural)
+  surface: "#0c1322"
+  surface-dim: "#0c1322"
+  surface-bright: "#323949"
+  surface-container-lowest: "#070e1d"
+  surface-container-low: "#141b2b"
+  surface-container: "#191f2f"
+  surface-container-high: "#232a3a"
+  surface-container-highest: "#2e3545"
+  surface-variant: "#2e3545"
+
+  on-surface: "#dce2f7"
+  on-surface-variant: "#c6c6cc"
+  inverse-surface: "#dce2f7"
+  inverse-on-surface: "#293040"
+
+  outline: "#909096"
+  outline-variant: "#46464c"
+
+  # Material 3 colour roles (kept for chrome/focus where applicable)
+  primary: "#c3c6d4"
+  on-primary: "#2c303b"
+  primary-container: "#0b0f19"
+  on-primary-container: "#787b88"
+  inverse-primary: "#5a5e6a"
+  secondary: "#adc6ff"
+  on-secondary: "#002e6a"
+  secondary-container: "#0566d9"
+  on-secondary-container: "#e6ecff"
+  tertiary: "#2fd9f4"
+  on-tertiary: "#00363e"
+  tertiary-container: "#001216"
+  on-tertiary-container: "#00889b"
+
+  # Brand accents (semantic, source of truth for meaning)
+  accent-primary: "#3B82F6"   # Electric Blue — primary CTA, links
+  accent-ai: "#22D3EE"        # Neon Cyan — AI-augmented surfaces
+  accent-success: "#10B981"   # Emerald — gains, credits, completed
+  accent-warning: "#fbbf24"   # Amber — soft warnings
+  accent-error: "#ffb4ab"     # Coral — errors, destructive
+
+  # Glass surface formula expects this colour at 60% alpha.
+  glass-tint: "#191f2f"
+
+  # Background alias (M3 + brand)
+  background: "#0c1322"
+  on-background: "#dce2f7"
+
+gradient:
+  ai: ["#22D3EE", "#3B82F6"]            # cyan -> blue, 135deg
+  hero-card: ["#232a3a", "#191f2f"]     # vertical
+  hero-glow: "#3B82F6"                  # used at 8% alpha as ambient halo
+
+typography:
+  family:
+    sans: "Inter"
+    mono: "Inter"   # we use the same family with tabular-nums + tight tracking
+  fallback: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+
+  scale:
+    display-xl:
+      mobile: { size: 48, line-height: 52, weight: 700, tracking: -0.04 }
+      desktop: { size: 64, line-height: 70, weight: 700, tracking: -0.04 }
+    display-lg:
+      mobile: { size: 40, line-height: 44, weight: 700, tracking: -0.03 }
+      desktop: { size: 48, line-height: 52, weight: 700, tracking: -0.03 }
+    headline-lg:
+      mobile: { size: 28, line-height: 34, weight: 600, tracking: -0.02 }
+      desktop: { size: 32, line-height: 38, weight: 600, tracking: -0.02 }
+    headline-md:
+      mobile: { size: 22, line-height: 28, weight: 600, tracking: -0.015 }
+      desktop: { size: 24, line-height: 31, weight: 600, tracking: -0.015 }
+    headline-sm:
+      mobile: { size: 18, line-height: 25, weight: 600, tracking: -0.01 }
+      desktop: { size: 20, line-height: 28, weight: 600, tracking: -0.01 }
+    body-lg:
+      mobile: { size: 16, line-height: 26, weight: 400, tracking: 0 }
+      desktop: { size: 18, line-height: 29, weight: 400, tracking: 0 }
+    body-md:
+      mobile: { size: 15, line-height: 24, weight: 400, tracking: 0 }
+      desktop: { size: 16, line-height: 26, weight: 400, tracking: 0 }
+    body-sm:
+      mobile: { size: 13, line-height: 20, weight: 400, tracking: 0 }
+      desktop: { size: 14, line-height: 21, weight: 400, tracking: 0 }
+    label-md:
+      mobile: { size: 13, line-height: 13, weight: 500, tracking: 0.02 }
+      desktop: { size: 14, line-height: 14, weight: 500, tracking: 0.02 }
+    label-sm:
+      mobile: { size: 11, line-height: 11, weight: 500, tracking: 0.04, transform: uppercase }
+      desktop: { size: 12, line-height: 12, weight: 500, tracking: 0.04, transform: uppercase }
+    mono-data:
+      mobile: { size: 14, line-height: 14, weight: 500, tracking: 0.05, variant: tabular-nums }
+      desktop: { size: 14, line-height: 14, weight: 500, tracking: 0.05, variant: tabular-nums }
+
+spacing:
+  unit: 4
+  steps:
+    space-1: 4
+    space-2: 8
+    space-3: 12
+    space-4: 16
+    space-5: 20
+    space-6: 24
+    space-8: 32
+    space-10: 40
+    space-12: 48
+    space-16: 64
+
+  layout:
+    margin-mobile: 20
+    margin-desktop: 64
+    gutter-mobile: 16
+    gutter-desktop: 24
+    max-content-width: 1280
+
+radius:
+  sm: 4
+  md: 8
+  lg: 16
+  xl: 24
+  full: 9999
+
+elevation:
+  level-0: { background: surface }
+  level-1:
+    background: surface-container
+    border: { width: 1, color: "rgba(255,255,255,0.06)" }
+  level-2:
+    background: surface-container-high
+    border: { width: 1, color: "rgba(255,255,255,0.06)" }
+  level-3:
+    background: surface-container-highest
+    background-alpha: 0.80
+    backdrop-blur: 30
+    shadow:
+      - "0 30px 40px -10px rgba(59, 130, 246, 0.20)"
+      - "0 12px 20px -8px rgba(0, 0, 0, 0.50)"
+  ai:
+    border:
+      width: 1
+      gradient: ai
+      animated: true
+      duration-ms: 4000
+
+motion:
+  tap:    { in-duration-ms: 80, out-duration-ms: 200, easing: spring, damping: 20, transform: "scale(0.98)" }
+  snappy: { duration-ms: 200, easing: "cubic-bezier(0.4, 0, 0.2, 1)" }
+  soft:   { duration-ms: 320, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }
+  ambient:{ duration-ms: 1200, easing: "ease-in-out", iteration: infinite }
+  stroke: { duration-ms: 4000, easing: linear, iteration: infinite }
+
+  reduced-motion:
+    tap-replacement: "opacity 0.7"
+    drop-infinite: true
+
+z-index:
+  base: 0
+  raised: 10
+  sticky: 50
+  drawer: 100
+  modal: 200
+  toast: 300
+  ai-orb: 400
+
+opacity:
+  glass-surface: 0.60
+  modal-surface: 0.80
+  card-noise: 0.02
+  card-border: 0.06
+  glass-border: 0.08
+  press-scrim: 0.16
+  disabled: 0.40

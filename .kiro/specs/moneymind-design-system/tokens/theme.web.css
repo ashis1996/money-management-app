@@ -1,0 +1,228 @@
+/* MoneyMind design tokens — Web (CSS custom properties).
+ *
+ * Imported by the web app's `globals.css`. Tailwind reads these via the
+ * preset in `tailwind.preset.js` so utilities like `bg-surface`,
+ * `text-on-surface`, `border-accent-ai` resolve to these values.
+ *
+ * Light mode is intentionally not defined here — see review question #1
+ * in README.md. v1 ships dark-only.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ============================================================
+   * Surface roles (Material 3)
+   * ============================================================ */
+  --surface: #0c1322;
+  --surface-dim: #0c1322;
+  --surface-bright: #323949;
+  --surface-container-lowest: #070e1d;
+  --surface-container-low: #141b2b;
+  --surface-container: #191f2f;
+  --surface-container-high: #232a3a;
+  --surface-container-highest: #2e3545;
+  --surface-variant: #2e3545;
+
+  --on-surface: #dce2f7;
+  --on-surface-variant: #c6c6cc;
+  --inverse-surface: #dce2f7;
+  --inverse-on-surface: #293040;
+
+  --outline: #909096;
+  --outline-variant: #46464c;
+
+  /* M3 colour roles (kept for chrome/focus rings) */
+  --primary: #c3c6d4;
+  --on-primary: #2c303b;
+  --primary-container: #0b0f19;
+  --on-primary-container: #787b88;
+  --secondary: #adc6ff;
+  --on-secondary: #002e6a;
+  --secondary-container: #0566d9;
+  --tertiary: #2fd9f4;
+  --on-tertiary: #00363e;
+
+  /* ============================================================
+   * Brand accents (semantic)
+   * ============================================================ */
+  --accent-primary: #3B82F6;
+  --accent-ai: #22D3EE;
+  --accent-success: #10B981;
+  --accent-warning: #fbbf24;
+  --accent-error: #ffb4ab;
+
+  --background: #0c1322;
+  --on-background: #dce2f7;
+
+  /* ============================================================
+   * Composed values
+   * ============================================================ */
+  --border-default: rgba(255, 255, 255, 0.06);
+  --border-glass: rgba(255, 255, 255, 0.08);
+  --press-scrim: rgba(255, 255, 255, 0.16);
+  --glass-tint-60: rgba(25, 31, 47, 0.60);
+  --modal-tint-80: rgba(46, 53, 69, 0.80);
+
+  --gradient-ai: linear-gradient(135deg, #22D3EE 0%, #3B82F6 100%);
+  --gradient-hero-card: linear-gradient(180deg, #232a3a 0%, #191f2f 100%);
+
+  /* ============================================================
+   * Spacing (px)
+   * ============================================================ */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ============================================================
+   * Radius
+   * ============================================================ */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* ============================================================
+   * Motion
+   * ============================================================ */
+  --ease-snappy: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-soft:   cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-tap-in: 80ms;
+  --duration-tap-out: 200ms;
+  --duration-snappy: 200ms;
+  --duration-soft: 320ms;
+  --duration-ambient: 1200ms;
+  --duration-stroke: 4000ms;
+
+  /* ============================================================
+   * Shadows (modals only)
+   * ============================================================ */
+  --shadow-modal:
+    0 30px 40px -10px rgba(59, 130, 246, 0.20),
+    0 12px 20px -8px  rgba(0, 0, 0, 0.50);
+
+  /* ============================================================
+   * Z-index scale
+   * ============================================================ */
+  --z-base: 0;
+  --z-raised: 10;
+  --z-sticky: 50;
+  --z-drawer: 100;
+  --z-modal: 200;
+  --z-toast: 300;
+  --z-ai-orb: 400;
+}
+
+/* ==============================================================
+ * Reusable utility classes (for non-Tailwind consumers).
+ * ============================================================== */
+.glass-surface {
+  background: var(--glass-tint-60);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+}
+
+.card-default {
+  background: var(--surface-container);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+.card-hero {
+  background: var(--gradient-hero-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  padding: var(--space-8);
+  position: relative;
+  overflow: hidden;
+}
+
+/* AI gradient text — apply to a heading inside an AI surface. */
+.text-ai-gradient {
+  background: var(--gradient-ai);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* AI animated border. Achieved with a conic-gradient pseudo-element
+ * that rotates beneath the element's content. */
+.border-ai-animated {
+  position: relative;
+  background: var(--surface-container);
+  border-radius: var(--radius-lg);
+  isolation: isolate;
+}
+.border-ai-animated::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(from 0deg, #22D3EE, #3B82F6, #22D3EE);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: border-ai-spin var(--duration-stroke) linear infinite;
+  z-index: -1;
+}
+
+@keyframes border-ai-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Skeleton shimmer */
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-container) 0%,
+    var(--surface-container-high) 50%,
+    var(--surface-container) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s linear infinite;
+  border-radius: var(--radius-md);
+}
+
+/* AI orb pulse */
+@keyframes orb-pulse {
+  0%, 100% { transform: scale(1.00); }
+  50%      { transform: scale(1.04); }
+}
+.ai-orb {
+  background: var(--gradient-ai);
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 40px 4px rgba(34, 211, 238, 0.40);
+  animation: orb-pulse var(--duration-ambient) ease-in-out infinite;
+}
+
+/* Reduced motion: collapse infinites + tone down tap feedback. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .ai-orb {
+    animation: none;
+  }
+  .border-ai-animated::before {
+    animation: none;
+  }
+}
