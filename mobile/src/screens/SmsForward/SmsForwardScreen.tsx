@@ -8,24 +8,17 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { Button, Card, Header } from '../../components/shared';
-import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
+import { Inbox, ShieldCheck, Sparkles, ArrowRight, AlertTriangle } from 'lucide-react-native';
+import { Badge, Button, Card, Header } from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
 import { ingestSms, smsReadingAvailability } from '../../services/sms';
 
-const PLACEHOLDER = `Example:
-Rs.549.00 debited from a/c **4521 on 25-MAY-26 for UPI/SWIGGY/order 45289. Avl bal: Rs.24,567.00 - HDFCBank`;
+const PLACEHOLDER = `Rs.549.00 debited from a/c **4521 on 25-MAY-26 for UPI/SWIGGY/order 45289. Avl bal: Rs.24,567.00 - HDFCBank`;
 
 /**
- * Manual SMS forwarding screen. Users paste their bank SMS here
- * and our parser extracts a transaction.
- *
- * This is the workhorse fallback when SMS auto-reading isn't
- * available (iOS, Expo Go, or denied permission).
+ * Manual SMS forwarding fallback. Users paste a bank SMS and our
+ * parser extracts a transaction. This is the workhorse path when
+ * auto-reading isn't available (iOS, Expo Go, or permission denied).
  */
 export function SmsForwardScreen({ navigation }: any) {
   const [body, setBody] = useState('');
@@ -40,16 +33,13 @@ export function SmsForwardScreen({ navigation }: any) {
       Alert.alert('Too short', 'Paste the full SMS body for accurate parsing.');
       return;
     }
-
     setSubmitting(true);
     setLastResult(null);
-
     try {
       const result = await ingestSms({
         body: body.trim(),
         sender: sender.trim() || 'MANUAL',
       });
-
       setLastResult(result);
 
       if (result.transactionCreated) {
@@ -74,16 +64,16 @@ export function SmsForwardScreen({ navigation }: any) {
       } else if (result.parsed) {
         Alert.alert(
           'Could not auto-create',
-          'We parsed the SMS but couldn\'t determine the amount or type. Try editing the SMS or use Manual Entry instead.',
+          "We parsed the SMS but couldn't determine the amount or type. Try editing the SMS or use Manual Entry.",
         );
       } else {
         Alert.alert(
-          'Parse failed',
-          (result as any)?.error ?? 'Server could not parse this SMS.',
+          'Not recognised',
+          "This doesn't look like a bank SMS. Try pasting the original message.",
         );
       }
-    } catch (err: any) {
-      Alert.alert('Error', err?.message ?? 'Network error');
+    } catch (e: any) {
+      Alert.alert('Could not parse', e?.message ?? 'Something went wrong. Try again.');
     } finally {
       setSubmitting(false);
     }
@@ -93,163 +83,293 @@ export function SmsForwardScreen({ navigation }: any) {
     <View style={styles.container}>
       <Header
         title="Forward SMS"
-        subtitle="Paste a bank SMS to capture the transaction"
+        subtitle="Paste a bank SMS to auto-capture"
         onBack={() => navigation.goBack()}
       />
 
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Availability note */}
         {!availability.available && (
-          <Card style={styles.infoCard}>
-            <Text style={styles.infoTitle}>ℹ️ {availability.message}</Text>
-            {availability.fallback && (
-              <Text style={styles.infoBody}>{availability.fallback}</Text>
-            )}
+          <Card variant="ai" padding="base">
+            <View style={styles.noteRow}>
+              <View style={styles.noteIcon}>
+                <ShieldCheck size={16} color={Colors.accentAi} strokeWidth={1.75} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.noteTitle}>Why this screen exists</Text>
+                <Text style={styles.noteBody}>{availability.message}</Text>
+                {availability.fallback && (
+                  <Text style={styles.noteFallback}>{availability.fallback}</Text>
+                )}
+              </View>
+            </View>
           </Card>
         )}
 
-        <Text style={styles.label}>Sender (optional)</Text>
+        {/* SMS body */}
+        <Text style={styles.label}>SMS BODY</Text>
         <TextInput
-          style={styles.input}
-          placeholder="VK-HDFCBK, AM-ICICIB, ..."
-          placeholderTextColor={Colors.textTertiary}
-          value={sender}
-          onChangeText={setSender}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          maxLength={11}
-        />
-
-        <Text style={styles.label}>SMS body</Text>
-        <TextInput
-          style={[styles.input, styles.bodyInput]}
-          placeholder={PLACEHOLDER}
-          placeholderTextColor={Colors.textTertiary}
           value={body}
           onChangeText={setBody}
+          placeholder={PLACEHOLDER}
+          placeholderTextColor={Colors.textTertiary}
           multiline
-          numberOfLines={8}
           textAlignVertical="top"
+          style={[styles.input, { minHeight: 140 }]}
         />
-
         <Text style={styles.hint}>
-          We extract the amount, merchant, type, and category automatically.
-          Nothing else from your SMS is read.
+          Paste the full message — sender, amount, merchant, balance — for the best parsing.
         </Text>
 
-        <Button
-          title={submitting ? 'Parsing…' : 'Capture Transaction'}
-          onPress={handleSubmit}
-          variant="primary"
-          fullWidth
-          disabled={submitting}
-          style={{ marginTop: Spacing.lg }}
+        {/* Sender */}
+        <Text style={[styles.label, { marginTop: Spacing.lg }]}>SENDER (OPTIONAL)</Text>
+        <TextInput
+          value={sender}
+          onChangeText={setSender}
+          placeholder="VM-HDFCBK, AD-ICICIB, …"
+          placeholderTextColor={Colors.textTertiary}
+          autoCapitalize="characters"
+          style={styles.input}
         />
 
-        {submitting && (
-          <ActivityIndicator
-            size="small"
-            color={Colors.primary}
-            style={{ marginTop: Spacing.base }}
-          />
-        )}
-
+        {/* Last result preview */}
         {lastResult?.parsed && (
-          <Card style={styles.resultCard}>
-            <Text style={styles.resultTitle}>Last parsed</Text>
-            <ResultRow label="Amount" value={`₹${lastResult.parsed.amount?.toLocaleString() ?? '?'}`} />
-            <ResultRow label="Type" value={lastResult.parsed.transactionType ?? '—'} />
-            <ResultRow label="Merchant" value={lastResult.parsed.merchant ?? '—'} />
-            <ResultRow label="Category" value={lastResult.parsed.category ?? '—'} />
-            <ResultRow
-              label="Confidence"
-              value={`${Math.round((lastResult.parsed.confidence ?? 0) * 100)}%`}
-            />
+          <Card padding="base" style={{ marginTop: Spacing.lg }}>
+            <View style={styles.resultHeader}>
+              <View style={styles.resultIcon}>
+                <Sparkles size={16} color={Colors.accentAi} strokeWidth={1.75} />
+              </View>
+              <Text style={styles.resultTitle}>Last parse</Text>
+              <Badge
+                text={lastResult.transactionCreated ? 'Created' : 'Parsed only'}
+                variant={lastResult.transactionCreated ? 'success' : 'warning'}
+                size="sm"
+              />
+            </View>
+            <View style={styles.resultGrid}>
+              <ResultCell
+                label="Amount"
+                value={
+                  lastResult.parsed.amount ? `₹${lastResult.parsed.amount.toLocaleString()}` : '—'
+                }
+              />
+              <ResultCell label="Type" value={lastResult.parsed.transactionType ?? '—'} />
+              <ResultCell label="Merchant" value={lastResult.parsed.merchant ?? '—'} />
+              <ResultCell label="Bank" value={lastResult.parsed.bank ?? '—'} />
+            </View>
           </Card>
         )}
+
+        {/* Tips */}
+        <Card padding="base" style={{ marginTop: Spacing.lg }}>
+          <View style={styles.tipsRow}>
+            <View style={styles.tipsIcon}>
+              <Inbox size={18} color={Colors.textSecondary} strokeWidth={1.75} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.tipsTitle}>Tips for accurate parsing</Text>
+              <Text style={styles.tipsBody}>
+                • Include the sender ID (e.g. VM-HDFCBK).{'\n'}• Keep the amount and merchant text
+                intact.{'\n'}• Don\u2019t edit the message before pasting.
+              </Text>
+            </View>
+          </View>
+        </Card>
+
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
+
+      <View style={styles.submitBar}>
+        <Button
+          title={submitting ? 'Parsing…' : 'Parse and capture'}
+          onPress={handleSubmit}
+          loading={submitting}
+          disabled={submitting}
+          fullWidth
+          size="lg"
+          trailingIcon={
+            !submitting && <ArrowRight size={16} color={Colors.white} strokeWidth={2} />
+          }
+        />
+      </View>
     </View>
   );
 }
 
-function ResultRow({ label, value }: { label: string; value: string }) {
+function ResultCell({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.resultRow}>
+    <View style={styles.resultCell}>
       <Text style={styles.resultLabel}>{label}</Text>
-      <Text style={styles.resultValue}>{value}</Text>
+      <Text style={styles.resultValue} numberOfLines={1}>
+        {value}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: Spacing.lg },
-  infoCard: {
-    marginBottom: Spacing.lg,
-    backgroundColor: Colors.gray100,
+  container: {
+    flex: 1,
+    backgroundColor: Colors.background,
   },
-  infoTitle: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-  },
-  infoBody: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  label: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.medium,
-    color: Colors.textSecondary,
-    marginTop: Spacing.base,
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: Colors.card,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
-    fontSize: Typography.sizes.base,
-    color: Colors.textPrimary,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  bodyInput: {
-    minHeight: 140,
+  scroll: {
+    paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.sm,
   },
-  hint: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textTertiary,
-    marginTop: 6,
-    lineHeight: 16,
+
+  // Note
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
-  resultCard: {
-    marginTop: Spacing.lg,
-    backgroundColor: Colors.gray100,
+  noteIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
   },
-  resultTitle: {
+  noteTitle: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.bold,
-    marginBottom: Spacing.sm,
-    color: Colors.textSecondary,
-    textTransform: 'uppercase',
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.accentAi,
   },
-  resultRow: {
+  noteBody: {
+    marginTop: 4,
+    fontSize: Typography.sizes.sm,
+    color: Colors.textSecondary,
+    lineHeight: Typography.sizes.sm * 1.5,
+  },
+  noteFallback: {
+    marginTop: Spacing.xs,
+    fontSize: Typography.sizes.xs,
+    color: Colors.textTertiary,
+    fontStyle: 'italic',
+  },
+
+  // Form
+  label: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    fontWeight: Typography.weights.semiBold,
+    letterSpacing: 0.6,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.xs,
+  },
+  input: {
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
+    color: Colors.textPrimary,
+    fontSize: Typography.sizes.base,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    fontFamily: 'monospace',
+  },
+  hint: {
+    marginTop: Spacing.xs,
+    fontSize: Typography.sizes.xs,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+  },
+
+  // Result
+  resultHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  resultIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resultTitle: {
+    flex: 1,
+    fontSize: Typography.sizes.base,
+    fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+    color: Colors.textPrimary,
+  },
+  resultGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  resultCell: {
+    flexBasis: '47%',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    backgroundColor: Colors.surfaceContainerLow,
+    borderRadius: BorderRadius.base,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
   resultLabel: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
   },
   resultValue: {
+    marginTop: 2,
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
+  },
+
+  // Tips
+  tipsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  tipsIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.base,
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  tipsTitle: {
+    fontSize: Typography.sizes.sm,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.textPrimary,
+  },
+  tipsBody: {
+    marginTop: 4,
+    fontSize: Typography.sizes.sm,
+    color: Colors.textSecondary,
+    lineHeight: Typography.sizes.sm * 1.6,
+  },
+
+  // Submit
+  submitBar: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderDefault,
+    backgroundColor: Colors.surfaceContainerLow,
   },
 });

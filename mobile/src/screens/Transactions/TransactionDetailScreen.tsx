@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,99 +6,110 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
   Modal,
   TextInput,
-  ActivityIndicator,
 } from 'react-native';
-import { Card, Badge, Button, Header, EmptyState } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import {
+  Trash2,
+  Edit3,
+  Tag,
+  Zap,
+  Moon,
+  PartyPopper,
+  Repeat,
+  Split,
+  Building,
+  Calendar,
+  X,
+  Sparkles,
+  Utensils,
+  ShoppingBag,
+  Car,
+  Clapperboard,
+  Pill,
+  Package,
+  type LucideIcon,
+} from 'lucide-react-native';
+import { Badge, Button, Card, Header } from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
 import { useTransaction, useUpdateTransaction, useDeleteTransaction } from '../../hooks';
+import { formatCurrency, formatDate } from '../../utils';
+
+interface CategoryOption {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  color: string;
+}
+
+const CATEGORIES: CategoryOption[] = [
+  { id: 'food', label: 'Food', icon: Utensils, color: '#EF4444' },
+  { id: 'shopping', label: 'Shopping', icon: ShoppingBag, color: '#A78BFA' },
+  { id: 'transport', label: 'Transport', icon: Car, color: Colors.accentPrimary },
+  { id: 'entertainment', label: 'Entertainment', icon: Clapperboard, color: '#F472B6' },
+  { id: 'bills', label: 'Bills', icon: Zap, color: Colors.accentWarning },
+  { id: 'health', label: 'Health', icon: Pill, color: Colors.accentSuccess },
+  { id: 'subscription', label: 'Subscription', icon: Repeat, color: '#818CF8' },
+  { id: 'other', label: 'Other', icon: Package, color: Colors.outline },
+];
 
 interface TransactionDetail {
   id: string;
   amount: number;
-  type: 'CREDIT' | 'DEBIT';
-  category: string;
-  categoryIcon: string;
-  categoryColor: string;
+  type: 'DEBIT' | 'CREDIT';
+  categoryId: string;
   merchant: string;
   description: string;
   date: string;
   source: string;
-  captureMode: 'AUTO' | 'MANUAL' | 'ASSISTED';
   account: string;
   rawSms?: string;
-  isImpulse?: boolean;
-  isLateNight?: boolean;
-  isWeekend?: boolean;
-  isSubscription?: boolean;
-  subscriptionName?: string;
-  location?: { latitude: number; longitude: number; name?: string };
-  tags: string[];
+  isImpulse: boolean;
+  isLateNight: boolean;
+  isWeekend: boolean;
+  isSubscription: boolean;
 }
 
-const CATEGORIES = [
-  { id: 'food', label: 'Food & Dining', icon: '🍔' },
-  { id: 'shopping', label: 'Shopping', icon: '🛍️' },
-  { id: 'transport', label: 'Transport', icon: '🚗' },
-  { id: 'entertainment', label: 'Entertainment', icon: '🎬' },
-  { id: 'bills', label: 'Bills', icon: '⚡' },
-  { id: 'health', label: 'Health', icon: '💊' },
-  { id: 'subscription', label: 'Subscription', icon: '🔄' },
-  { id: 'other', label: 'Other', icon: '📦' },
-];
-
-// Default placeholder while transaction is loading or missing
 const EMPTY_TX: TransactionDetail = {
   id: '',
   amount: 0,
   type: 'DEBIT',
-  category: 'Other',
-  categoryIcon: '📦',
-  categoryColor: Colors.gray400,
+  categoryId: 'other',
   merchant: 'Unknown',
   description: '',
   date: new Date().toISOString(),
   source: 'MANUAL',
-  captureMode: 'MANUAL',
   account: '',
   isImpulse: false,
   isLateNight: false,
   isWeekend: false,
   isSubscription: false,
-  tags: [],
 };
 
 function backendToTxDetail(t: any): TransactionDetail {
   if (!t) return EMPTY_TX;
-  const cat = CATEGORIES.find((c) => c.id === t.categoryId) ?? CATEGORIES[7];
   return {
     id: t.id,
     amount: Number(t.amount ?? 0),
     type: t.type,
-    category: cat.label,
-    categoryIcon: cat.icon,
-    categoryColor: Colors.gray400,
+    categoryId: t.categoryId || 'other',
     merchant: t.merchantName || 'Unknown',
     description: t.description || '',
     date: t.transactionDate,
     source: t.source || 'MANUAL',
-    captureMode: t.captureMode || 'MANUAL',
     account: t.account?.accountName || t.accountId || '',
     rawSms: t.rawSmsText,
     isImpulse: !!t.isImpulse,
     isLateNight: !!t.isLateNight,
     isWeekend: !!t.isWeekend,
     isSubscription: !!t.isSubscription,
-    tags: t.tags ?? [],
   };
 }
 
-const RELATED = [
-  { id: 'r1', merchant: 'Swiggy', amount: 425, date: '2 days ago' },
-  { id: 'r2', merchant: 'Swiggy', amount: 680, date: '4 days ago' },
-  { id: 'r3', merchant: 'Swiggy', amount: 320, date: '1 week ago' },
-];
+function categoryFor(id: string): CategoryOption {
+  return CATEGORIES.find((c) => c.id === id) ?? CATEGORIES[7];
+}
 
 export function TransactionDetailScreen({ navigation, route }: any) {
   const id = route?.params?.id;
@@ -111,15 +122,13 @@ export function TransactionDetailScreen({ navigation, route }: any) {
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [showEditNote, setShowEditNote] = useState(false);
   const [editedNote, setEditedNote] = useState('');
-  const [showRawSms, setShowRawSms] = useState(false);
 
-  // Sync local state when tx loads
   useEffect(() => {
     setEditedNote(tx.description);
   }, [tx.id, tx.description]);
 
-  const handleDelete = () => {
-    Alert.alert('Delete transaction?', 'This action cannot be undone', [
+  const handleDelete = () =>
+    Alert.alert('Delete transaction?', 'This action cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -135,9 +144,8 @@ export function TransactionDetailScreen({ navigation, route }: any) {
         },
       },
     ]);
-  };
 
-  const handleChangeCategory = (cat: (typeof CATEGORIES)[0]) => {
+  const handleChangeCategory = (cat: CategoryOption) => {
     if (!tx.id) return;
     updateTx.mutate({ id: tx.id, data: { categoryId: cat.id } });
     setShowCategoryPicker(false);
@@ -149,198 +157,245 @@ export function TransactionDetailScreen({ navigation, route }: any) {
     setShowEditNote(false);
   };
 
-  const handleSplit = () => {
-    navigation.navigate('SplitExpense', { transactionId: tx.id });
-  };
-
-  const handleMarkImpulse = () => {
+  const handleToggleImpulse = () => {
     if (!tx.id) return;
     updateTx.mutate({ id: tx.id, data: { isImpulse: !tx.isImpulse } });
   };
 
   if (txQuery.isLoading || !tx.id) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color={Colors.accentAi} />
       </View>
     );
   }
+
+  const cat = categoryFor(tx.categoryId);
+  const CatIcon = cat.icon;
 
   return (
     <View style={styles.container}>
       <Header
         title="Transaction"
         onBack={() => navigation.goBack()}
-        rightIcon="🗑️"
-        onRightPress={handleDelete}
+        rightContent={
+          <TouchableOpacity
+            onPress={handleDelete}
+            accessibilityRole="button"
+            accessibilityLabel="Delete"
+            hitSlop={8}
+            style={styles.headerBtn}
+          >
+            <Trash2 size={16} color={Colors.accentError} strokeWidth={2} />
+          </TouchableOpacity>
+        }
       />
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Hero amount */}
-        <View
-          style={[
-            styles.hero,
-            { backgroundColor: tx.type === 'CREDIT' ? Colors.success : Colors.primary },
-          ]}
-        >
-          <View style={styles.heroIcon}>
-            <Text style={styles.heroIconText}>{tx.categoryIcon}</Text>
-          </View>
-          <Text style={styles.heroAmount}>
-            {tx.type === 'CREDIT' ? '+' : '-'}₹{tx.amount.toLocaleString()}
+      <ScrollView contentContainerStyle={styles.scroll}>
+        {/* Hero */}
+        <Card variant="hero" padding="xl" style={{ alignItems: 'center' }}>
+          <Text style={styles.heroLabel}>
+            {tx.type === 'CREDIT' ? 'RECEIVED FROM' : 'SPENT AT'}
           </Text>
-          <Text style={styles.heroMerchant}>{tx.merchant}</Text>
+          <Text style={styles.heroMerchant} numberOfLines={1}>
+            {tx.merchant}
+          </Text>
+          <Text
+            style={[styles.heroAmount, tx.type === 'CREDIT' && { color: Colors.accentSuccess }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}
+          >
+            {tx.type === 'CREDIT' ? '+' : '−'}
+            {formatCurrency(tx.amount)}
+          </Text>
           <Text style={styles.heroDate}>
-            {new Date(tx.date).toLocaleString('en-IN', {
-              dateStyle: 'medium',
-              timeStyle: 'short',
+            {formatDate(tx.date, {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
             })}
           </Text>
-        </View>
 
-        {/* Behavioral tags */}
-        {(tx.isImpulse || tx.isLateNight || tx.isWeekend) && (
-          <Card style={styles.behaviorCard}>
-            <Text style={styles.sectionLabel}>🧠 Behavioral Insights</Text>
-            <View style={styles.behaviorTags}>
-              {tx.isImpulse && <Badge text="🎯 Impulse" variant="warning" />}
-              {tx.isLateNight && <Badge text="🌙 Late Night" variant="info" />}
-              {tx.isWeekend && <Badge text="🎉 Weekend" variant="primary" />}
+          {/* Tag chips */}
+          {(tx.isImpulse || tx.isLateNight || tx.isWeekend) && (
+            <View style={styles.tagsRow}>
+              {tx.isImpulse && <Badge text="Impulse" variant="warning" size="sm" />}
+              {tx.isLateNight && <Badge text="Late night" variant="ai" size="sm" />}
+              {tx.isWeekend && <Badge text="Weekend" variant="primary" size="sm" />}
+              {tx.isSubscription && <Badge text="Subscription" variant="primary" size="sm" />}
             </View>
-            <Text style={styles.behaviorHint}>
-              This transaction was flagged because it was made after 10 PM and fits an impulse
-              pattern.
-            </Text>
-            <TouchableOpacity onPress={handleMarkImpulse}>
-              <Text style={styles.linkText}>
-                {tx.isImpulse ? "It wasn't impulsive" : 'Mark as impulse'}
-              </Text>
-            </TouchableOpacity>
-          </Card>
-        )}
-
-        {/* Details */}
-        <Card style={styles.detailsCard}>
-          <DetailRow label="Account" value={tx.account} icon="🏦" />
-          <DetailRow label="Source" value={tx.source} icon="📱" />
-          <DetailRow
-            label="Capture Mode"
-            value={tx.captureMode}
-            icon={tx.captureMode === 'AUTO' ? '⚡' : tx.captureMode === 'ASSISTED' ? '🤖' : '✍️'}
-          />
-          <DetailRow
-            label="Category"
-            value={tx.category}
-            icon={tx.categoryIcon}
-            actionLabel="Change"
-            onAction={() => setShowCategoryPicker(true)}
-          />
-          <DetailRow
-            label="Note"
-            value={tx.description}
-            icon="📝"
-            actionLabel="Edit"
-            onAction={() => {
-              setEditedNote(tx.description);
-              setShowEditNote(true);
-            }}
-            multiline
-          />
-          {tx.location && (
-            <DetailRow
-              label="Location"
-              value={tx.location.name || `${tx.location.latitude}, ${tx.location.longitude}`}
-              icon="📍"
-            />
-          )}
-          {tx.isSubscription && (
-            <DetailRow
-              label="Subscription"
-              value={tx.subscriptionName || 'Linked'}
-              icon="🔄"
-              actionLabel="View"
-              onAction={() => navigation.navigate('Subscriptions')}
-            />
           )}
         </Card>
 
-        {/* Quick Actions */}
-        <View style={styles.actionsRow}>
-          <ActionButton
-            icon="🔄"
-            label="Repeat"
-            onPress={() => Alert.alert('Repeat', 'Add similar transaction')}
-          />
-          <ActionButton icon="🧾" label="Split" onPress={handleSplit} />
-          <ActionButton icon="🏷️" label="Tag" onPress={() => Alert.alert('Tags', 'Add tags')} />
-          <ActionButton icon="💾" label="Save" onPress={() => Alert.alert('Saved')} />
-        </View>
+        {/* Category card */}
+        <Card
+          padding="base"
+          style={{ marginTop: Spacing.lg }}
+          onPress={() => setShowCategoryPicker(true)}
+        >
+          <View style={styles.metaRow}>
+            <View
+              style={[
+                styles.metaIcon,
+                {
+                  backgroundColor: cat.color + '22',
+                  borderColor: cat.color + '44',
+                },
+              ]}
+            >
+              <CatIcon size={18} color={cat.color} strokeWidth={1.75} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.metaLabel}>CATEGORY</Text>
+              <Text style={styles.metaValue}>{cat.label}</Text>
+            </View>
+            <Edit3 size={14} color={Colors.textTertiary} strokeWidth={2} />
+          </View>
+        </Card>
+
+        {/* Account / source */}
+        <Card padding="base" style={{ marginTop: Spacing.sm }}>
+          <View style={styles.metaRow}>
+            <View style={styles.metaIcon}>
+              <Building size={18} color={Colors.textSecondary} strokeWidth={1.75} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.metaLabel}>ACCOUNT</Text>
+              <Text style={styles.metaValue}>{tx.account || 'No account'}</Text>
+            </View>
+            <Badge text={tx.source.toLowerCase()} variant="gray" size="sm" />
+          </View>
+        </Card>
+
+        {/* Notes */}
+        <Card
+          padding="base"
+          style={{ marginTop: Spacing.sm }}
+          onPress={() => setShowEditNote(true)}
+        >
+          <View style={styles.metaRow}>
+            <View style={styles.metaIcon}>
+              <Tag size={18} color={Colors.textSecondary} strokeWidth={1.75} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.metaLabel}>NOTES</Text>
+              <Text
+                style={[
+                  styles.metaValue,
+                  !tx.description && {
+                    color: Colors.textTertiary,
+                    fontStyle: 'italic',
+                  },
+                ]}
+                numberOfLines={2}
+              >
+                {tx.description || 'Tap to add a note'}
+              </Text>
+            </View>
+            <Edit3 size={14} color={Colors.textTertiary} strokeWidth={2} />
+          </View>
+        </Card>
 
         {/* Raw SMS */}
         {tx.rawSms && (
-          <Card style={styles.rawCard}>
-            <TouchableOpacity style={styles.rawHeader} onPress={() => setShowRawSms(!showRawSms)}>
-              <Text style={styles.sectionLabel}>📩 Original SMS</Text>
-              <Text style={styles.linkText}>{showRawSms ? 'Hide' : 'Show'}</Text>
-            </TouchableOpacity>
-            {showRawSms && (
-              <View style={styles.rawSmsBox}>
-                <Text style={styles.rawSmsText}>{tx.rawSms}</Text>
-              </View>
-            )}
+          <Card padding="base" style={{ marginTop: Spacing.sm }}>
+            <Text style={styles.metaLabel}>SMS SOURCE</Text>
+            <Text style={styles.rawSms}>{tx.rawSms}</Text>
           </Card>
         )}
 
-        {/* Related transactions */}
-        <Card style={styles.relatedCard}>
-          <Text style={styles.sectionLabel}>Recent at {tx.merchant}</Text>
-          {RELATED.map((r) => (
-            <TouchableOpacity key={r.id} style={styles.relatedRow}>
-              <View style={styles.relatedLeft}>
-                <Text style={styles.relatedMerchant}>{r.merchant}</Text>
-                <Text style={styles.relatedDate}>{r.date}</Text>
-              </View>
-              <Text style={styles.relatedAmount}>-₹{r.amount}</Text>
-            </TouchableOpacity>
-          ))}
-          <View style={styles.relatedFooter}>
-            <Text style={styles.relatedTotal}>Total at Swiggy this month: ₹8,200</Text>
+        {/* AI insight (impulse toggle) */}
+        <Card variant="ai" padding="base" style={{ marginTop: Spacing.lg }}>
+          <View style={styles.metaRow}>
+            <View style={styles.metaIconAi}>
+              <Sparkles size={18} color={Colors.accentAi} strokeWidth={1.75} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.metaLabel, { color: Colors.accentAi }]}>AI ASSISTANT</Text>
+              <Text style={styles.metaValue}>
+                {tx.isImpulse ? 'Marked as impulse buy' : 'Was this an impulse purchase?'}
+              </Text>
+            </View>
+            <Button
+              title={tx.isImpulse ? 'Unmark' : 'Mark'}
+              size="sm"
+              variant={tx.isImpulse ? 'secondary' : 'ai'}
+              onPress={handleToggleImpulse}
+              leadingIcon={
+                <Zap
+                  size={14}
+                  color={tx.isImpulse ? Colors.textPrimary : Colors.accentAi}
+                  strokeWidth={2}
+                />
+              }
+            />
           </View>
         </Card>
 
-        <View style={{ height: Spacing['2xl'] }} />
+        {/* Quick actions */}
+        <View style={styles.actionsRow}>
+          <Button
+            title="Split"
+            variant="secondary"
+            size="md"
+            onPress={() => navigation.navigate('SplitExpense', { transactionId: tx.id })}
+            leadingIcon={<Split size={14} color={Colors.textPrimary} strokeWidth={2} />}
+            style={{ flex: 1 }}
+          />
+        </View>
+
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
 
       {/* Category picker modal */}
       <Modal
         visible={showCategoryPicker}
-        animationType="slide"
         transparent
+        animationType="slide"
         onRequestClose={() => setShowCategoryPicker(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Change Category</Text>
-              <TouchableOpacity onPress={() => setShowCategoryPicker(false)}>
-                <Text style={styles.modalClose}>✕</Text>
+              <Text style={styles.modalTitle}>Change category</Text>
+              <TouchableOpacity onPress={() => setShowCategoryPicker(false)} hitSlop={8}>
+                <X size={20} color={Colors.textSecondary} strokeWidth={2} />
               </TouchableOpacity>
             </View>
-            <View style={styles.catGrid}>
-              {CATEGORIES.map((cat) => (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[styles.catCard, tx.category === cat.label && styles.catCardActive]}
-                  onPress={() => handleChangeCategory(cat)}
-                >
-                  <Text style={styles.catIcon}>{cat.icon}</Text>
-                  <Text
-                    style={[styles.catLabel, tx.category === cat.label && styles.catLabelActive]}
+
+            <View style={styles.categoryGrid}>
+              {CATEGORIES.map((c) => {
+                const Icon = c.icon;
+                const active = c.id === tx.categoryId;
+                return (
+                  <TouchableOpacity
+                    key={c.id}
+                    onPress={() => handleChangeCategory(c)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: active }}
+                    style={[
+                      styles.categoryTile,
+                      active && {
+                        borderColor: c.color,
+                        backgroundColor: c.color + '14',
+                      },
+                    ]}
                   >
-                    {cat.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Icon
+                      size={18}
+                      color={active ? c.color : Colors.textSecondary}
+                      strokeWidth={1.75}
+                    />
+                    <Text style={[styles.categoryLabel, active && { color: c.color }]}>
+                      {c.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
         </View>
@@ -349,35 +404,30 @@ export function TransactionDetailScreen({ navigation, route }: any) {
       {/* Edit note modal */}
       <Modal
         visible={showEditNote}
-        animationType="fade"
         transparent
+        animationType="slide"
         onRequestClose={() => setShowEditNote(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.editNoteModal}>
-            <Text style={styles.modalTitle}>Edit Note</Text>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit note</Text>
+              <TouchableOpacity onPress={() => setShowEditNote(false)} hitSlop={8}>
+                <X size={20} color={Colors.textSecondary} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
             <TextInput
-              style={styles.noteInput}
               value={editedNote}
               onChangeText={setEditedNote}
-              placeholder="Add a note..."
+              placeholder="What was this for?"
               placeholderTextColor={Colors.textTertiary}
               multiline
-              numberOfLines={4}
+              autoFocus
+              style={[styles.modalInput, { minHeight: 100, textAlignVertical: 'top' }]}
             />
-            <View style={styles.modalActions}>
-              <Button
-                title="Cancel"
-                onPress={() => setShowEditNote(false)}
-                variant="ghost"
-                style={{ flex: 1 }}
-              />
-              <Button
-                title="Save"
-                onPress={handleSaveNote}
-                variant="primary"
-                style={{ flex: 1, marginLeft: Spacing.sm }}
-              />
+            <View style={{ marginTop: Spacing.lg }}>
+              <Button title="Save" onPress={handleSaveNote} fullWidth />
             </View>
           </View>
         </View>
@@ -386,260 +436,147 @@ export function TransactionDetailScreen({ navigation, route }: any) {
   );
 }
 
-function DetailRow({
-  label,
-  value,
-  icon,
-  actionLabel,
-  onAction,
-  multiline,
-}: {
-  label: string;
-  value: string;
-  icon: string;
-  actionLabel?: string;
-  onAction?: () => void;
-  multiline?: boolean;
-}) {
-  return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailIcon}>{icon}</Text>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.detailLabel}>{label}</Text>
-        <Text style={styles.detailValue} numberOfLines={multiline ? undefined : 1}>
-          {value}
-        </Text>
-      </View>
-      {actionLabel && onAction && (
-        <TouchableOpacity onPress={onAction}>
-          <Text style={styles.linkText}>{actionLabel}</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-}
-
-function ActionButton({
-  icon,
-  label,
-  onPress,
-}: {
-  icon: string;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={styles.action} onPress={onPress}>
-      <View style={styles.actionIconBox}>
-        <Text style={styles.actionIcon}>{icon}</Text>
-      </View>
-      <Text style={styles.actionLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
   },
-  // Hero
-  hero: {
-    margin: Spacing.lg,
-    padding: Spacing.xl,
-    borderRadius: BorderRadius.xl,
+  center: {
     alignItems: 'center',
-  },
-  heroIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
+  },
+
+  headerBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.md,
+    backgroundColor: 'rgba(255,180,171,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,180,171,0.30)',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
+    justifyContent: 'center',
   },
-  heroIconText: {
-    fontSize: 32,
+
+  scroll: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
   },
-  heroAmount: {
-    fontSize: Typography.sizes['4xl'],
-    fontWeight: Typography.weights.bold,
-    color: Colors.white,
+
+  // Hero
+  heroLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 1.2,
+    fontWeight: Typography.weights.medium,
   },
   heroMerchant: {
+    marginTop: Spacing.xs,
     fontSize: Typography.sizes.lg,
     fontWeight: Typography.weights.semiBold,
-    color: 'rgba(255,255,255,0.9)',
-    marginTop: 4,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+    color: Colors.textPrimary,
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  heroAmount: {
+    marginTop: Spacing.sm,
+    fontSize: 48,
+    lineHeight: 52,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -1.5,
+    color: Colors.textPrimary,
   },
   heroDate: {
+    marginTop: Spacing.xs,
     fontSize: Typography.sizes.sm,
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: 4,
-  },
-  // Section
-  sectionLabel: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.bold,
     color: Colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: Spacing.sm,
+    fontVariant: ['tabular-nums'] as any,
   },
-  // Behavior
-  behaviorCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-    backgroundColor: Tints.warningBg,
-    borderWidth: 1,
-    borderColor: Tints.warningBorder,
-  },
-  behaviorTags: {
+  tagsRow: {
+    marginTop: Spacing.base,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Spacing.xs,
-    marginBottom: Spacing.sm,
-  },
-  behaviorHint: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    lineHeight: Typography.sizes.sm * 1.5,
-    marginBottom: Spacing.sm,
-  },
-  linkText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.primary,
-    fontWeight: Typography.weights.semiBold,
-  },
-  // Details
-  detailsCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
-  },
-  detailIcon: {
-    fontSize: 22,
-    marginRight: Spacing.sm,
-    width: 28,
-  },
-  detailLabel: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-    textTransform: 'uppercase',
-  },
-  detailValue: {
-    fontSize: Typography.sizes.base,
-    color: Colors.textPrimary,
-    fontWeight: Typography.weights.medium,
-    marginTop: 2,
-  },
-  // Actions
-  actionsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-  },
-  action: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  actionIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.card,
+    gap: 4,
     justifyContent: 'center',
+  },
+
+  // Meta rows
+  metaRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
   },
-  actionIcon: {
-    fontSize: 22,
+  metaIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.base,
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
   },
-  actionLabel: {
+  metaIconAi: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  metaLabel: {
     fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
     fontWeight: Typography.weights.medium,
   },
-  // Raw SMS
-  rawCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-  },
-  rawHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  rawSmsBox: {
-    backgroundColor: Colors.gray50,
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.base,
-    marginTop: Spacing.sm,
-  },
-  rawSmsText: {
-    fontSize: Typography.sizes.sm,
+  metaValue: {
+    marginTop: 2,
+    fontSize: Typography.sizes.base,
+    fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
+  },
+  rawSms: {
+    marginTop: Spacing.xs,
+    fontSize: Typography.sizes.sm,
+    color: Colors.textSecondary,
     fontFamily: 'monospace',
     lineHeight: Typography.sizes.sm * 1.5,
   },
-  // Related
-  relatedCard: {
-    marginHorizontal: Spacing.lg,
-  },
-  relatedRow: {
+
+  actionsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
+    marginTop: Spacing.lg,
   },
-  relatedLeft: {
-    flex: 1,
-  },
-  relatedMerchant: {
-    fontSize: Typography.sizes.base,
-    color: Colors.textPrimary,
-    fontWeight: Typography.weights.medium,
-  },
-  relatedDate: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  relatedAmount: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.error,
-  },
-  relatedFooter: {
-    paddingTop: Spacing.sm,
-  },
-  relatedTotal: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    fontWeight: Typography.weights.medium,
-  },
+
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
     justifyContent: 'flex-end',
   },
-  modalContent: {
-    backgroundColor: Colors.white,
+  modalSheet: {
+    backgroundColor: Colors.surfaceContainerHighest,
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
     padding: Spacing.lg,
     paddingBottom: Spacing['3xl'],
-    maxHeight: '70%',
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.outline,
+    alignSelf: 'center',
+    marginBottom: Spacing.base,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -650,61 +587,41 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: Typography.sizes.xl,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
   },
-  modalClose: {
-    fontSize: 24,
-    color: Colors.textSecondary,
+  modalInput: {
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
+    color: Colors.textPrimary,
+    fontSize: Typography.sizes.base,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
-  catGrid: {
+
+  // Category grid
+  categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.sm,
   },
-  catCard: {
-    width: '30%',
-    padding: Spacing.base,
-    backgroundColor: Colors.gray50,
-    borderRadius: BorderRadius.md,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  catCardActive: {
-    borderColor: Colors.primary,
-    backgroundColor: Tints.primaryBg,
-  },
-  catIcon: {
-    fontSize: 28,
-    marginBottom: 4,
-  },
-  catLabel: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-  },
-  catLabelActive: {
-    fontWeight: Typography.weights.bold,
-    color: Colors.primary,
-  },
-  // Edit note
-  editNoteModal: {
-    backgroundColor: Colors.white,
-    margin: Spacing.lg,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-  },
-  noteInput: {
-    fontSize: Typography.sizes.base,
-    color: Colors.textPrimary,
-    backgroundColor: Colors.inputBg,
-    borderRadius: BorderRadius.base,
-    padding: Spacing.base,
-    minHeight: 100,
-    marginVertical: Spacing.base,
-    textAlignVertical: 'top',
-  },
-  modalActions: {
+  categoryTile: {
+    flexBasis: '47%',
     flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    gap: Spacing.sm,
+  },
+  categoryLabel: {
+    fontSize: Typography.sizes.sm,
+    fontWeight: Typography.weights.semiBold,
+    color: Colors.textSecondary,
   },
 });

@@ -10,16 +10,30 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { Card, Badge, Button, Header, EmptyState } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import {
+  Building,
+  Wallet as WalletIcon,
+  CreditCard,
+  TrendingUp,
+  Home as HomeIcon,
+  Plus,
+  X,
+  Star,
+  RefreshCw,
+  Trash2,
+  ArrowRight,
+  type LucideIcon,
+} from 'lucide-react-native';
+import { Badge, Button, Card, EmptyState, Header } from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
 import {
   useAccounts,
   useCreateAccount,
-  useUpdateAccount,
   useDeleteAccount,
   useSetPrimaryAccount,
   useRecomputeAccount,
 } from '../../hooks';
+import { formatCurrency } from '../../utils';
 
 type AccountType = 'BANK' | 'WALLET' | 'CREDIT_CARD' | 'INVESTMENT' | 'LOAN';
 
@@ -32,42 +46,29 @@ interface Account {
   balance: number;
   currency: string;
   color: string;
-  icon: string;
   isPrimary: boolean;
   isActive: boolean;
-  // Credit card specific
-  creditLimit?: number;
-  dueDate?: string;
-  dueAmount?: number;
-  // Loan specific
-  emiAmount?: number;
-  emiNextDate?: string;
-  loanRemaining?: number;
   lastSync: string;
 }
 
-const TYPE_OPTIONS: {
+interface TypeOption {
   type: AccountType;
   label: string;
-  icon: string;
+  icon: LucideIcon;
   color: string;
-}[] = [
-  { type: 'BANK', label: 'Bank Account', icon: '🏦', color: '#4F46E5' },
-  { type: 'WALLET', label: 'Wallet', icon: '📱', color: '#8B5CF6' },
-  { type: 'CREDIT_CARD', label: 'Credit Card', icon: '💳', color: '#EC4899' },
-  { type: 'INVESTMENT', label: 'Investment', icon: '📈', color: '#10B981' },
-  { type: 'LOAN', label: 'Loan', icon: '🏠', color: '#F59E0B' },
+}
+
+const TYPE_OPTIONS: TypeOption[] = [
+  { type: 'BANK', label: 'Bank account', icon: Building, color: Colors.accentPrimary },
+  { type: 'WALLET', label: 'Wallet', icon: WalletIcon, color: '#A78BFA' },
+  { type: 'CREDIT_CARD', label: 'Credit card', icon: CreditCard, color: '#F472B6' },
+  { type: 'INVESTMENT', label: 'Investment', icon: TrendingUp, color: Colors.accentSuccess },
+  { type: 'LOAN', label: 'Loan', icon: HomeIcon, color: Colors.accentWarning },
 ];
 
-const TYPE_LABELS: Record<AccountType, string> = {
-  BANK: 'Bank',
-  WALLET: 'Wallet',
-  CREDIT_CARD: 'Credit Card',
-  INVESTMENT: 'Investment',
-  LOAN: 'Loan',
-};
-
-const mockAccounts: Account[] = [];
+function typeOptFor(type: AccountType): TypeOption {
+  return TYPE_OPTIONS.find((t) => t.type === type) ?? TYPE_OPTIONS[0];
+}
 
 type FilterType = 'all' | AccountType;
 
@@ -81,17 +82,16 @@ export function AccountsScreen({ navigation }: any) {
   const accounts: Account[] = useMemo(() => {
     const list = accountsQuery.data || [];
     return list.map((a: any) => {
-      const typeOpt = TYPE_OPTIONS.find((t) => t.type === a.accountType);
+      const opt = typeOptFor(a.accountType);
       return {
         id: a.id,
-        type: a.accountType,
+        type: a.accountType as AccountType,
         name: a.accountName,
         provider: a.providerName || '',
         mask: a.maskedAccountNumber || undefined,
         balance: Number(a.balance ?? 0),
         currency: a.currency || 'INR',
-        color: a.color || typeOpt?.color || Colors.primary,
-        icon: a.icon || typeOpt?.icon || '🏦',
+        color: a.color || opt.color,
         isPrimary: !!a.isPrimary,
         isActive: a.isActive !== false,
         lastSync: a.updatedAt || new Date().toISOString(),
@@ -101,23 +101,15 @@ export function AccountsScreen({ navigation }: any) {
 
   const [filter, setFilter] = useState<FilterType>('all');
   const [showAdd, setShowAdd] = useState(false);
-  const [selectedType, setSelectedType] = useState<AccountType | null>(null);
-  const [newAccount, setNewAccount] = useState({
-    name: '',
-    provider: '',
-    mask: '',
-    balance: '',
-  });
 
   const totals = useMemo(() => {
     const assets = accounts
       .filter((a) => a.balance > 0 && a.type !== 'LOAN')
       .reduce((s, a) => s + a.balance, 0);
     const liabilities = accounts
-      .filter((a) => a.balance < 0)
+      .filter((a) => a.balance < 0 || a.type === 'LOAN')
       .reduce((s, a) => s + Math.abs(a.balance), 0);
-    const netWorth = assets - liabilities;
-    return { assets, liabilities, netWorth };
+    return { assets, liabilities, netWorth: assets - liabilities };
   }, [accounts]);
 
   const filtered = useMemo(() => {
@@ -125,33 +117,10 @@ export function AccountsScreen({ navigation }: any) {
     return accounts.filter((a) => a.type === filter);
   }, [accounts, filter]);
 
-  const grouped = useMemo(() => {
-    const groups: Record<AccountType, Account[]> = {
-      BANK: [],
-      WALLET: [],
-      CREDIT_CARD: [],
-      INVESTMENT: [],
-      LOAN: [],
-    };
-    filtered.forEach((a) => groups[a.type].push(a));
-    return groups;
-  }, [filtered]);
-
-  const handleSetPrimary = (id: string) => {
-    setPrimary.mutate(id);
-  };
-
-  const handleSync = (id: string) => {
-    recompute.mutate(id, {
-      onSuccess: () => Alert.alert('Synced', 'Account refreshed from transaction history'),
-      onError: (e: any) => Alert.alert('Sync failed', e?.message ?? 'Could not sync account'),
-    });
-  };
-
-  const handleRemove = (acc: Account) => {
+  const handleRemove = (acc: Account) =>
     Alert.alert(
       `Remove ${acc.name}?`,
-      'Transactions will remain but the account will be unlinked',
+      'Transactions will remain but the account will be unlinked.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -161,34 +130,17 @@ export function AccountsScreen({ navigation }: any) {
         },
       ],
     );
-  };
 
-  const handleAddAccount = async () => {
-    if (!selectedType || !newAccount.name || !newAccount.provider) {
-      Alert.alert('Missing fields', 'Please fill all required fields');
-      return;
-    }
-    try {
-      await createAccount.mutateAsync({
-        accountType: selectedType,
-        accountName: newAccount.name,
-        providerName: newAccount.provider,
-        maskedAccountNumber: newAccount.mask || undefined,
-        balance: parseFloat(newAccount.balance || '0'),
-        isPrimary: accounts.length === 0,
-      });
-      setShowAdd(false);
-      setSelectedType(null);
-      setNewAccount({ name: '', provider: '', mask: '', balance: '' });
-    } catch (e: any) {
-      Alert.alert('Could not add account', e?.message ?? 'Unknown error');
-    }
-  };
+  const handleSync = (id: string) =>
+    recompute.mutate(id, {
+      onSuccess: () => Alert.alert('Synced', 'Balance refreshed from transactions.'),
+      onError: (e: any) => Alert.alert('Sync failed', e?.message ?? 'Could not sync account.'),
+    });
 
   if (accountsQuery.isLoading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color={Colors.accentAi} />
       </View>
     );
   }
@@ -197,368 +149,359 @@ export function AccountsScreen({ navigation }: any) {
     <View style={styles.container}>
       <Header
         title="Accounts"
+        subtitle={`${accounts.length} linked`}
         onBack={() => navigation.goBack()}
-        rightIcon="+"
-        onRightPress={() => setShowAdd(true)}
+        rightContent={
+          <TouchableOpacity
+            onPress={() => setShowAdd(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Add account"
+            style={styles.headerCta}
+          >
+            <Plus size={16} color={Colors.white} strokeWidth={2.5} />
+            <Text style={styles.headerCtaText}>New</Text>
+          </TouchableOpacity>
+        }
       />
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Net worth card */}
-        <Card style={styles.netWorthCard}>
-          <Text style={styles.netWorthLabel}>Net Worth</Text>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* Net worth hero */}
+        <Card variant="hero" padding="xl">
+          <Text style={styles.heroLabel}>NET WORTH</Text>
           <Text
             style={[
-              styles.netWorthValue,
-              { color: totals.netWorth >= 0 ? Colors.white : Colors.error },
+              styles.heroValue,
+              {
+                color: totals.netWorth >= 0 ? Colors.textPrimary : Colors.accentError,
+              },
             ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}
           >
-            ₹{totals.netWorth.toLocaleString()}
+            {totals.netWorth < 0 ? '−' : ''}
+            {formatCurrency(Math.abs(totals.netWorth))}
           </Text>
-          <View style={styles.nwBreakdown}>
-            <View style={styles.nwItem}>
-              <Text style={styles.nwLabel}>Assets</Text>
-              <Text style={[styles.nwValue, { color: Tints.successBorder }]}>
-                +₹{totals.assets.toLocaleString()}
+
+          <View style={styles.heroFooter}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroSubLabel}>ASSETS</Text>
+              <Text style={[styles.heroSubValue, { color: Colors.accentSuccess }]}>
+                {formatCurrency(totals.assets, { compact: true })}
               </Text>
             </View>
-            <View style={styles.nwDivider} />
-            <View style={styles.nwItem}>
-              <Text style={styles.nwLabel}>Liabilities</Text>
-              <Text style={[styles.nwValue, { color: Colors.error }]}>
-                -₹{totals.liabilities.toLocaleString()}
+            <View style={styles.heroDivider} />
+            <View style={{ flex: 1, alignItems: 'flex-end' }}>
+              <Text style={styles.heroSubLabel}>LIABILITIES</Text>
+              <Text style={[styles.heroSubValue, { color: Colors.accentError }]}>
+                {formatCurrency(totals.liabilities, { compact: true })}
               </Text>
             </View>
           </View>
         </Card>
 
-        {/* Filter tabs */}
+        {/* Filter chip rail */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabs}
+          contentContainerStyle={styles.filterTabs}
         >
-          {(
-            [
-              { key: 'all', label: 'All' },
-              { key: 'BANK', label: '🏦 Banks' },
-              { key: 'CREDIT_CARD', label: '💳 Cards' },
-              { key: 'WALLET', label: '📱 Wallets' },
-              { key: 'INVESTMENT', label: '📈 Investments' },
-              { key: 'LOAN', label: '🏠 Loans' },
-            ] as { key: FilterType; label: string }[]
-          ).map((tab) => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[styles.tab, filter === tab.key && styles.tabActive]}
-              onPress={() => setFilter(tab.key)}
-            >
-              <Text style={[styles.tabText, filter === tab.key && styles.tabTextActive]}>
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {(['all', 'BANK', 'WALLET', 'CREDIT_CARD', 'INVESTMENT', 'LOAN'] as FilterType[]).map(
+            (f) => {
+              const active = filter === f;
+              const opt = f !== 'all' ? typeOptFor(f) : null;
+              const Icon = opt?.icon;
+              return (
+                <TouchableOpacity
+                  key={f}
+                  onPress={() => setFilter(f)}
+                  accessibilityRole="button"
+                  style={[styles.chip, active && styles.chipActive]}
+                >
+                  {Icon && (
+                    <Icon
+                      size={14}
+                      color={active ? Colors.white : Colors.textSecondary}
+                      strokeWidth={1.75}
+                    />
+                  )}
+                  <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>
+                    {f === 'all' ? 'All' : opt?.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            },
+          )}
         </ScrollView>
 
-        {/* Account groups */}
-        {Object.entries(grouped).map(([type, accs]) =>
-          accs.length === 0 ? null : (
-            <View key={type} style={styles.group}>
-              <Text style={styles.groupTitle}>
-                {TYPE_LABELS[type as AccountType]} ({accs.length})
-              </Text>
-              {accs.map((acc) => (
-                <AccountCard
-                  key={acc.id}
-                  account={acc}
-                  onPrimary={() => handleSetPrimary(acc.id)}
-                  onSync={() => handleSync(acc.id)}
-                  onRemove={() => handleRemove(acc)}
-                  onPress={() => Alert.alert(acc.name, `View transactions for ${acc.name}`)}
-                />
-              ))}
-            </View>
-          ),
-        )}
-
-        {filtered.length === 0 && (
+        {filtered.length === 0 ? (
           <EmptyState
             icon="🏦"
             title="No accounts yet"
-            message="Link your bank, wallet, or credit card to get started"
-            actionLabel="Add Account"
+            message="Add your first account to start tracking your net worth."
+            actionLabel="Add account"
             onAction={() => setShowAdd(true)}
           />
+        ) : (
+          <View>
+            {filtered.map((a) => (
+              <AccountCard
+                key={a.id}
+                account={a}
+                onSetPrimary={() => setPrimary.mutate(a.id)}
+                onSync={() => handleSync(a.id)}
+                onRemove={() => handleRemove(a)}
+              />
+            ))}
+          </View>
         )}
 
-        <View style={{ height: Spacing['2xl'] }} />
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
 
-      {/* Add account modal */}
-      <Modal
+      <AddAccountModal
         visible={showAdd}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowAdd(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <ScrollView
-            contentContainerStyle={styles.modalScrollContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Add Account</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowAdd(false);
-                    setSelectedType(null);
-                  }}
-                >
-                  <Text style={styles.modalClose}>✕</Text>
-                </TouchableOpacity>
-              </View>
-
-              {!selectedType ? (
-                <>
-                  <Text style={styles.fieldLabel}>Account type</Text>
-                  <View style={styles.typeGrid}>
-                    {TYPE_OPTIONS.map((t) => (
-                      <TouchableOpacity
-                        key={t.type}
-                        style={[styles.typeCard, { borderColor: t.color }]}
-                        onPress={() => setSelectedType(t.type)}
-                      >
-                        <Text style={styles.typeIcon}>{t.icon}</Text>
-                        <Text style={styles.typeName}>{t.label}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </>
-              ) : (
-                <>
-                  <View style={styles.typeBanner}>
-                    <Text style={styles.typeBannerIcon}>
-                      {TYPE_OPTIONS.find((t) => t.type === selectedType)?.icon}
-                    </Text>
-                    <Text style={styles.typeBannerLabel}>
-                      {TYPE_OPTIONS.find((t) => t.type === selectedType)?.label}
-                    </Text>
-                    <TouchableOpacity onPress={() => setSelectedType(null)}>
-                      <Text style={styles.linkText}>Change</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <Text style={styles.fieldLabel}>Account Name</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g., Salary Account"
-                    placeholderTextColor={Colors.textTertiary}
-                    value={newAccount.name}
-                    onChangeText={(t) => setNewAccount({ ...newAccount, name: t })}
-                  />
-
-                  <Text style={styles.fieldLabel}>Provider</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g., HDFC Bank, Paytm, Visa"
-                    placeholderTextColor={Colors.textTertiary}
-                    value={newAccount.provider}
-                    onChangeText={(t) => setNewAccount({ ...newAccount, provider: t })}
-                  />
-
-                  <Text style={styles.fieldLabel}>Last 4 digits (optional)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="1234"
-                    placeholderTextColor={Colors.textTertiary}
-                    value={newAccount.mask}
-                    onChangeText={(t) => setNewAccount({ ...newAccount, mask: t })}
-                    keyboardType="numeric"
-                    maxLength={4}
-                  />
-
-                  <Text style={styles.fieldLabel}>
-                    Current Balance{' '}
-                    {selectedType === 'CREDIT_CARD' || selectedType === 'LOAN'
-                      ? '(amount owed)'
-                      : ''}
-                  </Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="0"
-                    placeholderTextColor={Colors.textTertiary}
-                    value={newAccount.balance}
-                    onChangeText={(t) => setNewAccount({ ...newAccount, balance: t })}
-                    keyboardType="numeric"
-                  />
-
-                  <View style={styles.linkOption}>
-                    <Text style={styles.linkOptionIcon}>🔗</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.linkOptionTitle}>Auto-link via SMS / UPI</Text>
-                      <Text style={styles.linkOptionText}>
-                        We'll detect transactions automatically once linked
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Button
-                    title="Add Account"
-                    onPress={handleAddAccount}
-                    variant="primary"
-                    fullWidth
-                    style={{ marginTop: Spacing.lg }}
-                  />
-                </>
-              )}
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
+        onClose={() => setShowAdd(false)}
+        onCreate={(payload) => {
+          createAccount.mutate(payload, {
+            onSuccess: () => setShowAdd(false),
+          });
+        }}
+      />
     </View>
   );
 }
 
-interface AccountCardProps {
+// =============================================================
+// Account card
+// =============================================================
+function AccountCard({
+  account,
+  onSetPrimary,
+  onSync,
+  onRemove,
+}: {
   account: Account;
-  onPrimary: () => void;
+  onSetPrimary: () => void;
   onSync: () => void;
   onRemove: () => void;
-  onPress: () => void;
-}
-
-function AccountCard({ account, onPrimary, onSync, onRemove, onPress }: AccountCardProps) {
-  const isCredit = account.type === 'CREDIT_CARD';
-  const isLoan = account.type === 'LOAN';
-  const utilizationPct =
-    isCredit && account.creditLimit
-      ? Math.round((Math.abs(account.balance) / account.creditLimit) * 100)
-      : 0;
-
-  const dueInDays = account.dueDate
-    ? Math.ceil((new Date(account.dueDate).getTime() - Date.now()) / (24 * 3600 * 1000))
-    : null;
+}) {
+  const opt = typeOptFor(account.type);
+  const Icon = opt.icon;
+  const balanceColor =
+    account.balance < 0
+      ? Colors.accentError
+      : account.type === 'LOAN'
+        ? Colors.accentWarning
+        : Colors.textPrimary;
 
   return (
-    <Card style={styles.accCard} onPress={onPress} onLongPress={onRemove}>
-      <View style={[styles.accColorBar, { backgroundColor: account.color }]} />
-      <View style={styles.accContent}>
-        <View style={styles.accHeader}>
-          <View style={[styles.accIcon, { backgroundColor: account.color + '20' }]}>
-            <Text style={styles.accIconText}>{account.icon}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <View style={styles.accTitleRow}>
-              <Text style={styles.accName}>{account.name}</Text>
-              {account.isPrimary && <Badge text="Primary" variant="primary" size="sm" />}
-            </View>
-            <Text style={styles.accProvider}>
-              {account.provider}
-              {account.mask && ` ${account.mask}`}
+    <Card padding="base" style={styles.accCard}>
+      <View style={styles.accTopRow}>
+        <View
+          style={[
+            styles.accIcon,
+            {
+              backgroundColor: opt.color + '22',
+              borderColor: opt.color + '44',
+            },
+          ]}
+        >
+          <Icon size={18} color={opt.color} strokeWidth={1.75} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <View style={styles.accNameRow}>
+            <Text style={styles.accName} numberOfLines={1}>
+              {account.name}
             </Text>
+            {account.isPrimary && <Badge text="Primary" variant="ai" size="sm" />}
           </View>
-          <Text
-            style={[
-              styles.accBalance,
-              { color: account.balance >= 0 ? Colors.textPrimary : Colors.error },
-            ]}
-          >
-            {account.balance < 0 ? '-' : ''}₹{Math.abs(account.balance).toLocaleString()}
+          <Text style={styles.accProvider}>
+            {account.provider}
+            {account.mask ? ` • ${account.mask}` : ''}
           </Text>
         </View>
+      </View>
 
-        {/* Credit card utilization */}
-        {isCredit && account.creditLimit && (
-          <View style={styles.creditSection}>
-            <View style={styles.creditRow}>
-              <Text style={styles.creditLabel}>Utilized</Text>
-              <Text style={styles.creditValue}>
-                ₹{Math.abs(account.balance).toLocaleString()} / ₹
-                {account.creditLimit.toLocaleString()}
-              </Text>
-            </View>
-            <View style={styles.utilTrack}>
-              <View
-                style={[
-                  styles.utilFill,
-                  {
-                    width: `${Math.min(utilizationPct, 100)}%`,
-                    backgroundColor:
-                      utilizationPct > 70
-                        ? Colors.error
-                        : utilizationPct > 30
-                          ? Colors.warning
-                          : Colors.success,
-                  },
-                ]}
-              />
-            </View>
-            <View style={styles.creditFooter}>
-              <Text style={styles.creditFooterText}>{utilizationPct}% used (keep below 30%)</Text>
-              {dueInDays !== null && account.dueAmount && (
-                <Badge
-                  text={`Due in ${dueInDays}d • ₹${account.dueAmount.toLocaleString()}`}
-                  variant={dueInDays <= 3 ? 'error' : dueInDays <= 7 ? 'warning' : 'info'}
-                  size="sm"
-                />
-              )}
-            </View>
-          </View>
+      <Text style={[styles.accBalance, { color: balanceColor }]}>
+        {account.balance < 0 ? '−' : ''}
+        {formatCurrency(Math.abs(account.balance))}
+      </Text>
+
+      <View style={styles.accActions}>
+        {!account.isPrimary && (
+          <TouchableOpacity
+            onPress={onSetPrimary}
+            accessibilityRole="button"
+            accessibilityLabel="Set as primary"
+            style={styles.accActionBtn}
+            hitSlop={4}
+          >
+            <Star size={14} color={Colors.textSecondary} strokeWidth={1.75} />
+            <Text style={styles.accActionLabel}>Primary</Text>
+          </TouchableOpacity>
         )}
-
-        {/* Loan EMI */}
-        {isLoan && account.emiAmount && (
-          <View style={styles.creditSection}>
-            <View style={styles.creditRow}>
-              <Text style={styles.creditLabel}>Next EMI</Text>
-              <Text style={styles.creditValue}>₹{account.emiAmount.toLocaleString()}</Text>
-            </View>
-            <View style={styles.creditFooter}>
-              <Text style={styles.creditFooterText}>
-                Remaining: ₹{account.loanRemaining?.toLocaleString()}
-              </Text>
-              {account.emiNextDate && (
-                <Badge
-                  text={`Due ${new Date(account.emiNextDate).toLocaleDateString('en-IN', {
-                    day: 'numeric',
-                    month: 'short',
-                  })}`}
-                  variant="warning"
-                  size="sm"
-                />
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* Actions */}
-        <View style={styles.accActions}>
-          <Text style={styles.lastSync}>🔄 Synced {formatRelativeTime(account.lastSync)}</Text>
-          <View style={styles.accActionBtns}>
-            {!account.isPrimary && account.type === 'BANK' && (
-              <TouchableOpacity onPress={onPrimary} style={styles.accBtn}>
-                <Text style={styles.accBtnText}>Make Primary</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={onSync} style={styles.accBtn}>
-              <Text style={styles.accBtnText}>Sync</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <TouchableOpacity
+          onPress={onSync}
+          accessibilityRole="button"
+          accessibilityLabel="Sync"
+          style={styles.accActionBtn}
+          hitSlop={4}
+        >
+          <RefreshCw size={14} color={Colors.textSecondary} strokeWidth={1.75} />
+          <Text style={styles.accActionLabel}>Sync</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={onRemove}
+          accessibilityRole="button"
+          accessibilityLabel="Remove"
+          style={[styles.accActionBtn, { marginLeft: 'auto' }]}
+          hitSlop={4}
+        >
+          <Trash2 size={14} color={Colors.accentError} strokeWidth={1.75} />
+          <Text style={[styles.accActionLabel, { color: Colors.accentError }]}>Remove</Text>
+        </TouchableOpacity>
       </View>
     </Card>
   );
 }
 
-function formatRelativeTime(iso: string): string {
-  const ago = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(ago / 60000);
-  const hrs = Math.floor(ago / 3600000);
-  const days = Math.floor(ago / (24 * 3600000));
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${days}d ago`;
+// =============================================================
+// Add modal
+// =============================================================
+function AddAccountModal({
+  visible,
+  onClose,
+  onCreate,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onCreate: (payload: any) => void;
+}) {
+  const [type, setType] = useState<AccountType | null>(null);
+  const [name, setName] = useState('');
+  const [provider, setProvider] = useState('');
+  const [mask, setMask] = useState('');
+  const [balance, setBalance] = useState('');
+
+  const handleSubmit = () => {
+    if (!type || !name.trim() || !provider.trim()) {
+      Alert.alert('Missing fields', 'Pick a type and fill in name + provider.');
+      return;
+    }
+    onCreate({
+      accountType: type,
+      accountName: name.trim(),
+      providerName: provider.trim(),
+      maskedAccountNumber: mask || undefined,
+      balance: parseFloat(balance || '0'),
+    });
+    setType(null);
+    setName('');
+    setProvider('');
+    setMask('');
+    setBalance('');
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <ScrollView
+          contentContainerStyle={styles.modalSheetScroll}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Link account</Text>
+              <TouchableOpacity onPress={onClose} hitSlop={8}>
+                <X size={20} color={Colors.textSecondary} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalLabel}>TYPE</Text>
+            <View style={styles.typeGrid}>
+              {TYPE_OPTIONS.map((opt) => {
+                const active = type === opt.type;
+                const Icon = opt.icon;
+                return (
+                  <TouchableOpacity
+                    key={opt.type}
+                    onPress={() => setType(opt.type)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: active }}
+                    style={[
+                      styles.typeTile,
+                      active && {
+                        borderColor: opt.color,
+                        backgroundColor: opt.color + '14',
+                      },
+                    ]}
+                  >
+                    <Icon
+                      size={20}
+                      color={active ? opt.color : Colors.textSecondary}
+                      strokeWidth={1.75}
+                    />
+                    <Text style={[styles.typeTileLabel, active && { color: opt.color }]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.modalLabel}>NAME</Text>
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              placeholder="e.g. Salary account"
+              placeholderTextColor={Colors.textTertiary}
+              style={styles.modalInput}
+            />
+
+            <Text style={styles.modalLabel}>PROVIDER</Text>
+            <TextInput
+              value={provider}
+              onChangeText={setProvider}
+              placeholder="HDFC Bank, ICICI, Paytm…"
+              placeholderTextColor={Colors.textTertiary}
+              style={styles.modalInput}
+            />
+
+            <Text style={styles.modalLabel}>LAST 4 DIGITS (OPTIONAL)</Text>
+            <TextInput
+              value={mask}
+              onChangeText={setMask}
+              placeholder="****1234"
+              placeholderTextColor={Colors.textTertiary}
+              style={styles.modalInput}
+            />
+
+            <Text style={styles.modalLabel}>BALANCE (₹)</Text>
+            <TextInput
+              value={balance}
+              onChangeText={setBalance}
+              placeholder="50000"
+              placeholderTextColor={Colors.textTertiary}
+              keyboardType="numeric"
+              style={styles.modalInput}
+            />
+
+            <View style={{ marginTop: Spacing.xl }}>
+              <Button
+                title="Add account"
+                onPress={handleSubmit}
+                fullWidth
+                size="lg"
+                trailingIcon={<ArrowRight size={16} color={Colors.white} strokeWidth={2} />}
+              />
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -566,222 +509,201 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
-  // Net worth
-  netWorthCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-    backgroundColor: Colors.primary,
+  center: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  netWorthLabel: {
-    fontSize: Typography.sizes.sm,
-    color: 'rgba(255,255,255,0.85)',
+  headerCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.accentPrimary,
+    gap: 4,
   },
-  netWorthValue: {
-    fontSize: Typography.sizes['4xl'],
+  headerCtaText: {
+    fontSize: Typography.sizes.xs,
     fontWeight: Typography.weights.bold,
     color: Colors.white,
-    marginVertical: 4,
+    letterSpacing: 0.4,
   },
-  nwBreakdown: {
+  scroll: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+  },
+
+  // Hero
+  heroLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 1.2,
+    fontWeight: Typography.weights.medium,
+  },
+  heroValue: {
+    marginTop: Spacing.xs,
+    fontSize: 44,
+    lineHeight: 48,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -1.2,
+    marginBottom: Spacing.base,
+  },
+  heroFooter: {
     flexDirection: 'row',
+    alignItems: 'center',
     paddingTop: Spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.2)',
+    borderTopColor: Colors.borderDefault,
   },
-  nwItem: {
-    flex: 1,
-  },
-  nwDivider: {
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  nwLabel: {
+  heroSubLabel: {
     fontSize: Typography.sizes.xs,
-    color: 'rgba(255,255,255,0.7)',
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    fontWeight: Typography.weights.medium,
   },
-  nwValue: {
+  heroSubValue: {
+    marginTop: 2,
     fontSize: Typography.sizes.lg,
     fontWeight: Typography.weights.bold,
-    marginTop: 2,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.4,
   },
-  // Tabs
-  tabs: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
+  heroDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: Colors.borderDefault,
+    marginHorizontal: Spacing.base,
+  },
+
+  // Chips
+  filterTabs: {
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.sm,
     gap: Spacing.sm,
   },
-  tab: {
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
     marginRight: Spacing.sm,
+    gap: 6,
   },
-  tabActive: {
-    backgroundColor: Colors.primary,
+  chipActive: {
+    backgroundColor: Colors.accentPrimary,
+    borderColor: Colors.accentPrimary,
   },
-  tabText: {
+  chipLabel: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.medium,
     color: Colors.textSecondary,
   },
-  tabTextActive: {
+  chipLabelActive: {
     color: Colors.white,
   },
-  // Group
-  group: {
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
-  },
-  groupTitle: {
-    fontSize: Typography.sizes.xs,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.sm,
-    paddingHorizontal: Spacing.xs,
-  },
+
   // Account card
   accCard: {
     marginBottom: Spacing.sm,
-    overflow: 'hidden',
-    padding: 0,
   },
-  accColorBar: {
-    width: 4,
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-  },
-  accContent: {
-    padding: Spacing.base,
-    paddingLeft: Spacing.base + 4,
-  },
-  accHeader: {
+  accTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: Spacing.sm,
   },
   accIcon: {
     width: 44,
     height: 44,
     borderRadius: BorderRadius.md,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.sm,
   },
-  accIconText: {
-    fontSize: 22,
-  },
-  accTitleRow: {
+  accNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
   },
   accName: {
+    flex: 1,
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
   },
   accProvider: {
-    fontSize: Typography.sizes.sm,
+    fontSize: Typography.sizes.xs,
     color: Colors.textSecondary,
     marginTop: 2,
+    letterSpacing: 0.4,
+    fontVariant: ['tabular-nums'] as any,
   },
   accBalance: {
-    fontSize: Typography.sizes.lg,
+    fontSize: Typography.sizes['2xl'],
     fontWeight: Typography.weights.bold,
-  },
-  // Credit
-  creditSection: {
-    marginTop: Spacing.sm,
-    paddingTop: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.gray100,
-  },
-  creditRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  creditLabel: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-    textTransform: 'uppercase',
-  },
-  creditValue: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-  },
-  utilTrack: {
-    height: 6,
-    backgroundColor: Colors.gray200,
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginTop: 4,
-  },
-  utilFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  creditFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.6,
     marginTop: Spacing.xs,
-    flexWrap: 'wrap',
-    gap: Spacing.xs,
+    marginBottom: Spacing.sm,
   },
-  creditFooterText: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-  },
-  // Actions
   accActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: Spacing.sm,
     paddingTop: Spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: Colors.gray100,
-  },
-  lastSync: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textTertiary,
-  },
-  accActionBtns: {
-    flexDirection: 'row',
+    borderTopColor: Colors.borderDefault,
     gap: Spacing.sm,
   },
-  accBtn: {
+  accActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceContainerHigh,
+    gap: 4,
   },
-  accBtnText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.primary,
+  accActionLabel: {
+    fontSize: Typography.sizes.xs,
     fontWeight: Typography.weights.semiBold,
+    color: Colors.textSecondary,
+    letterSpacing: 0.4,
   },
+
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
     justifyContent: 'flex-end',
   },
-  modalScrollContent: {
+  modalSheetScroll: {
     flexGrow: 1,
     justifyContent: 'flex-end',
   },
-  modalContent: {
-    backgroundColor: Colors.white,
+  modalSheet: {
+    backgroundColor: Colors.surfaceContainerHighest,
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
     padding: Spacing.lg,
     paddingBottom: Spacing['3xl'],
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.outline,
+    alignSelf: 'center',
+    marginBottom: Spacing.base,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -792,94 +714,49 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: Typography.sizes.xl,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
   },
-  modalClose: {
-    fontSize: 24,
-    color: Colors.textSecondary,
-  },
-  fieldLabel: {
-    fontSize: Typography.sizes.sm,
+  modalLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
     fontWeight: Typography.weights.semiBold,
-    color: Colors.textSecondary,
     marginBottom: Spacing.xs,
     marginTop: Spacing.sm,
-    textTransform: 'uppercase',
   },
-  input: {
-    fontSize: Typography.sizes.base,
+  modalInput: {
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
     color: Colors.textPrimary,
-    backgroundColor: Colors.inputBg,
-    borderRadius: BorderRadius.base,
-    padding: Spacing.base,
-    marginBottom: Spacing.xs,
+    fontSize: Typography.sizes.base,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
-  // Type grid
+
   typeGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.sm,
+    marginTop: Spacing.xs,
   },
-  typeCard: {
-    width: '48%',
-    padding: Spacing.lg,
-    backgroundColor: Colors.gray50,
+  typeTile: {
+    flexBasis: '47%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
+    backgroundColor: Colors.surfaceContainerLow,
     borderRadius: BorderRadius.md,
-    alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    gap: Spacing.sm,
   },
-  typeIcon: {
-    fontSize: 36,
-    marginBottom: Spacing.xs,
-  },
-  typeName: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-  },
-  typeBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Tints.primaryBg,
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.base,
-    marginBottom: Spacing.base,
-  },
-  typeBannerIcon: {
-    fontSize: 24,
-    marginRight: Spacing.sm,
-  },
-  typeBannerLabel: {
-    flex: 1,
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  linkText: {
+  typeTileLabel: {
     fontSize: Typography.sizes.sm,
-    color: Colors.primary,
     fontWeight: Typography.weights.semiBold,
-  },
-  linkOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Tints.successBg,
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.base,
-    marginTop: Spacing.sm,
-  },
-  linkOptionIcon: {
-    fontSize: 24,
-    marginRight: Spacing.sm,
-  },
-  linkOptionTitle: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.bold,
-    color: Colors.success,
-  },
-  linkOptionText: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.success,
-    marginTop: 2,
+    color: Colors.textSecondary,
   },
 });
