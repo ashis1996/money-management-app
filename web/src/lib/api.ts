@@ -11,6 +11,7 @@
  */
 import type {
   Account,
+  AccountType,
   ActionCard,
   ApiEnvelope,
   AppNotification,
@@ -21,11 +22,14 @@ import type {
   HealthScoreResult,
   Insight,
   MoneyLeaksResult,
+  NetWorth,
+  NotificationPreferences,
   Subscription,
   SubscriptionStatus,
   Transaction,
   TransactionType,
   User,
+  WeeklySummary,
 } from '@/types';
 
 const PROXY_BASE = '/api/proxy';
@@ -218,16 +222,93 @@ export const insightsApi = {
 };
 
 export const goalsApi = {
-  getAll: (params?: { isCompleted?: boolean }) => request<Env<Goal[]>>('/goals', { query: params }),
+  getAll: (params?: { includeCompleted?: boolean }) =>
+    request<Env<Goal[]>>('/goals', { query: params as Record<string, unknown> | undefined }),
+  getSummary: () =>
+    request<
+      Env<{
+        totalTarget: number;
+        totalSaved: number;
+        progressPercent: number;
+        activeCount: number;
+        completedCount: number;
+      }>
+    >('/goals/summary'),
+  create: (data: {
+    name: string;
+    targetAmount: number;
+    currentAmount?: number;
+    category?: string;
+    targetDate?: string;
+    icon?: string;
+    color?: string;
+  }) => request<Env<Goal>>('/goals', { method: 'POST', body: data }),
+  update: (id: string, data: Partial<Goal>) =>
+    request<Env<Goal>>(`/goals/${id}`, { method: 'PUT', body: data }),
+  delete: (id: string) => request<Env<{ message: string }>>(`/goals/${id}`, { method: 'DELETE' }),
+  contribute: (id: string, amount: number) =>
+    request<Env<Goal>>(`/goals/${id}/contribute`, {
+      method: 'POST',
+      body: { amount },
+    }),
 };
 
 export const budgetsApi = {
-  getAll: (params?: { isActive?: boolean }) =>
-    request<Env<Budget[]>>('/budgets', { query: params }),
+  getAll: (params?: { activeOnly?: boolean }) =>
+    request<Env<Budget[]>>('/budgets', { query: params as Record<string, unknown> | undefined }),
+  getSummary: () =>
+    request<
+      Env<{
+        totalLimit: number;
+        totalSpent: number;
+        utilization: number;
+        overshooting: number;
+        activeCount: number;
+      }>
+    >('/budgets/summary'),
+  create: (data: {
+    name: string;
+    amountLimit: number;
+    categoryId?: string;
+    period?: 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+    startDate?: string;
+    endDate?: string;
+    alertThreshold?: number;
+    rollover?: boolean;
+    notes?: string;
+  }) => request<Env<Budget>>('/budgets', { method: 'POST', body: data }),
+  update: (id: string, data: Partial<Budget>) =>
+    request<Env<Budget>>(`/budgets/${id}`, { method: 'PUT', body: data }),
+  delete: (id: string) =>
+    request<Env<{ message: string }>>(`/budgets/${id}`, { method: 'DELETE' }),
 };
 
 export const accountsApi = {
-  getAll: () => request<Env<Account[]>>('/accounts'),
+  getAll: (type?: string) => request<Env<Account[]>>('/accounts', { query: { type } }),
+  getNetWorth: () => request<Env<NetWorth>>('/accounts/net-worth'),
+  getById: (id: string) => request<Env<Account>>(`/accounts/${id}`),
+  create: (data: {
+    accountType: AccountType;
+    accountName: string;
+    providerName?: string;
+    maskedAccountNumber?: string;
+    ifscCode?: string;
+    balance?: number;
+    currency?: string;
+    color?: string;
+    icon?: string;
+    isPrimary?: boolean;
+  }) => request<Env<Account>>('/accounts', { method: 'POST', body: data }),
+  update: (id: string, data: Partial<Account>) =>
+    request<Env<Account>>(`/accounts/${id}`, { method: 'PUT', body: data }),
+  delete: (id: string) =>
+    request<Env<{ message: string }>>(`/accounts/${id}`, { method: 'DELETE' }),
+  setPrimary: (id: string) =>
+    request<Env<Account>>(`/accounts/${id}/primary`, { method: 'POST' }),
+  sync: (id: string) =>
+    request<Env<Account & { syncStats: Record<string, unknown> }>>(`/accounts/${id}/sync`, {
+      method: 'POST',
+    }),
 };
 
 export const actionCardsApi = {
@@ -239,6 +320,54 @@ export const notificationsApi = {
   getAll: (unread?: boolean) =>
     request<Env<AppNotification[]>>('/notifications', { query: { unread } }),
   getUnreadCount: () => request<Env<{ count: number }>>('/notifications/unread/count'),
+  getPreferences: () => request<Env<NotificationPreferences>>('/notifications/preferences'),
+  updatePreferences: (prefs: Partial<NotificationPreferences>) =>
+    request<Env<NotificationPreferences>>('/notifications/preferences', {
+      method: 'PUT',
+      body: prefs,
+    }),
+  markRead: (id: string) =>
+    request<Env<AppNotification>>(`/notifications/${id}/read`, { method: 'PUT' }),
+  markAllRead: () =>
+    request<Env<{ message: string }>>('/notifications/read-all', { method: 'POST' }),
+  delete: (id: string) =>
+    request<Env<{ message: string }>>(`/notifications/${id}`, { method: 'DELETE' }),
+};
+
+export const weeklySummaryApi = {
+  getCurrent: () => request<Env<WeeklySummary>>('/weekly-summary/current'),
+  getHistory: (limit?: number) =>
+    request<Env<WeeklySummary[]>>('/weekly-summary/history', { query: { limit } }),
+  getById: (id: string) => request<Env<WeeklySummary>>(`/weekly-summary/${id}`),
+  generate: () => request<Env<WeeklySummary>>('/weekly-summary/generate', { method: 'POST' }),
+};
+
+export interface UpdateUserPayload {
+  name?: string;
+  email?: string;
+  phone?: string;
+  password?: string;
+  avatarUrl?: string;
+}
+
+export const usersApi = {
+  me: () => request<Env<User>>('/users/me'),
+  update: (data: UpdateUserPayload) =>
+    request<Env<User>>('/users/me', { method: 'PUT', body: data }),
+};
+
+export const pushApi = {
+  test: (title?: string, body?: string) =>
+    request<Env<{ ok?: boolean; message?: string }>>('/push/test', {
+      method: 'POST',
+      body: { title, body },
+    }),
+  listTokens: () =>
+    request<Env<Array<{ token: string; platform: string; createdAt: string }>>>('/push/tokens'),
+  unregister: (token: string) =>
+    request<Env<{ message: string }>>(`/push/tokens/${encodeURIComponent(token)}`, {
+      method: 'DELETE',
+    }),
 };
 
 export interface AiAnswer {

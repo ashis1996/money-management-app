@@ -22,11 +22,11 @@ import {
   useActiveSubscriptions,
   useArchetype,
   useDashboard,
-  useGoals,
   useHealthScore,
   useMoneyLeaks,
   useUpcomingSubscriptions,
 } from '@/hooks/useDashboard';
+import { useGoals } from '@/hooks/useGoals';
 import {
   getArchetypeLabel,
   getHealthColorVar,
@@ -44,7 +44,7 @@ export default function DashboardPage() {
   const healthQuery = useHealthScore();
   const archetypeQuery = useArchetype();
   const leaksQuery = useMoneyLeaks();
-  const goalsQuery = useGoals({ isCompleted: false });
+  const goalsQuery = useGoals(false);
   const cardsQuery = useActionCards({ status: 'PENDING' });
   const upcomingSubs = useUpcomingSubscriptions(14);
   const activeSubs = useActiveSubscriptions();
