@@ -1,16 +1,31 @@
 import React, { useState, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
-import { Card, Badge, Button, ProgressRing, Header, EmptyState } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+  Droplet,
+  Repeat,
+  Copy,
+  TrendingUp,
+  Zap,
+  Moon,
+  Coins,
+  Sparkles,
+  CheckCircle2,
+  Trash2,
+  ArrowRight,
+  type LucideIcon,
+} from 'lucide-react-native';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Header,
+  ProgressBar,
+  Section,
+} from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
 import { useMoneyLeaks } from '../../hooks';
+import { formatCurrency } from '../../utils';
 
 type LeakType =
   | 'UNUSED_SUBSCRIPTION'
@@ -30,32 +45,43 @@ interface MoneyLeak {
   description: string;
   monthlySavings: number;
   yearlySavings: number;
-  icon: string;
   merchant?: string;
   recommendation: string;
-  details?: any;
   isFixed: boolean;
 }
 
-const mockLeaks: MoneyLeak[] = [];
-
-const LEAK_TYPE_LABELS: Record<LeakType, string> = {
-  UNUSED_SUBSCRIPTION: 'Unused',
-  DUPLICATE_SERVICE: 'Duplicate',
-  PRICE_INCREASE: 'Price Hike',
-  IMPULSE_PURCHASE: 'Impulse',
-  LATE_NIGHT: 'Late Night',
-  SMALL_FREQUENT: 'Small & Frequent',
-};
-
 type FilterType = 'all' | LeakSeverity;
 
-/**
- * The AI service returns leaks in this rough shape:
- *   { type, severity, title, description, monthly_savings, yearly_savings,
- *     recommendation, merchant?, icon? }
- * Map to UI shape (keys can vary - guard for both snake and camel case).
- */
+const ICON_FOR_TYPE: Record<LeakType, LucideIcon> = {
+  UNUSED_SUBSCRIPTION: Repeat,
+  DUPLICATE_SERVICE: Copy,
+  PRICE_INCREASE: TrendingUp,
+  IMPULSE_PURCHASE: Zap,
+  LATE_NIGHT: Moon,
+  SMALL_FREQUENT: Coins,
+};
+
+const TYPE_LABEL: Record<LeakType, string> = {
+  UNUSED_SUBSCRIPTION: 'Unused',
+  DUPLICATE_SERVICE: 'Duplicate',
+  PRICE_INCREASE: 'Price hike',
+  IMPULSE_PURCHASE: 'Impulse',
+  LATE_NIGHT: 'Late night',
+  SMALL_FREQUENT: 'Small &amp; frequent',
+};
+
+function severityColor(severity: LeakSeverity): string {
+  if (severity === 'HIGH') return Colors.accentError;
+  if (severity === 'MEDIUM') return Colors.accentWarning;
+  return Colors.outline;
+}
+
+function severityVariant(severity: LeakSeverity): 'error' | 'warning' | 'gray' {
+  if (severity === 'HIGH') return 'error';
+  if (severity === 'MEDIUM') return 'warning';
+  return 'gray';
+}
+
 function aiToLeak(l: any, idx: number): MoneyLeak {
   const monthly = Number(l.monthlySavings ?? l.monthly_savings ?? l.potential_savings ?? 0) || 0;
   return {
@@ -66,24 +92,26 @@ function aiToLeak(l: any, idx: number): MoneyLeak {
     description: l.description || '',
     monthlySavings: monthly,
     yearlySavings: Number(l.yearlySavings ?? l.yearly_savings ?? monthly * 12) || 0,
-    icon: l.icon || '💧',
     merchant: l.merchant,
     recommendation: l.recommendation || 'Review this spending pattern',
     isFixed: !!l.isFixed,
   };
 }
 
+// =============================================================
+// Screen
+// =============================================================
 export function MoneyLeaksScreen({ navigation }: any) {
   const leaksQuery = useMoneyLeaks();
 
   const leaks: MoneyLeak[] = useMemo(() => {
-    const data = leaksQuery.data;
-    const items = data?.leaks ?? [];
+    const items = (leaksQuery.data as any)?.leaks ?? [];
     return items.map((l: any, i: number) => aiToLeak(l, i));
   }, [leaksQuery.data]);
 
   const [fixedIds, setFixedIds] = useState<Set<string>>(new Set());
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+
   const visibleLeaks = useMemo(
     () =>
       leaks
@@ -100,46 +128,40 @@ export function MoneyLeaksScreen({ navigation }: any) {
     const yearlySavings = active.reduce((sum, l) => sum + l.yearlySavings, 0);
     const fixed = visibleLeaks.filter((l) => l.isFixed);
     const fixedSavings = fixed.reduce((sum, l) => sum + l.monthlySavings, 0);
-
-    // AI service returns score directly; fall back to local heuristic
-    const aiScore =
-      Number((leaksQuery.data as any)?.score ?? (leaksQuery.data as any)?.leak_score ?? 0) || 0;
-    const totalSpending = 45000;
-    const fallbackScore = Math.min(100, Math.round((monthlySavings / totalSpending) * 100));
-
     return {
       activeCount: active.length,
       monthlySavings,
       yearlySavings,
       fixedCount: fixed.length,
       fixedSavings,
-      leakScore: aiScore || fallbackScore,
     };
-  }, [visibleLeaks, leaksQuery.data]);
+  }, [visibleLeaks]);
 
   const filteredLeaks = useMemo(() => {
     if (filter === 'all') return visibleLeaks.filter((l) => !l.isFixed);
     return visibleLeaks.filter((l) => !l.isFixed && l.severity === filter);
   }, [visibleLeaks, filter]);
 
-  const handleFix = (leak: MoneyLeak) => {
-    Alert.alert('Fix this leak?', `${leak.recommendation}\n\nSave ₹${leak.monthlySavings}/month`, [
-      { text: 'Not now', style: 'cancel' },
-      {
-        text: 'Mark Fixed',
-        onPress: () => setFixedIds((prev) => new Set(prev).add(leak.id)),
-      },
-    ]);
-  };
+  const handleFix = (leak: MoneyLeak) =>
+    Alert.alert(
+      'Mark this leak as fixed?',
+      `${leak.recommendation}\n\nSave ${formatCurrency(leak.monthlySavings)}/month`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Mark fixed',
+          onPress: () => setFixedIds((prev) => new Set(prev).add(leak.id)),
+        },
+      ],
+    );
 
-  const handleDismiss = (id: string) => {
-    setDismissedIds((prev) => new Set(prev).add(id));
-  };
+  const handleDismiss = (id: string) => setDismissedIds((prev) => new Set(prev).add(id));
 
   if (leaksQuery.isLoading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color={Colors.accentAi} />
+        <Text style={styles.loadingText}>Detecting leaks…</Text>
       </View>
     );
   }
@@ -152,211 +174,204 @@ export function MoneyLeaksScreen({ navigation }: any) {
         onBack={() => navigation.goBack()}
       />
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Hero card with leak score */}
-        <Card style={styles.heroCard}>
-          <View style={styles.heroContent}>
-            <ProgressRing
-              progress={stats.leakScore}
-              size={120}
-              strokeWidth={12}
-              color={
-                stats.leakScore > 30
-                  ? Colors.error
-                  : stats.leakScore > 15
-                    ? Colors.warning
-                    : Colors.success
-              }
-              backgroundColor={Colors.gray200}
-            >
-              <Text style={styles.heroScoreLabel}>Leak Score</Text>
-              <Text style={styles.heroScoreValue}>{stats.leakScore}</Text>
-              <Text style={styles.heroScoreMax}>/100</Text>
-            </ProgressRing>
-            <View style={styles.heroStats}>
-              <View style={styles.heroStat}>
-                <Text style={styles.heroStatLabel}>Monthly leaks</Text>
-                <Text style={styles.heroStatValue}>₹{stats.monthlySavings.toLocaleString()}</Text>
-              </View>
-              <View style={styles.heroStat}>
-                <Text style={styles.heroStatLabel}>Yearly impact</Text>
-                <Text style={[styles.heroStatValue, { color: Colors.error }]}>
-                  ₹{stats.yearlySavings.toLocaleString()}
-                </Text>
-              </View>
-              <View style={styles.heroStat}>
-                <Text style={styles.heroStatLabel}>Active leaks</Text>
-                <Text style={styles.heroStatValue}>{stats.activeCount}</Text>
-              </View>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* Hero — potential savings as the wow figure */}
+        <Card variant="hero" padding="xl">
+          <Text style={styles.heroLabel}>POTENTIAL MONTHLY SAVINGS</Text>
+          <Text
+            style={styles.heroValue}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+          >
+            {formatCurrency(stats.monthlySavings)}
+          </Text>
+          <View style={styles.heroFooter}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroSubLabel}>YEARLY IMPACT</Text>
+              <Text style={styles.heroSubValue}>{formatCurrency(stats.yearlySavings)}</Text>
+            </View>
+            <View style={styles.heroDivider} />
+            <View style={{ flex: 1, alignItems: 'flex-end' }}>
+              <Text style={styles.heroSubLabel}>ACTIVE LEAKS</Text>
+              <Text style={styles.heroSubValue}>{stats.activeCount}</Text>
             </View>
           </View>
         </Card>
 
+        {/* AI summary callout */}
+        {stats.activeCount > 0 && (
+          <Card variant="ai" padding="base" style={{ marginTop: Spacing.base }}>
+            <View style={styles.aiSummaryRow}>
+              <View style={styles.aiSummaryIcon}>
+                <Sparkles size={16} color={Colors.accentAi} strokeWidth={1.75} />
+              </View>
+              <Text style={styles.aiSummaryText}>
+                Fixing your top leak alone could save{' '}
+                <Text style={styles.aiSummaryHighlight}>
+                  {formatCurrency(Math.max(...leaks.map((l) => l.monthlySavings), 0), {
+                    compact: true,
+                  })}
+                  /mo
+                </Text>{' '}
+                — start with the high-priority items below.
+              </Text>
+            </View>
+          </Card>
+        )}
+
         {/* Fixed leaks celebration */}
         {stats.fixedCount > 0 && (
-          <Card style={styles.fixedCard}>
+          <Card padding="base" style={[styles.fixedCard, { marginTop: Spacing.base }]}>
             <View style={styles.fixedRow}>
-              <Text style={styles.fixedIcon}>🎉</Text>
+              <View style={styles.fixedIconHost}>
+                <CheckCircle2 size={20} color={Colors.accentSuccess} strokeWidth={1.75} />
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fixedTitle}>
-                  {stats.fixedCount} leak{stats.fixedCount > 1 ? 's' : ''} fixed!
+                  {stats.fixedCount} {stats.fixedCount === 1 ? 'leak' : 'leaks'} fixed!
                 </Text>
                 <Text style={styles.fixedSubtitle}>
-                  You're saving ₹{stats.fixedSavings.toLocaleString()}/month
+                  Saving {formatCurrency(stats.fixedSavings)}/month
                 </Text>
               </View>
             </View>
           </Card>
         )}
 
-        {/* Total potential savings banner */}
-        <Card style={styles.savingsBanner}>
-          <Text style={styles.savingsLabel}>Potential Monthly Savings</Text>
-          <Text style={styles.savingsAmount}>₹{stats.monthlySavings.toLocaleString()}</Text>
-          <Text style={styles.savingsYearly}>
-            That's ₹{stats.yearlySavings.toLocaleString()} a year!
-          </Text>
-        </Card>
-
-        {/* Severity filters */}
-        <View style={styles.filterTabs}>
-          {(
-            [
-              { key: 'all', label: 'All', count: leaks.filter((l) => !l.isFixed).length },
-              {
-                key: 'HIGH',
-                label: '🚨 High',
-                count: leaks.filter((l) => !l.isFixed && l.severity === 'HIGH').length,
-              },
-              {
-                key: 'MEDIUM',
-                label: '⚠️ Medium',
-                count: leaks.filter((l) => !l.isFixed && l.severity === 'MEDIUM').length,
-              },
-              {
-                key: 'LOW',
-                label: 'Low',
-                count: leaks.filter((l) => !l.isFixed && l.severity === 'LOW').length,
-              },
-            ] as { key: FilterType; label: string; count: number }[]
-          ).map((tab) => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[styles.filterTab, filter === tab.key && styles.filterTabActive]}
-              onPress={() => setFilter(tab.key)}
-            >
-              <Text
-                style={[styles.filterTabText, filter === tab.key && styles.filterTabTextActive]}
+        {/* Filter chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterTabs}
+        >
+          {(['all', 'HIGH', 'MEDIUM', 'LOW'] as FilterType[]).map((f) => {
+            const active = filter === f;
+            const label = f === 'all' ? 'All' : f.charAt(0) + f.slice(1).toLowerCase();
+            return (
+              <View
+                key={f}
+                style={[styles.chip, active && styles.chipActive]}
+                onTouchEnd={() => setFilter(f)}
               >
-                {tab.label} ({tab.count})
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+                <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>{label}</Text>
+              </View>
+            );
+          })}
+        </ScrollView>
 
-        {/* Leaks list */}
-        <View style={styles.list}>
-          {filteredLeaks.length === 0 ? (
-            <Card style={styles.empty}>
-              <Text style={styles.emptyIcon}>🎉</Text>
-              <Text style={styles.emptyTitle}>No leaks in this category!</Text>
-              <Text style={styles.emptyText}>Great work managing your money.</Text>
-            </Card>
-          ) : (
-            filteredLeaks.map((leak) => (
-              <LeakCard
-                key={leak.id}
-                leak={leak}
-                onFix={() => handleFix(leak)}
-                onDismiss={() => handleDismiss(leak.id)}
-              />
-            ))
-          )}
-        </View>
+        {/* Leak list */}
+        {filteredLeaks.length === 0 ? (
+          <EmptyState
+            icon="✨"
+            title="No leaks here"
+            message={
+              stats.activeCount > 0
+                ? 'No leaks match this severity filter.'
+                : 'Nothing is leaking. Run an analysis from the Insights screen to scan for new patterns.'
+            }
+          />
+        ) : (
+          <Section
+            title="Active leaks"
+            subtitle={`${filteredLeaks.length} ${filteredLeaks.length === 1 ? 'leak' : 'leaks'} found`}
+            style={{ marginTop: Spacing.lg }}
+          >
+            <View>
+              {filteredLeaks.map((leak) => (
+                <LeakCard
+                  key={leak.id}
+                  leak={leak}
+                  onFix={() => handleFix(leak)}
+                  onDismiss={() => handleDismiss(leak.id)}
+                />
+              ))}
+            </View>
+          </Section>
+        )}
 
-        {/* Tips */}
-        <Card style={styles.tipsCard}>
-          <Text style={styles.tipsTitle}>💡 Tips to prevent leaks</Text>
-          <Text style={styles.tipText}>• Review subscriptions monthly</Text>
-          <Text style={styles.tipText}>• Set spending alerts for late-night purchases</Text>
-          <Text style={styles.tipText}>• Use the 24-hour rule for non-essential buys</Text>
-          <Text style={styles.tipText}>• Track small frequent expenses - they add up</Text>
-        </Card>
-
-        <View style={{ height: Spacing['2xl'] }} />
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
     </View>
   );
 }
 
-interface LeakCardProps {
+// =============================================================
+// Leak card
+// =============================================================
+function LeakCard({
+  leak,
+  onFix,
+  onDismiss,
+}: {
   leak: MoneyLeak;
   onFix: () => void;
   onDismiss: () => void;
-}
-
-function LeakCard({ leak, onFix, onDismiss }: LeakCardProps) {
-  const severityColors = {
-    HIGH: Colors.error,
-    MEDIUM: Colors.warning,
-    LOW: Colors.gray400,
-  };
+}) {
+  const Icon = ICON_FOR_TYPE[leak.type];
+  const tone = severityColor(leak.severity);
 
   return (
-    <Card
-      style={[
-        styles.leakCard,
-        { borderLeftWidth: 4, borderLeftColor: severityColors[leak.severity] },
-      ]}
-    >
-      <View style={styles.leakHeader}>
-        <Text style={styles.leakIcon}>{leak.icon}</Text>
+    <Card padding="base" style={[styles.leakCard, { borderColor: tone + '40' }]}>
+      <View style={styles.leakRow}>
+        <View style={[styles.leakIcon, { backgroundColor: tone + '22', borderColor: tone + '44' }]}>
+          <Icon size={18} color={tone} strokeWidth={1.75} />
+        </View>
         <View style={{ flex: 1 }}>
           <View style={styles.leakTitleRow}>
-            <Text style={styles.leakTitle}>{leak.title}</Text>
+            <Text style={styles.leakTitle} numberOfLines={1}>
+              {leak.title}
+            </Text>
             <Badge
-              text={LEAK_TYPE_LABELS[leak.type]}
-              variant={
-                leak.severity === 'HIGH' ? 'error' : leak.severity === 'MEDIUM' ? 'warning' : 'gray'
-              }
+              text={TYPE_LABEL[leak.type]}
+              variant={severityVariant(leak.severity)}
               size="sm"
             />
           </View>
-          <Text style={styles.leakDescription}>{leak.description}</Text>
+          {leak.merchant && <Text style={styles.leakMerchant}>{leak.merchant}</Text>}
+          {leak.description ? (
+            <Text style={styles.leakDescription} numberOfLines={3}>
+              {leak.description}
+            </Text>
+          ) : null}
         </View>
       </View>
 
-      {/* Savings highlight */}
-      <View style={styles.savingsRow}>
-        <View style={styles.savingsItem}>
-          <Text style={styles.savingsItemLabel}>Monthly</Text>
-          <Text style={[styles.savingsItemValue, { color: Colors.success }]}>
-            ₹{leak.monthlySavings.toLocaleString()}
+      <View style={styles.leakSavingsRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.leakSavingsLabel}>SAVES PER MONTH</Text>
+          <Text style={[styles.leakSavingsValue, { color: tone }]}>
+            {formatCurrency(leak.monthlySavings)}
           </Text>
         </View>
-        <View style={styles.savingsItem}>
-          <Text style={styles.savingsItemLabel}>Yearly</Text>
-          <Text style={[styles.savingsItemValue, { color: Colors.success }]}>
-            ₹{leak.yearlySavings.toLocaleString()}
-          </Text>
+        <View style={{ flex: 1, alignItems: 'flex-end' }}>
+          <Text style={styles.leakSavingsLabel}>YEARLY</Text>
+          <Text style={styles.leakYearlyValue}>{formatCurrency(leak.yearlySavings)}</Text>
         </View>
       </View>
 
-      {/* Recommendation */}
-      <View style={styles.recommendation}>
-        <Text style={styles.recommendationLabel}>💡 What to do</Text>
-        <Text style={styles.recommendationText}>{leak.recommendation}</Text>
+      <View style={styles.leakRecommendation}>
+        <Sparkles size={12} color={Colors.accentAi} strokeWidth={2} />
+        <Text style={styles.leakRecommendationText}>{leak.recommendation}</Text>
       </View>
 
-      {/* Actions */}
       <View style={styles.leakActions}>
-        <Button title="Dismiss" onPress={onDismiss} variant="ghost" size="sm" style={{ flex: 1 }} />
         <Button
-          title="Fix Now"
-          onPress={onFix}
+          title="Dismiss"
+          variant="secondary"
+          size="sm"
+          onPress={onDismiss}
+          leadingIcon={<Trash2 size={14} color={Colors.textPrimary} strokeWidth={2} />}
+          style={{ flex: 1 }}
+        />
+        <View style={{ width: Spacing.sm }} />
+        <Button
+          title="Fix it"
           variant="primary"
           size="sm"
-          style={{ flex: 1, marginLeft: Spacing.sm }}
+          onPress={onFix}
+          trailingIcon={<ArrowRight size={14} color={Colors.white} strokeWidth={2} />}
+          style={{ flex: 1 }}
         />
       </View>
     </Card>
@@ -368,232 +383,247 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  center: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: Spacing.base,
+    fontSize: Typography.sizes.base,
+    color: Colors.textSecondary,
+  },
+  scroll: {
+    padding: Spacing.lg,
+    paddingTop: Spacing.sm,
+  },
+
   // Hero
-  heroCard: {
-    marginHorizontal: Spacing.lg,
+  heroLabel: {
+    fontSize: Typography.sizes.xs,
+    letterSpacing: 1.2,
+    color: Colors.onSurfaceVariant,
+    fontWeight: Typography.weights.medium,
+  },
+  heroValue: {
+    fontSize: 48,
+    lineHeight: 52,
+    color: Colors.accentSuccess,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -1.5,
+    marginTop: Spacing.xs,
     marginBottom: Spacing.base,
   },
-  heroContent: {
+  heroFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderDefault,
+  },
+  heroSubLabel: {
+    fontSize: Typography.sizes.xs,
+    letterSpacing: 0.6,
+    color: Colors.onSurfaceVariant,
+    fontWeight: Typography.weights.medium,
+  },
+  heroSubValue: {
+    marginTop: 2,
+    fontSize: Typography.sizes.lg,
+    color: Colors.textPrimary,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.4,
+  },
+  heroDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: Colors.borderDefault,
+    marginHorizontal: Spacing.base,
+  },
+
+  // AI summary
+  aiSummaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  heroScoreLabel: {
-    fontSize: 9,
-    color: Colors.textSecondary,
-    textTransform: 'uppercase',
-  },
-  heroScoreValue: {
-    fontSize: Typography.sizes['3xl'],
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  heroScoreMax: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textTertiary,
-  },
-  heroStats: {
-    flex: 1,
-    marginLeft: Spacing.lg,
-  },
-  heroStat: {
-    marginVertical: 4,
-  },
-  heroStatLabel: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-  },
-  heroStatValue: {
-    fontSize: Typography.sizes.lg,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-    marginTop: 2,
-  },
-  // Fixed
-  fixedCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-    backgroundColor: Tints.successBg,
-    borderColor: Tints.successBorder,
+  aiSummaryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(34,211,238,0.12)',
     borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  aiSummaryText: {
+    flex: 1,
+    fontSize: Typography.sizes.sm,
+    color: Colors.textPrimary,
+    lineHeight: Typography.sizes.sm * 1.5,
+  },
+  aiSummaryHighlight: {
+    color: Colors.accentSuccess,
+    fontWeight: Typography.weights.bold,
+    fontVariant: ['tabular-nums'] as any,
+  },
+
+  // Fixed celebration
+  fixedCard: {
+    backgroundColor: 'rgba(16,185,129,0.08)',
+    borderColor: 'rgba(16,185,129,0.30)',
   },
   fixedRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  fixedIcon: {
-    fontSize: 28,
+  fixedIconHost: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    backgroundColor: 'rgba(16,185,129,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(16,185,129,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.sm,
   },
   fixedTitle: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
-    color: Colors.success,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.accentSuccess,
   },
   fixedSubtitle: {
     fontSize: Typography.sizes.sm,
-    color: Colors.success,
+    color: Colors.accentSuccess,
     marginTop: 2,
   },
-  // Savings banner
-  savingsBanner: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-  },
-  savingsLabel: {
-    fontSize: Typography.sizes.sm,
-    color: 'rgba(255,255,255,0.85)',
-  },
-  savingsAmount: {
-    fontSize: Typography.sizes['4xl'],
-    fontWeight: Typography.weights.bold,
-    color: Colors.white,
-    marginVertical: 4,
-  },
-  savingsYearly: {
-    fontSize: Typography.sizes.sm,
-    color: 'rgba(255,255,255,0.85)',
-  },
-  // Filter
+
+  // Chips
   filterTabs: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-    gap: Spacing.xs,
-    flexWrap: 'wrap',
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.sm,
   },
-  filterTab: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
+  chip: {
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    marginRight: Spacing.sm,
   },
-  filterTabActive: {
-    backgroundColor: Colors.primary,
+  chipActive: {
+    backgroundColor: Colors.accentPrimary,
+    borderColor: Colors.accentPrimary,
   },
-  filterTabText: {
-    fontSize: Typography.sizes.xs,
+  chipLabel: {
+    fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.medium,
     color: Colors.textSecondary,
   },
-  filterTabTextActive: {
+  chipLabelActive: {
     color: Colors.white,
   },
-  // List
-  list: {
-    paddingHorizontal: Spacing.lg,
-  },
+
   // Leak card
   leakCard: {
-    marginBottom: Spacing.base,
-  },
-  leakHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
     marginBottom: Spacing.sm,
   },
+  leakRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
   leakIcon: {
-    fontSize: 28,
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.sm,
   },
   leakTitleRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: Spacing.xs,
   },
   leakTitle: {
     flex: 1,
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
+  },
+  leakMerchant: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    letterSpacing: 0.4,
   },
   leakDescription: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
-    marginTop: 4,
+    marginTop: Spacing.xs,
     lineHeight: Typography.sizes.sm * 1.4,
   },
-  // Savings row
-  savingsRow: {
+
+  leakSavingsRow: {
     flexDirection: 'row',
-    backgroundColor: Tints.successBg,
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.base,
-    marginVertical: Spacing.sm,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.sm,
+    marginTop: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderDefault,
   },
-  savingsItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  savingsItemLabel: {
+  leakSavingsLabel: {
     fontSize: Typography.sizes.xs,
-    color: Colors.success,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    fontWeight: Typography.weights.medium,
   },
-  savingsItemValue: {
+  leakSavingsValue: {
+    marginTop: 2,
     fontSize: Typography.sizes.lg,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.4,
+  },
+  leakYearlyValue: {
     marginTop: 2,
-  },
-  // Recommendation
-  recommendation: {
-    backgroundColor: Colors.gray50,
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.base,
-    marginBottom: Spacing.sm,
-  },
-  recommendationLabel: {
-    fontSize: Typography.sizes.xs,
+    fontSize: Typography.sizes.base,
+    color: Colors.textPrimary,
     fontWeight: Typography.weights.semiBold,
-    color: Colors.textSecondary,
-    marginBottom: 4,
-    textTransform: 'uppercase',
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+    fontVariant: ['tabular-nums'] as any,
   },
-  recommendationText: {
+
+  leakRecommendation: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: 'rgba(34,211,238,0.08)',
+    borderRadius: BorderRadius.base,
+    padding: Spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.20)',
+    gap: Spacing.xs,
+  },
+  leakRecommendationText: {
+    flex: 1,
     fontSize: Typography.sizes.sm,
     color: Colors.textPrimary,
-    lineHeight: Typography.sizes.sm * 1.5,
+    lineHeight: Typography.sizes.sm * 1.4,
   },
+
   leakActions: {
     flexDirection: 'row',
-  },
-  // Empty
-  empty: {
-    alignItems: 'center',
-    padding: Spacing.xl,
-  },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: Spacing.sm,
-  },
-  emptyTitle: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  emptyText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  // Tips
-  tipsCard: {
-    marginHorizontal: Spacing.lg,
-    backgroundColor: Tints.primaryBg,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight,
-  },
-  tipsTitle: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.sm,
-  },
-  tipText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textPrimary,
-    marginVertical: 4,
-    lineHeight: Typography.sizes.sm * 1.5,
+    marginTop: Spacing.sm,
   },
 });
