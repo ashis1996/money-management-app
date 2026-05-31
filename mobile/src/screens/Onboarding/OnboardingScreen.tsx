@@ -11,27 +11,45 @@ import {
   NativeScrollEvent,
   Alert,
 } from 'react-native';
-import { Button } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import {
+  Wallet,
+  Inbox,
+  Droplet,
+  Sparkles,
+  Bell,
+  ShieldCheck,
+  Target,
+  ArrowRight,
+  type LucideIcon,
+} from 'lucide-react-native';
+import { AiOrb, Button, Card } from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
 import { registerForPushNotifications } from '../../services/push';
 import { smsReadingAvailability } from '../../services/sms';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+// =============================================================
+// Slides
+// =============================================================
 interface Slide {
   id: string;
-  emoji: string;
+  icon: LucideIcon;
+  /** When true, render the slide hero as a pulsing AiOrb instead of an icon. */
+  showOrb?: boolean;
   title: string;
   description: string;
   bullets?: string[];
-  color: string;
-  background: string;
+  toneFg: string;
+  toneBg: string;
+  toneBorder: string;
 }
 
 const SLIDES: Slide[] = [
   {
     id: 'welcome',
-    emoji: '💰',
+    icon: Wallet,
+    showOrb: true,
     title: 'Welcome to MoneyMind',
     description:
       'More than expense tracking — your AI-powered financial control system that detects, predicts, and acts.',
@@ -40,63 +58,70 @@ const SLIDES: Slide[] = [
       'Predict your financial future',
       'Get AI-powered recommendations',
     ],
-    color: Colors.primary,
-    background: Tints.primaryBg,
+    toneFg: Colors.accentPrimary,
+    toneBg: 'rgba(59,130,246,0.12)',
+    toneBorder: 'rgba(59,130,246,0.30)',
   },
   {
     id: 'capture',
-    emoji: '📩',
+    icon: Inbox,
     title: 'Auto-capture transactions',
     description:
-      'Forget manual entry. We automatically detect transactions from SMS, email, and UPI notifications.',
+      'Forget manual entry. We detect transactions from SMS, email, and UPI notifications automatically.',
     bullets: [
-      'Bank SMS (HDFC, ICICI, SBI, Axis...)',
+      'Bank SMS (HDFC, ICICI, SBI, Axis, …)',
       'UPI (GPay, PhonePe, Paytm)',
       'Email statements & invoices',
-      'Or use voice: "Spent ₹200 on chai"',
+      'Voice — "Spent ₹200 on chai"',
     ],
-    color: Colors.success,
-    background: Tints.successBg,
+    toneFg: Colors.accentSuccess,
+    toneBg: 'rgba(16,185,129,0.12)',
+    toneBorder: 'rgba(16,185,129,0.30)',
   },
   {
     id: 'leaks',
-    emoji: '💧',
+    icon: Droplet,
     title: 'Find money leaks',
     description:
-      'We expose hidden costs draining your wallet — silent price hikes, unused subscriptions, duplicate services.',
+      'Hidden costs draining your wallet — silent price hikes, unused subscriptions, duplicate services.',
     bullets: [
-      "Netflix went from ₹199 → ₹649? You'll know.",
-      'Spotify + YT Music? Cancel one, save ₹100.',
-      'Cult.fit unused 30 days? Cancel and save ₹999.',
+      'Netflix went ₹199 → ₹649? You\u2019ll know.',
+      'Spotify + YT Music? Cancel one, save ₹100/mo.',
+      'Cult.fit unused 30 days? Save ₹999.',
     ],
-    color: Colors.warning,
-    background: Tints.warningBg,
+    toneFg: Colors.accentWarning,
+    toneBg: 'rgba(251,191,36,0.12)',
+    toneBorder: 'rgba(251,191,36,0.30)',
   },
   {
     id: 'ai',
-    emoji: '🤖',
-    title: 'AI Financial Assistant',
+    icon: Sparkles,
+    title: 'AI Financial Coach',
     description:
-      'Ask questions in plain English. Get personalized insights, predictions, and money-saving tips.',
+      'Ask in plain English. Get personalised insights, predictions, and money-saving tips.',
     bullets: [
       '"Where did I waste money this month?"',
       '"Can I afford a ₹50,000 phone?"',
       '"How can I save ₹10,000/month?"',
     ],
-    color: Colors.info,
-    background: Tints.aiBg,
+    toneFg: Colors.accentAi,
+    toneBg: 'rgba(34,211,238,0.12)',
+    toneBorder: 'rgba(34,211,238,0.30)',
   },
 ];
 
 interface Permission {
-  id: string;
-  icon: string;
+  id: 'sms' | 'notif' | 'goals';
+  icon: LucideIcon;
   title: string;
   description: string;
   enabled: boolean;
   required: boolean;
 }
 
+// =============================================================
+// Screen
+// =============================================================
 export function OnboardingScreen({ navigation }: any) {
   const [page, setPage] = useState(0);
   const [showPermissions, setShowPermissions] = useState(false);
@@ -106,83 +131,68 @@ export function OnboardingScreen({ navigation }: any) {
   const [permissions, setPermissions] = useState<Permission[]>([
     {
       id: 'sms',
-      icon: '📩',
+      icon: Inbox,
       title: 'Read SMS',
-      description: 'Detect bank SMS for auto-capture (only transaction SMS)',
+      description:
+        'Detect bank SMS for auto-capture. Only transaction SMS is read; nothing else leaves your device.',
       enabled: true,
       required: false,
     },
     {
       id: 'notif',
-      icon: '🔔',
+      icon: Bell,
       title: 'Notifications',
-      description: 'Bill reminders, budget alerts, weekly summaries',
+      description: 'Bill reminders, budget alerts, weekly summaries.',
       enabled: true,
       required: false,
     },
     {
-      id: 'email',
-      icon: '✉️',
-      title: 'Email access',
-      description: 'Parse statements & invoices for transactions',
-      enabled: false,
-      required: false,
-    },
-    {
-      id: 'biometric',
-      icon: '🔐',
-      title: 'Biometric lock',
-      description: 'Face ID / Fingerprint to secure your data',
+      id: 'goals',
+      icon: Target,
+      title: 'Personalised goals',
+      description: 'Track savings goals against your monthly cash flow.',
       enabled: true,
       required: false,
     },
   ]);
 
+  const togglePermission = (id: string) => {
+    setPermissions((prev) => prev.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p)));
+  };
+
   const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offset = e.nativeEvent.contentOffset.x;
-    const newPage = Math.round(offset / SCREEN_WIDTH);
+    scrollX.setValue(e.nativeEvent.contentOffset.x);
+    const newPage = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
     if (newPage !== page) setPage(newPage);
   };
 
-  const goToPage = (idx: number) => {
-    scrollRef.current?.scrollTo({ x: idx * SCREEN_WIDTH, animated: true });
-    setPage(idx);
-  };
-
-  const handleNext = () => {
+  const goToNext = () => {
     if (page < SLIDES.length - 1) {
-      goToPage(page + 1);
+      scrollRef.current?.scrollTo({
+        x: (page + 1) * SCREEN_WIDTH,
+        animated: true,
+      });
     } else {
       setShowPermissions(true);
     }
   };
 
-  const handleSkip = () => {
-    setShowPermissions(true);
-  };
-
-  const togglePermission = (id: string) => {
-    setPermissions((prev) => prev.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p)));
-  };
-
   const handleComplete = async () => {
-    // Actually request the OS permissions the user toggled on.
     const enabledIds = permissions.filter((p) => p.enabled).map((p) => p.id);
 
     if (enabledIds.includes('notif')) {
       try {
         const result = await registerForPushNotifications();
         if (!result.granted) {
-          // User denied permission; still proceed but flag it
-          console.info(`[onboarding] Notif permission: ${result.reason}`);
+          // eslint-disable-next-line no-console
+          console.info(`[onboarding] notif permission: ${result.reason}`);
         }
       } catch (err) {
-        console.warn('[onboarding] Push registration failed', err);
+        // eslint-disable-next-line no-console
+        console.warn('[onboarding] push registration failed', err);
       }
     }
 
-    // SMS permission cannot be requested from JS in Expo Go;
-    // we only inform the user about it.
     if (enabledIds.includes('sms')) {
       const sms = smsReadingAvailability();
       if (!sms.available) {
@@ -192,95 +202,33 @@ export function OnboardingScreen({ navigation }: any) {
       }
     }
 
-    Alert.alert('All set! 🎉', "Let's create your account", [
-      {
-        text: 'Continue',
-        onPress: () => navigation.replace('Register'),
-      },
-    ]);
+    navigation.replace('Register');
   };
 
-  // ==================== PERMISSIONS VIEW ====================
-
   if (showPermissions) {
-    const enabledCount = permissions.filter((p) => p.enabled).length;
     return (
-      <View style={[styles.container, { backgroundColor: Colors.background }]}>
-        <ScrollView
-          contentContainerStyle={styles.permScrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.permHeader}>
-            <Text style={styles.permEmoji}>🔐</Text>
-            <Text style={styles.permTitle}>Permissions</Text>
-            <Text style={styles.permSubtitle}>
-              We use these to give you the best experience. You can change these anytime in
-              Settings.
-            </Text>
-          </View>
-
-          {permissions.map((p) => (
-            <TouchableOpacity
-              key={p.id}
-              style={[styles.permCard, p.enabled && styles.permCardActive]}
-              onPress={() => togglePermission(p.id)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.permIcon}>{p.icon}</Text>
-              <View style={{ flex: 1 }}>
-                <View style={styles.permTitleRow}>
-                  <Text style={styles.permItemTitle}>{p.title}</Text>
-                  {p.required && <Text style={styles.permRequired}>required</Text>}
-                </View>
-                <Text style={styles.permItemDesc}>{p.description}</Text>
-              </View>
-              <View style={[styles.permToggle, p.enabled && styles.permToggleActive]}>
-                <View style={[styles.permToggleThumb, p.enabled && styles.permToggleThumbActive]} />
-              </View>
-            </TouchableOpacity>
-          ))}
-
-          <View style={styles.permPrivacy}>
-            <Text style={styles.permPrivacyIcon}>🛡️</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.permPrivacyTitle}>Your data is private</Text>
-              <Text style={styles.permPrivacyText}>
-                Bank-level encryption. We never sell your data. Read-only access. You can revoke
-                anytime.
-              </Text>
-            </View>
-          </View>
-
-          <Button
-            title={
-              enabledCount > 0
-                ? `Continue (${enabledCount} enabled)`
-                : 'Continue without permissions'
-            }
-            onPress={handleComplete}
-            variant="primary"
-            size="lg"
-            fullWidth
-            style={{ marginTop: Spacing.lg }}
-          />
-          <TouchableOpacity onPress={handleComplete} style={styles.skipPerm}>
-            <Text style={styles.skipPermText}>Decide later</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
+      <PermissionsView
+        permissions={permissions}
+        onToggle={togglePermission}
+        onContinue={handleComplete}
+        onBack={() => setShowPermissions(false)}
+      />
     );
   }
 
-  // ==================== SLIDES VIEW ====================
-
-  const currentSlide = SLIDES[page];
-
   return (
-    <View style={[styles.container, { backgroundColor: currentSlide.background }]}>
-      {/* Skip button */}
+    <View style={styles.container}>
+      <AmbientGlow />
+
+      {/* Skip */}
       <View style={styles.topBar}>
         <View />
-        <TouchableOpacity onPress={handleSkip}>
+        <TouchableOpacity
+          onPress={() => setShowPermissions(true)}
+          hitSlop={8}
+          accessibilityRole="link"
+          accessibilityLabel="Skip"
+        >
           <Text style={styles.skipText}>Skip</Text>
         </TouchableOpacity>
       </View>
@@ -291,66 +239,205 @@ export function OnboardingScreen({ navigation }: any) {
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
-          useNativeDriver: false,
-          listener: handleScroll,
-        })}
+        onScroll={handleScroll}
         scrollEventThrottle={16}
+        style={styles.scroll}
       >
         {SLIDES.map((slide) => (
-          <View key={slide.id} style={[styles.slide, { backgroundColor: slide.background }]}>
-            <Text style={styles.slideEmoji}>{slide.emoji}</Text>
-            <Text style={[styles.slideTitle, { color: slide.color }]}>{slide.title}</Text>
-            <Text style={styles.slideDescription}>{slide.description}</Text>
-            {slide.bullets && (
-              <View style={styles.bullets}>
-                {slide.bullets.map((b, idx) => (
-                  <View key={idx} style={styles.bulletRow}>
-                    <View style={[styles.bulletDot, { backgroundColor: slide.color }]} />
-                    <Text style={styles.bulletText}>{b}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
+          <SlideView key={slide.id} slide={slide} />
         ))}
       </ScrollView>
 
-      {/* Bottom nav */}
+      {/* Pagination + CTA */}
       <View style={styles.bottom}>
-        {/* Page dots */}
-        <View style={styles.dots}>
-          {SLIDES.map((_, idx) => (
-            <TouchableOpacity
-              key={idx}
-              onPress={() => goToPage(idx)}
-              style={[
-                styles.dot,
-                {
-                  backgroundColor: idx === page ? currentSlide.color : Colors.gray300,
-                  width: idx === page ? 24 : 8,
-                },
-              ]}
-            />
+        <View style={styles.pagination}>
+          {SLIDES.map((_, i) => (
+            <View key={i} style={[styles.dot, i === page && styles.dotActive]} />
           ))}
         </View>
-
-        {/* Buttons */}
-        <View style={styles.buttons}>
-          {page > 0 && (
-            <TouchableOpacity onPress={() => goToPage(page - 1)} style={styles.backBtn}>
-              <Text style={styles.backBtnText}>← Back</Text>
-            </TouchableOpacity>
-          )}
-          <View style={{ flex: 1 }} />
-          <Button
-            title={page === SLIDES.length - 1 ? "Let's go →" : 'Next'}
-            onPress={handleNext}
-            variant="primary"
-            size="md"
-          />
-        </View>
+        <Button
+          title={page < SLIDES.length - 1 ? 'Next' : 'Get started'}
+          onPress={goToNext}
+          fullWidth
+          size="lg"
+          trailingIcon={<ArrowRight size={16} color={Colors.white} strokeWidth={2} />}
+        />
       </View>
+    </View>
+  );
+}
+
+// =============================================================
+// Slide
+// =============================================================
+function SlideView({ slide }: { slide: Slide }) {
+  const Icon = slide.icon;
+  return (
+    <View style={[styles.slide, { width: SCREEN_WIDTH }]}>
+      <View style={styles.slideHeroBlock}>
+        {slide.showOrb ? (
+          <AiOrb size={96} decorative />
+        ) : (
+          <View
+            style={[
+              styles.slideIconCircle,
+              {
+                backgroundColor: slide.toneBg,
+                borderColor: slide.toneBorder,
+              },
+            ]}
+          >
+            <Icon size={36} color={slide.toneFg} strokeWidth={1.5} />
+          </View>
+        )}
+      </View>
+
+      <Text style={styles.slideTitle}>{slide.title}</Text>
+      <Text style={styles.slideDescription}>{slide.description}</Text>
+
+      {slide.bullets && (
+        <View style={styles.bulletList}>
+          {slide.bullets.map((b, idx) => (
+            <View key={idx} style={styles.bulletRow}>
+              <View style={[styles.bulletDot, { backgroundColor: slide.toneFg }]} />
+              <Text style={styles.bulletText}>{b}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// =============================================================
+// Permissions view
+// =============================================================
+function PermissionsView({
+  permissions,
+  onToggle,
+  onContinue,
+  onBack,
+}: {
+  permissions: Permission[];
+  onToggle: (id: string) => void;
+  onContinue: () => void;
+  onBack: () => void;
+}) {
+  const enabled = permissions.filter((p) => p.enabled).length;
+  return (
+    <View style={styles.container}>
+      <AmbientGlow />
+      <ScrollView contentContainerStyle={styles.permContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.permHero}>
+          <View style={styles.permLockIcon}>
+            <ShieldCheck size={32} color={Colors.accentAi} strokeWidth={1.5} />
+          </View>
+          <Text style={styles.slideTitle}>Permissions</Text>
+          <Text style={[styles.slideDescription, { marginBottom: 0 }]}>
+            We use these to give you the best experience. Toggle anytime from Settings.
+          </Text>
+        </View>
+
+        <View style={{ marginTop: Spacing.xl }}>
+          {permissions.map((p) => {
+            const Icon = p.icon;
+            return (
+              <TouchableOpacity
+                key={p.id}
+                onPress={() => onToggle(p.id)}
+                accessibilityRole="switch"
+                accessibilityLabel={p.title}
+                accessibilityState={{ checked: p.enabled }}
+                activeOpacity={0.85}
+              >
+                <Card style={[styles.permCard, p.enabled && styles.permCardActive]} padding="base">
+                  <View style={styles.permRow}>
+                    <View style={[styles.permIcon, p.enabled && styles.permIconActive]}>
+                      <Icon
+                        size={18}
+                        color={p.enabled ? Colors.accentAi : Colors.textSecondary}
+                        strokeWidth={1.75}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.permItemTitle}>{p.title}</Text>
+                      <Text style={styles.permItemDesc}>{p.description}</Text>
+                    </View>
+                    <Toggle on={p.enabled} />
+                  </View>
+                </Card>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <Card variant="ai" style={styles.privacyCard} padding="base">
+          <View style={styles.permRow}>
+            <View style={styles.permIcon}>
+              <ShieldCheck size={18} color={Colors.accentAi} strokeWidth={1.75} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.permItemTitle}>Your data is private</Text>
+              <Text style={styles.permItemDesc}>
+                Bank-level encryption. Read-only access. We never sell your data, and you can revoke
+                access anytime.
+              </Text>
+            </View>
+          </View>
+        </Card>
+      </ScrollView>
+
+      <View style={styles.permFooter}>
+        <Button title="Back" variant="secondary" size="lg" onPress={onBack} style={{ flex: 1 }} />
+        <View style={{ width: Spacing.sm }} />
+        <Button
+          title={enabled > 0 ? `Continue (${enabled} enabled)` : 'Continue without'}
+          onPress={onContinue}
+          size="lg"
+          style={{ flex: 2 }}
+          trailingIcon={<ArrowRight size={16} color={Colors.white} strokeWidth={2} />}
+        />
+      </View>
+    </View>
+  );
+}
+
+function Toggle({ on }: { on: boolean }) {
+  return (
+    <View style={[styles.toggle, on && styles.toggleOn]}>
+      <View style={[styles.toggleThumb, on && styles.toggleThumbOn]} />
+    </View>
+  );
+}
+
+// =============================================================
+// Ambient glow background
+// =============================================================
+function AmbientGlow() {
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <View
+        style={{
+          position: 'absolute',
+          top: -120,
+          left: -120,
+          width: 360,
+          height: 360,
+          borderRadius: 180,
+          backgroundColor: 'rgba(34, 211, 238, 0.10)',
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          bottom: -160,
+          right: -160,
+          width: 480,
+          height: 480,
+          borderRadius: 240,
+          backgroundColor: 'rgba(59, 130, 246, 0.10)',
+        }}
+      />
     </View>
   );
 }
@@ -358,50 +445,66 @@ export function OnboardingScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Colors.background,
   },
-  // Top bar
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing['3xl'] + Spacing.lg,
-    paddingBottom: Spacing.sm,
   },
   skipText: {
-    fontSize: Typography.sizes.base,
+    fontSize: Typography.sizes.sm,
+    fontWeight: Typography.weights.semiBold,
     color: Colors.textSecondary,
-    fontWeight: Typography.weights.medium,
+    letterSpacing: 0.4,
   },
-  // Slide
+
+  // Slides
+  scroll: {
+    flex: 1,
+  },
   slide: {
-    width: SCREEN_WIDTH,
     paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing['3xl'],
+    alignItems: 'center',
+  },
+  slideHeroBlock: {
+    width: 120,
+    height: 120,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: Spacing['4xl'],
-  },
-  slideEmoji: {
-    fontSize: 96,
     marginBottom: Spacing.xl,
+  },
+  slideIconCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   slideTitle: {
     fontSize: Typography.sizes['3xl'],
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.textPrimary,
+    letterSpacing: -0.6,
     textAlign: 'center',
-    marginBottom: Spacing.base,
   },
   slideDescription: {
-    fontSize: Typography.sizes.md,
-    color: Colors.textPrimary,
+    fontSize: Typography.sizes.base,
+    color: Colors.textSecondary,
     textAlign: 'center',
-    lineHeight: Typography.sizes.md * 1.6,
+    marginTop: Spacing.sm,
     marginBottom: Spacing.xl,
-    paddingHorizontal: Spacing.sm,
+    lineHeight: Typography.sizes.base * 1.5,
+    maxWidth: 400,
   },
-  bullets: {
-    width: '100%',
-    paddingHorizontal: Spacing.base,
+  bulletList: {
+    alignSelf: 'stretch',
+    maxWidth: 400,
   },
   bulletRow: {
     flexDirection: 'row',
@@ -409,9 +512,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs,
   },
   bulletDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     marginTop: 8,
     marginRight: Spacing.sm,
   },
@@ -419,156 +522,121 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: Typography.sizes.base,
     color: Colors.textPrimary,
-    lineHeight: Typography.sizes.base * 1.6,
+    lineHeight: Typography.sizes.base * 1.4,
   },
-  // Bottom
+
+  // Pagination + CTA
   bottom: {
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing['3xl'],
-    paddingTop: Spacing.base,
+    paddingBottom: Spacing.xl,
   },
-  dots: {
+  pagination: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 6,
     marginBottom: Spacing.lg,
+    gap: Spacing.xs,
   },
   dot: {
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.outlineVariant,
   },
-  buttons: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  dotActive: {
+    backgroundColor: Colors.accentPrimary,
+    width: 24,
   },
-  backBtn: {
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.base,
-  },
-  backBtnText: {
-    fontSize: Typography.sizes.base,
-    color: Colors.textPrimary,
-    fontWeight: Typography.weights.medium,
-  },
-  // Permissions
-  permScrollContent: {
-    padding: Spacing.lg,
+
+  // Permissions view
+  permContent: {
     paddingTop: Spacing['3xl'] + Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing['3xl'],
   },
-  permHeader: {
+  permHero: {
     alignItems: 'center',
-    marginBottom: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
   },
-  permEmoji: {
-    fontSize: 64,
-    marginBottom: Spacing.base,
-  },
-  permTitle: {
-    fontSize: Typography.sizes['2xl'],
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  permSubtitle: {
-    fontSize: Typography.sizes.base,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginTop: Spacing.sm,
-    lineHeight: Typography.sizes.base * 1.5,
+  permLockIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.lg,
   },
   permCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.card,
-    padding: Spacing.base,
-    borderRadius: BorderRadius.lg,
     marginBottom: Spacing.sm,
-    borderWidth: 2,
-    borderColor: 'transparent',
   },
   permCardActive: {
-    borderColor: Colors.primary,
-    backgroundColor: Tints.primaryBg,
+    borderColor: 'rgba(34,211,238,0.40)',
   },
-  permIcon: {
-    fontSize: 32,
-    marginRight: Spacing.sm,
-  },
-  permTitleRow: {
+  permRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
+  },
+  permIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  permIconActive: {
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderColor: 'rgba(34,211,238,0.40)',
   },
   permItemTitle: {
     fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  permRequired: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.error,
     fontWeight: Typography.weights.semiBold,
-    backgroundColor: Tints.errorBg,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.sm,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+    color: Colors.textPrimary,
   },
   permItemDesc: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
     marginTop: 2,
-    lineHeight: Typography.sizes.sm * 1.5,
+    lineHeight: Typography.sizes.sm * 1.4,
   },
-  permToggle: {
-    width: 48,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.gray300,
-    padding: 2,
-    justifyContent: 'center',
+  privacyCard: {
+    marginTop: Spacing.xl,
   },
-  permToggleActive: {
-    backgroundColor: Colors.primary,
-  },
-  permToggleThumb: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.white,
-  },
-  permToggleThumbActive: {
-    transform: [{ translateX: 20 }],
-  },
-  permPrivacy: {
+  permFooter: {
     flexDirection: 'row',
-    backgroundColor: Tints.successBg,
-    padding: Spacing.base,
-    borderRadius: BorderRadius.md,
-    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.xl,
+    paddingTop: Spacing.sm,
+  },
+
+  // Toggle
+  toggle: {
+    width: 44,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: Colors.surfaceContainerHigh,
+    padding: 3,
     borderWidth: 1,
-    borderColor: Tints.successBorder,
+    borderColor: Colors.borderDefault,
   },
-  permPrivacyIcon: {
-    fontSize: 24,
-    marginRight: Spacing.sm,
+  toggleOn: {
+    backgroundColor: Colors.accentAi,
+    borderColor: Colors.accentAi,
   },
-  permPrivacyTitle: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.success,
+  toggleThumb: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: Colors.outline,
   },
-  permPrivacyText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.success,
-    marginTop: 4,
-    lineHeight: Typography.sizes.sm * 1.5,
-  },
-  skipPerm: {
-    alignItems: 'center',
-    paddingVertical: Spacing.base,
-  },
-  skipPermText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    fontWeight: Typography.weights.medium,
+  toggleThumbOn: {
+    backgroundColor: Colors.white,
+    transform: [{ translateX: 18 }],
   },
 });

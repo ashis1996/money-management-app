@@ -9,16 +9,27 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { useAuthStore } from '../../store/auth.store';
-import { Button, Input } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius } from '../../styles/theme';
+import { AiOrb, Button, Card, Input } from '../../components/shared';
+import { Colors, Typography, Spacing, fontFamilyForWeight } from '../../styles/theme';
 
+/**
+ * Login screen.
+ *
+ * Layout per `04-screens.md`:
+ *   - Full-bleed dark surface with two ambient cyan/blue radial glows
+ *   - Decorative AiOrb hero (smaller than the AI Coach hero — this is
+ *     a brand cue, not an interactive surface)
+ *   - Glass-style form card centered, max width 400px
+ */
 export function LoginScreen({ navigation }: any) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const { login } = useAuthStore();
 
   const validate = () => {
@@ -31,13 +42,15 @@ export function LoginScreen({ navigation }: any) {
   };
 
   const handleLogin = async () => {
+    setSubmitError(null);
     if (!validate()) return;
-
     setIsLoading(true);
     try {
       await login(email, password);
     } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'Invalid credentials');
+      // Inline banner instead of an Alert; reads better on dark and
+      // doesn't break the keyboard flow.
+      setSubmitError(error?.message || 'Invalid email or password.');
     } finally {
       setIsLoading(false);
     }
@@ -48,104 +61,136 @@ export function LoginScreen({ navigation }: any) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      {/* Ambient glows — pointer-events:none, sit behind everything */}
+      <AmbientGlow />
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {/* Logo */}
-        <View style={styles.logoContainer}>
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoIcon}>💰</Text>
+        <View style={styles.heroSpacer} />
+
+        <View style={styles.brandBlock}>
+          <AiOrb size={72} decorative />
+          <Text style={styles.brandName}>MoneyMind</Text>
+          <Text style={styles.brandTagline}>AI-powered finance control</Text>
+        </View>
+
+        <Card variant="glass" style={styles.card} padding="xl">
+          <Text style={styles.cardTitle}>Welcome back</Text>
+          <Text style={styles.cardSubtitle}>Sign in to your MoneyMind account</Text>
+
+          <View style={{ marginTop: Spacing.lg }}>
+            <Input
+              label="EMAIL"
+              leadingIcon={<Mail size={16} color={Colors.textSecondary} strokeWidth={1.75} />}
+              placeholder="you@example.com"
+              value={email}
+              onChangeText={(t) => {
+                setEmail(t);
+                if (errors.email) setErrors({ ...errors, email: undefined });
+              }}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              error={errors.email}
+              autoComplete="email"
+            />
+            <Input
+              label="PASSWORD"
+              leadingIcon={<Lock size={16} color={Colors.textSecondary} strokeWidth={1.75} />}
+              trailingIcon={
+                showPassword ? (
+                  <EyeOff size={16} color={Colors.textSecondary} strokeWidth={1.75} />
+                ) : (
+                  <Eye size={16} color={Colors.textSecondary} strokeWidth={1.75} />
+                )
+              }
+              onRightIconPress={() => setShowPassword((v) => !v)}
+              placeholder="••••••••"
+              value={password}
+              onChangeText={(t) => {
+                setPassword(t);
+                if (errors.password) setErrors({ ...errors, password: undefined });
+              }}
+              secureTextEntry={!showPassword}
+              error={errors.password}
+              autoComplete="current-password"
+            />
           </View>
-          <Text style={styles.logoText}>MoneyMind</Text>
-          <Text style={styles.logoSubtitle}>
-            AI Financial Control System
-          </Text>
-        </View>
 
-        {/* Welcome */}
-        <View style={styles.welcome}>
-          <Text style={styles.welcomeTitle}>Welcome back!</Text>
-          <Text style={styles.welcomeSubtitle}>Let's optimize your money</Text>
-        </View>
-
-        {/* Form */}
-        <View style={styles.form}>
-          <Input
-            label="Email"
-            icon="📧"
-            placeholder="you@example.com"
-            value={email}
-            onChangeText={(t) => {
-              setEmail(t);
-              if (errors.email) setErrors({ ...errors, email: undefined });
-            }}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!isLoading}
-            error={errors.email}
-          />
-
-          <Input
-            label="Password"
-            icon="🔒"
-            rightIcon={showPassword ? '👁️' : '👁️‍🗨️'}
-            onRightIconPress={() => setShowPassword(!showPassword)}
-            placeholder="Your password"
-            value={password}
-            onChangeText={(t) => {
-              setPassword(t);
-              if (errors.password) setErrors({ ...errors, password: undefined });
-            }}
-            secureTextEntry={!showPassword}
-            editable={!isLoading}
-            error={errors.password}
-          />
-
-          <TouchableOpacity style={styles.forgotLink}>
-            <Text style={styles.forgotText}>Forgot password?</Text>
+          <TouchableOpacity
+            onPress={() =>
+              Alert.alert(
+                'Reset password',
+                'Password reset is coming soon. Try the demo flow for now.',
+              )
+            }
+            style={styles.forgotRow}
+            hitSlop={8}
+          >
+            <Text style={styles.forgotLink}>Forgot password?</Text>
           </TouchableOpacity>
 
+          {submitError && (
+            <View style={styles.errorBanner} accessibilityRole="alert">
+              <Text style={styles.errorBannerText}>{submitError}</Text>
+            </View>
+          )}
+
           <Button
-            title="Sign In"
+            title="Sign in"
             onPress={handleLogin}
-            variant="primary"
-            size="lg"
-            fullWidth
             loading={isLoading}
+            fullWidth
+            size="lg"
             style={{ marginTop: Spacing.base }}
           />
+        </Card>
 
-          {/* Divider */}
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or continue with</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Social Login */}
-          <View style={styles.socialRow}>
-            <TouchableOpacity style={styles.socialBtn}>
-              <Text style={styles.socialIcon}>🔵</Text>
-              <Text style={styles.socialText}>Google</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialBtn}>
-              <Text style={styles.socialIcon}>🍎</Text>
-              <Text style={styles.socialText}>Apple</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Register link */}
-          <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>New here? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-              <Text style={styles.registerLink}>Create account</Text>
-            </TouchableOpacity>
-          </View>
+        <View style={styles.footerRow}>
+          <Text style={styles.footerText}>New to MoneyMind?</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Register')} hitSlop={8}>
+            <Text style={styles.footerLink}>Create account</Text>
+          </TouchableOpacity>
         </View>
+
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
     </KeyboardAvoidingView>
+  );
+}
+
+// =============================================================
+// AmbientGlow — two soft radial glows that paint the auth shell.
+// Same visual recipe as the web app's BackgroundGlow.
+// =============================================================
+function AmbientGlow() {
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <View
+        style={{
+          position: 'absolute',
+          top: -120,
+          left: -120,
+          width: 360,
+          height: 360,
+          borderRadius: 180,
+          backgroundColor: 'rgba(34, 211, 238, 0.10)',
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          bottom: -160,
+          right: -160,
+          width: 480,
+          height: 480,
+          borderRadius: 240,
+          backgroundColor: 'rgba(59, 130, 246, 0.10)',
+        }}
+      />
+    </View>
   );
 }
 
@@ -156,111 +201,85 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    padding: Spacing.lg,
-    paddingTop: Spacing['4xl'],
+    paddingHorizontal: Spacing.lg,
   },
-  logoContainer: {
+  heroSpacer: {
+    height: Spacing['3xl'] + Spacing.xl,
+  },
+  brandBlock: {
     alignItems: 'center',
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing['2xl'],
   },
-  logoCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.base,
-  },
-  logoIcon: {
-    fontSize: 40,
-  },
-  logoText: {
+  brandName: {
     fontSize: Typography.sizes['3xl'],
     fontWeight: Typography.weights.bold,
-    color: Colors.primary,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.textPrimary,
+    letterSpacing: -0.6,
+    marginTop: Spacing.base,
   },
-  logoSubtitle: {
+  brandTagline: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
     marginTop: 4,
+    letterSpacing: 0.4,
   },
-  welcome: {
-    marginBottom: Spacing.xl,
+
+  card: {
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
   },
-  welcomeTitle: {
+  cardTitle: {
     fontSize: Typography.sizes['2xl'],
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
+    letterSpacing: -0.4,
   },
-  welcomeSubtitle: {
+  cardSubtitle: {
     fontSize: Typography.sizes.base,
     color: Colors.textSecondary,
     marginTop: 4,
   },
-  form: {
-    width: '100%',
+
+  forgotRow: {
+    alignSelf: 'flex-end',
+    paddingVertical: Spacing.xs,
   },
   forgotLink: {
-    alignSelf: 'flex-end',
-    marginVertical: Spacing.xs,
-  },
-  forgotText: {
     fontSize: Typography.sizes.sm,
-    color: Colors.primary,
     fontWeight: Typography.weights.medium,
+    color: Colors.accentPrimary,
   },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: Spacing.lg,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.border,
-  },
-  dividerText: {
-    marginHorizontal: Spacing.sm,
-    fontSize: Typography.sizes.xs,
-    color: Colors.textTertiary,
-  },
-  socialRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  socialBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.md,
+
+  errorBanner: {
+    backgroundColor: 'rgba(255, 180, 171, 0.10)',
+    borderColor: 'rgba(255, 180, 171, 0.30)',
     borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.card,
+    borderRadius: 8,
+    padding: Spacing.sm,
+    marginTop: Spacing.sm,
   },
-  socialIcon: {
-    fontSize: 20,
-    marginRight: Spacing.xs,
+  errorBannerText: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.accentError,
   },
-  socialText: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.medium,
-    color: Colors.textPrimary,
-  },
-  registerContainer: {
+
+  footerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
+    alignItems: 'center',
     marginTop: Spacing.xl,
+    gap: Spacing.xs,
   },
-  registerText: {
-    fontSize: Typography.sizes.base,
+  footerText: {
+    fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
   },
-  registerLink: {
-    fontSize: Typography.sizes.base,
-    color: Colors.primary,
-    fontWeight: Typography.weights.bold,
+  footerLink: {
+    fontSize: Typography.sizes.sm,
+    fontWeight: Typography.weights.semiBold,
+    color: Colors.accentPrimary,
   },
 });
