@@ -7,16 +7,72 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from 'react-native';
+import {
+  Mail,
+  Lock,
+  User,
+  Phone,
+  ArrowLeft,
+  ArrowRight,
+  PiggyBank,
+  TrendingDown,
+  Repeat,
+  PieChart,
+  Target,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react-native';
 import { useAuthStore } from '../../store/auth.store';
-import { Button, Input } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import { AiOrb, Badge, Button, Card, Input } from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
 
-const STEPS = [
-  { id: 'account', label: 'Account' },
-  { id: 'personal', label: 'You' },
-  { id: 'finance', label: 'Goals' },
+const STEPS = ['Account', 'You', 'Goals'];
+
+interface GoalOption {
+  id: string;
+  icon: LucideIcon;
+  label: string;
+  description: string;
+}
+
+const GOAL_OPTIONS: GoalOption[] = [
+  {
+    id: 'save_more',
+    icon: PiggyBank,
+    label: 'Save more',
+    description: 'Build an emergency fund',
+  },
+  {
+    id: 'reduce_spending',
+    icon: TrendingDown,
+    label: 'Reduce spending',
+    description: 'Cut wasteful expenses',
+  },
+  {
+    id: 'track_subs',
+    icon: Repeat,
+    label: 'Manage subscriptions',
+    description: 'Audit recurring spend',
+  },
+  {
+    id: 'budget',
+    icon: PieChart,
+    label: 'Stick to budgets',
+    description: 'Stop overshooting',
+  },
+  {
+    id: 'goal_save',
+    icon: Target,
+    label: 'Save for a goal',
+    description: 'A house, a trip, a bike',
+  },
+  {
+    id: 'all',
+    icon: Sparkles,
+    label: 'All of the above',
+    description: 'Maximum AI assistance',
+  },
 ];
 
 export function RegisterScreen({ navigation }: any) {
@@ -29,45 +85,36 @@ export function RegisterScreen({ navigation }: any) {
   const [primaryGoal, setPrimaryGoal] = useState<string | null>(null);
   const [monthlyIncome, setMonthlyIncome] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const { register } = useAuthStore();
 
-  const goalOptions = [
-    { id: 'save_more', icon: '💰', label: 'Save more money' },
-    { id: 'reduce_spending', icon: '📉', label: 'Reduce spending' },
-    { id: 'track_subs', icon: '🔄', label: 'Manage subscriptions' },
-    { id: 'budget', icon: '📊', label: 'Stick to budgets' },
-    { id: 'goal_save', icon: '🎯', label: 'Save for a goal' },
-    { id: 'all', icon: '✨', label: 'All of the above' },
-  ];
-
   const handleNext = () => {
+    setSubmitError(null);
     if (step === 0) {
-      if (!name || !email || !password) {
-        Alert.alert('Missing fields', 'Please fill all required fields');
-        return;
+      if (!email || !password) {
+        return setSubmitError('Email and password are required.');
       }
-      if (password !== confirmPassword) {
-        Alert.alert('Mismatch', 'Passwords do not match');
-        return;
-      }
-      if (password.length < 8) {
-        Alert.alert('Weak password', 'Password must be at least 8 characters');
-        return;
-      }
+      if (!/\S+@\S+\.\S+/.test(email)) return setSubmitError('Please enter a valid email.');
+      if (password.length < 8) return setSubmitError('Password must be at least 8 characters.');
+      if (password !== confirmPassword) return setSubmitError('Passwords do not match.');
     }
-    if (step < STEPS.length - 1) {
-      setStep(step + 1);
-    } else {
-      handleRegister();
-    }
+    if (step < STEPS.length - 1) setStep(step + 1);
+    else handleRegister();
+  };
+
+  const handleBack = () => {
+    setSubmitError(null);
+    if (step === 0) navigation.goBack();
+    else setStep(step - 1);
   };
 
   const handleRegister = async () => {
     setIsLoading(true);
+    setSubmitError(null);
     try {
       await register(email, password, name, phone || undefined);
     } catch (error: any) {
-      Alert.alert('Registration Failed', error.message || 'Please try again');
+      setSubmitError(error?.message || 'Could not create your account.');
     } finally {
       setIsLoading(false);
     }
@@ -78,171 +125,288 @@ export function RegisterScreen({ navigation }: any) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        {/* Progress dots */}
-        <View style={styles.progressBar}>
-          {STEPS.map((s, idx) => (
-            <View key={s.id} style={styles.progressItem}>
-              <View style={[styles.progressDot, idx <= step && styles.progressDotActive]} />
-              <Text style={[styles.progressLabel, idx <= step && styles.progressLabelActive]}>
-                {s.label}
-              </Text>
-            </View>
-          ))}
-        </View>
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <View
+          style={{
+            position: 'absolute',
+            top: -120,
+            right: -120,
+            width: 360,
+            height: 360,
+            borderRadius: 180,
+            backgroundColor: 'rgba(34, 211, 238, 0.10)',
+          }}
+        />
+        <View
+          style={{
+            position: 'absolute',
+            bottom: -120,
+            left: -120,
+            width: 360,
+            height: 360,
+            borderRadius: 180,
+            backgroundColor: 'rgba(59, 130, 246, 0.10)',
+          }}
+        />
+      </View>
 
-        {/* Step header */}
-        <View style={styles.header}>
-          {step > 0 && (
-            <TouchableOpacity onPress={() => setStep(step - 1)} style={styles.backBtn}>
-              <Text style={styles.backIcon}>←</Text>
-            </TouchableOpacity>
-          )}
-          <Text style={styles.title}>{getStepTitle(step)}</Text>
-          <Text style={styles.subtitle}>{getStepSubtitle(step)}</Text>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header with progress */}
+        <View style={styles.headerRow}>
+          <TouchableOpacity
+            onPress={handleBack}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            hitSlop={8}
+            style={styles.backBtn}
+          >
+            <ArrowLeft size={20} color={Colors.textPrimary} strokeWidth={1.75} />
+          </TouchableOpacity>
+          <Badge
+            text={`Step ${step + 1} of ${STEPS.length} — ${STEPS[step]}`}
+            variant="primary"
+            size="sm"
+          />
+          <View style={{ width: 36 }} />
         </View>
 
         {/* Step content */}
-        {step === 0 && (
-          <View style={styles.form}>
-            <Input
-              label="Full Name"
-              icon="👤"
-              placeholder="John Doe"
-              value={name}
-              onChangeText={setName}
-              editable={!isLoading}
+        <Card variant="glass" padding="xl" style={styles.card}>
+          {step === 0 && (
+            <AccountStep
+              name={name}
+              email={email}
+              password={password}
+              confirmPassword={confirmPassword}
+              setName={setName}
+              setEmail={setEmail}
+              setPassword={setPassword}
+              setConfirmPassword={setConfirmPassword}
             />
-            <Input
-              label="Email"
-              icon="📧"
-              placeholder="you@example.com"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              editable={!isLoading}
+          )}
+          {step === 1 && (
+            <PersonalStep
+              phone={phone}
+              setPhone={setPhone}
+              monthlyIncome={monthlyIncome}
+              setMonthlyIncome={setMonthlyIncome}
             />
-            <Input
-              label="Password"
-              icon="🔒"
-              placeholder="At least 8 characters"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              editable={!isLoading}
-            />
-            <Input
-              label="Confirm Password"
-              icon="🔒"
-              placeholder="Re-enter password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              editable={!isLoading}
-            />
-          </View>
-        )}
+          )}
+          {step === 2 && <GoalStep primaryGoal={primaryGoal} setPrimaryGoal={setPrimaryGoal} />}
 
-        {step === 1 && (
-          <View style={styles.form}>
-            <Input
-              label="Phone (optional)"
-              icon="📱"
-              placeholder="+91 98765 43210"
-              hint="We'll use this for SMS-based transaction tracking"
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-              editable={!isLoading}
-            />
-            <Input
-              label="Monthly Income (optional)"
-              icon="💰"
-              placeholder="50000"
-              hint="Helps personalize your dashboard"
-              value={monthlyIncome}
-              onChangeText={setMonthlyIncome}
-              keyboardType="numeric"
-              editable={!isLoading}
-            />
-
-            {/* Permissions preview */}
-            <View style={styles.permissionsCard}>
-              <Text style={styles.permissionsTitle}>📨 Auto-capture permissions</Text>
-              <Text style={styles.permissionsText}>We'll request permission to:</Text>
-              <Text style={styles.permissionItem}>• Read bank SMS messages</Text>
-              <Text style={styles.permissionItem}>• Detect UPI notifications</Text>
-              <Text style={styles.permissionItem}>• Access transaction emails</Text>
-              <Text style={styles.permissionsFooter}>You can configure later in Settings.</Text>
+          {submitError && (
+            <View style={styles.errorBanner} accessibilityRole="alert">
+              <Text style={styles.errorBannerText}>{submitError}</Text>
             </View>
-          </View>
-        )}
+          )}
 
-        {step === 2 && (
-          <View style={styles.form}>
-            <Text style={styles.questionLabel}>What's your main goal?</Text>
-            <View style={styles.goalsGrid}>
-              {goalOptions.map((goal) => (
-                <TouchableOpacity
-                  key={goal.id}
-                  style={[styles.goalCard, primaryGoal === goal.id && styles.goalCardActive]}
-                  onPress={() => setPrimaryGoal(goal.id)}
-                >
-                  <Text style={styles.goalIcon}>{goal.icon}</Text>
-                  <Text
-                    style={[styles.goalLabel, primaryGoal === goal.id && styles.goalLabelActive]}
-                  >
-                    {goal.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+          <Button
+            title={step === STEPS.length - 1 ? 'Create account' : 'Continue'}
+            onPress={handleNext}
+            loading={isLoading}
+            fullWidth
+            size="lg"
+            style={{ marginTop: Spacing.base }}
+            trailingIcon={
+              !isLoading && <ArrowRight size={16} color={Colors.white} strokeWidth={2} />
+            }
+          />
 
-            <View style={styles.aiPreview}>
-              <Text style={styles.aiPreviewIcon}>🤖</Text>
-              <Text style={styles.aiPreviewText}>
-                Based on your goals, we'll personalize your dashboard and detect what matters most
-                for you.
-              </Text>
-            </View>
-          </View>
-        )}
+          <TouchableOpacity onPress={() => navigation.navigate('Login')} style={styles.signinRow}>
+            <Text style={styles.signinText}>
+              Already have an account? <Text style={{ color: Colors.accentPrimary }}>Sign in</Text>
+            </Text>
+          </TouchableOpacity>
+        </Card>
 
-        {/* Actions */}
-        <Button
-          title={step === STEPS.length - 1 ? 'Create Account' : 'Continue'}
-          onPress={handleNext}
-          variant="primary"
-          size="lg"
-          fullWidth
-          loading={isLoading}
-          style={{ marginTop: Spacing.lg }}
-        />
-
-        {step === 0 && (
-          <View style={styles.loginContainer}>
-            <Text style={styles.loginText}>Already have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-              <Text style={styles.loginLink}>Sign in</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-function getStepTitle(step: number): string {
-  return ['Create Account', 'Tell us about you', 'Your money goals'][step];
+// =============================================================
+// Step 1 — Account
+// =============================================================
+function AccountStep({
+  name,
+  email,
+  password,
+  confirmPassword,
+  setName,
+  setEmail,
+  setPassword,
+  setConfirmPassword,
+}: {
+  name: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+  setName: (v: string) => void;
+  setEmail: (v: string) => void;
+  setPassword: (v: string) => void;
+  setConfirmPassword: (v: string) => void;
+}) {
+  return (
+    <View>
+      <View style={styles.stepHero}>
+        <AiOrb size={56} decorative />
+      </View>
+      <Text style={styles.stepTitle}>Create your account</Text>
+      <Text style={styles.stepSubtitle}>
+        We&apos;ll keep your data private and use AI to help you save.
+      </Text>
+
+      <Input
+        label="NAME"
+        leadingIcon={<User size={16} color={Colors.textSecondary} strokeWidth={1.75} />}
+        placeholder="Your name"
+        value={name}
+        onChangeText={setName}
+        autoCapitalize="words"
+      />
+      <Input
+        label="EMAIL"
+        leadingIcon={<Mail size={16} color={Colors.textSecondary} strokeWidth={1.75} />}
+        placeholder="you@example.com"
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        keyboardType="email-address"
+        autoComplete="email"
+      />
+      <Input
+        label="PASSWORD"
+        leadingIcon={<Lock size={16} color={Colors.textSecondary} strokeWidth={1.75} />}
+        placeholder="At least 8 characters"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        autoComplete="new-password"
+      />
+      <Input
+        label="CONFIRM PASSWORD"
+        leadingIcon={<Lock size={16} color={Colors.textSecondary} strokeWidth={1.75} />}
+        placeholder="Repeat your password"
+        value={confirmPassword}
+        onChangeText={setConfirmPassword}
+        secureTextEntry
+      />
+    </View>
+  );
 }
 
-function getStepSubtitle(step: number): string {
-  return [
-    'Start your financial journey',
-    'This helps us personalize your experience',
-    "We'll tailor the app for what matters most to you",
-  ][step];
+// =============================================================
+// Step 2 — Personal
+// =============================================================
+function PersonalStep({
+  phone,
+  setPhone,
+  monthlyIncome,
+  setMonthlyIncome,
+}: {
+  phone: string;
+  setPhone: (v: string) => void;
+  monthlyIncome: string;
+  setMonthlyIncome: (v: string) => void;
+}) {
+  return (
+    <View>
+      <View style={styles.stepHero}>
+        <AiOrb size={56} decorative />
+      </View>
+      <Text style={styles.stepTitle}>About you</Text>
+      <Text style={styles.stepSubtitle}>Optional. Helps us tailor your dashboard.</Text>
+
+      <Input
+        label="PHONE (OPTIONAL)"
+        leadingIcon={<Phone size={16} color={Colors.textSecondary} strokeWidth={1.75} />}
+        placeholder="+91 98765 43210"
+        value={phone}
+        onChangeText={setPhone}
+        keyboardType="phone-pad"
+      />
+      <Input
+        label="MONTHLY INCOME (OPTIONAL)"
+        leadingIcon={<PiggyBank size={16} color={Colors.textSecondary} strokeWidth={1.75} />}
+        placeholder="50000"
+        value={monthlyIncome}
+        onChangeText={setMonthlyIncome}
+        keyboardType="numeric"
+      />
+      <Text style={styles.hint}>
+        We never share this information. It&apos;s only used to set your baseline budget and savings
+        rate.
+      </Text>
+    </View>
+  );
+}
+
+// =============================================================
+// Step 3 — Goal
+// =============================================================
+function GoalStep({
+  primaryGoal,
+  setPrimaryGoal,
+}: {
+  primaryGoal: string | null;
+  setPrimaryGoal: (id: string) => void;
+}) {
+  return (
+    <View>
+      <View style={styles.stepHero}>
+        <AiOrb size={56} decorative />
+      </View>
+      <Text style={styles.stepTitle}>What&apos;s your top priority?</Text>
+      <Text style={styles.stepSubtitle}>We&apos;ll personalise your dashboard around this.</Text>
+
+      <View style={styles.goalsList}>
+        {GOAL_OPTIONS.map((option) => {
+          const Icon = option.icon;
+          const active = primaryGoal === option.id;
+          return (
+            <TouchableOpacity
+              key={option.id}
+              onPress={() => setPrimaryGoal(option.id)}
+              accessibilityRole="radio"
+              accessibilityLabel={option.label}
+              accessibilityState={{ selected: active }}
+              style={[styles.goalRow, active && styles.goalRowActive]}
+            >
+              <View
+                style={[
+                  styles.goalIcon,
+                  active && {
+                    backgroundColor: 'rgba(34,211,238,0.15)',
+                    borderColor: Colors.accentAi,
+                  },
+                ]}
+              >
+                <Icon
+                  size={18}
+                  color={active ? Colors.accentAi : Colors.textSecondary}
+                  strokeWidth={1.75}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.goalLabel}>{option.label}</Text>
+                <Text style={styles.goalDescription}>{option.description}</Text>
+              </View>
+              {active && (
+                <View style={styles.goalCheck}>
+                  <View style={styles.goalCheckDot} />
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -252,165 +416,135 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    padding: Spacing.lg,
-    paddingTop: Spacing['4xl'],
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing['3xl'] + Spacing.lg,
   },
-  // Progress
-  progressBar: {
+
+  headerRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.xl,
-    paddingHorizontal: Spacing.xl,
-  },
-  progressItem: {
     alignItems: 'center',
-    flex: 1,
-  },
-  progressDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.gray200,
-    marginBottom: 4,
-  },
-  progressDotActive: {
-    backgroundColor: Colors.primary,
-  },
-  progressLabel: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textTertiary,
-  },
-  progressLabelActive: {
-    color: Colors.primary,
-    fontWeight: Typography.weights.semiBold,
-  },
-  // Header
-  header: {
-    marginBottom: Spacing.xl,
+    justifyContent: 'space-between',
+    marginBottom: Spacing.lg,
   },
   backBtn: {
-    marginBottom: Spacing.sm,
-  },
-  backIcon: {
-    fontSize: Typography.sizes['2xl'],
-    color: Colors.textPrimary,
-  },
-  title: {
-    fontSize: Typography.sizes['2xl'],
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  subtitle: {
-    fontSize: Typography.sizes.base,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  form: {
-    width: '100%',
-  },
-  // Permissions
-  permissionsCard: {
-    backgroundColor: Tints.primaryBg,
-    padding: Spacing.base,
+    width: 36,
+    height: 36,
     borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceContainer,
     borderWidth: 1,
-    borderColor: Colors.primaryLight,
-    marginTop: Spacing.sm,
+    borderColor: Colors.borderDefault,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  permissionsTitle: {
-    fontSize: Typography.sizes.base,
+
+  card: {
+    width: '100%',
+    maxWidth: 460,
+    alignSelf: 'center',
+  },
+  stepHero: {
+    alignItems: 'center',
+    marginBottom: Spacing.base,
+  },
+  stepTitle: {
+    fontSize: Typography.sizes['2xl'],
     fontWeight: Typography.weights.bold,
-    color: Colors.primary,
-    marginBottom: Spacing.sm,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.textPrimary,
+    letterSpacing: -0.4,
+    textAlign: 'center',
   },
-  permissionsText: {
+  stepSubtitle: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
-    marginBottom: 4,
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: Spacing.lg,
+    lineHeight: Typography.sizes.sm * 1.5,
   },
-  permissionItem: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textPrimary,
-    paddingVertical: 2,
-    paddingLeft: Spacing.sm,
-  },
-  permissionsFooter: {
+
+  hint: {
     fontSize: Typography.sizes.xs,
     color: Colors.textTertiary,
     fontStyle: 'italic',
+    marginTop: Spacing.xs,
+  },
+
+  errorBanner: {
+    backgroundColor: 'rgba(255, 180, 171, 0.10)',
+    borderColor: 'rgba(255, 180, 171, 0.30)',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: Spacing.sm,
     marginTop: Spacing.sm,
   },
-  // Goals
-  questionLabel: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.base,
+  errorBannerText: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.accentError,
   },
-  goalsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-  },
-  goalCard: {
-    width: '48%',
-    padding: Spacing.base,
-    backgroundColor: Colors.card,
-    borderRadius: BorderRadius.md,
-    borderWidth: 2,
-    borderColor: 'transparent',
+
+  signinRow: {
     alignItems: 'center',
+    paddingVertical: Spacing.base,
   },
-  goalCardActive: {
-    borderColor: Colors.primary,
-    backgroundColor: Tints.primaryBg,
+  signinText: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.textSecondary,
+  },
+
+  // Goals
+  goalsList: {
+    marginTop: Spacing.xs,
+  },
+  goalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    marginBottom: Spacing.sm,
+  },
+  goalRowActive: {
+    backgroundColor: 'rgba(34,211,238,0.06)',
+    borderColor: 'rgba(34,211,238,0.40)',
   },
   goalIcon: {
-    fontSize: 32,
-    marginBottom: Spacing.xs,
-  },
-  goalLabel: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    fontWeight: Typography.weights.medium,
-  },
-  goalLabelActive: {
-    color: Colors.primary,
-    fontWeight: Typography.weights.bold,
-  },
-  // AI preview
-  aiPreview: {
-    flexDirection: 'row',
-    backgroundColor: Colors.card,
-    padding: Spacing.base,
+    width: 40,
+    height: 40,
     borderRadius: BorderRadius.md,
-    marginTop: Spacing.lg,
-    alignItems: 'flex-start',
-  },
-  aiPreviewIcon: {
-    fontSize: 24,
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.sm,
   },
-  aiPreviewText: {
-    flex: 1,
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    lineHeight: Typography.sizes.sm * 1.5,
+  goalLabel: {
+    fontSize: Typography.sizes.base,
+    fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+    color: Colors.textPrimary,
   },
-  // Login link
-  loginContainer: {
-    flexDirection: 'row',
+  goalDescription: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  goalCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.accentAi,
+    alignItems: 'center',
     justifyContent: 'center',
-    marginTop: Spacing.lg,
   },
-  loginText: {
-    fontSize: Typography.sizes.base,
-    color: Colors.textSecondary,
-  },
-  loginLink: {
-    fontSize: Typography.sizes.base,
-    color: Colors.primary,
-    fontWeight: Typography.weights.bold,
+  goalCheckDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.white,
   },
 });

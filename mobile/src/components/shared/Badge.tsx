@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
 
-type Variant = 'primary' | 'success' | 'warning' | 'error' | 'info' | 'gray';
+type Variant = 'primary' | 'success' | 'warning' | 'error' | 'info' | 'ai' | 'gray';
 
 interface BadgeProps {
   text: string;
@@ -24,6 +24,7 @@ const variantColors: Record<Variant, { bg: string; text: string }> = {
   warning: { bg: Tints.warningBg, text: Tints.warningText },
   error: { bg: Tints.errorBg, text: Tints.errorText },
   info: { bg: Tints.aiBg, text: Tints.aiText },
+  ai: { bg: Tints.aiBg, text: Tints.aiText },
   gray: { bg: Tints.neutralBg, text: Colors.onSurfaceVariant },
 };
 

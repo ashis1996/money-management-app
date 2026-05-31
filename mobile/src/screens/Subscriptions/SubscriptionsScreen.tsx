@@ -1,17 +1,20 @@
 import React, { useState, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  Modal,
-  ActivityIndicator,
-} from 'react-native';
-import { Card, Badge, Button, ProgressBar, EmptyState } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+  Droplet,
+  Calendar as CalendarIcon,
+  Repeat,
+  TrendingUp,
+  Sparkles,
+  X,
+  Pause,
+  Play,
+  ArrowRight,
+} from 'lucide-react-native';
+import { Card, Badge, Button, ProgressBar } from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
 import { useSubscriptions, useCancelSubscription, usePauseSubscription } from '../../hooks';
+import { formatCurrency, formatRelativeDays } from '../../utils';
 
 type Frequency = 'MONTHLY' | 'YEARLY' | 'WEEKLY' | 'QUARTERLY';
 type Status = 'ACTIVE' | 'PAUSED' | 'CANCELLED';
@@ -19,29 +22,45 @@ type Status = 'ACTIVE' | 'PAUSED' | 'CANCELLED';
 interface Subscription {
   id: string;
   name: string;
-  merchantName: string;
   amount: number;
   frequency: Frequency;
   status: Status;
   category: string;
-  icon: string;
   color: string;
   nextBillingDate: string;
-  lastPaymentDate: string;
   totalPaid: number;
   paymentCount: number;
-  // Leak detection
   originalAmount?: number;
   priceIncreasePercent?: number;
-  usageScore: number; // 0-1
+  usageScore: number;
   isLowUsage: boolean;
   isDuplicate: boolean;
   duplicateGroup?: string;
 }
 
-const mockSubscriptions: Subscription[] = [];
+const PALETTE = [
+  Colors.accentPrimary,
+  Colors.accentAi,
+  Colors.accentSuccess,
+  Colors.accentWarning,
+  '#A78BFA',
+  '#F472B6',
+];
+function colorForName(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+  return PALETTE[Math.abs(h) % PALETTE.length];
+}
 
-type FilterType = 'all' | 'active' | 'leaks' | 'upcoming';
+function monthlyEquivalent(s: Subscription): number {
+  if (s.frequency === 'MONTHLY') return s.amount;
+  if (s.frequency === 'YEARLY') return s.amount / 12;
+  if (s.frequency === 'WEEKLY') return s.amount * 4;
+  if (s.frequency === 'QUARTERLY') return s.amount / 3;
+  return s.amount;
+}
+
+type FilterType = 'all' | 'leaks' | 'upcoming';
 
 export function SubscriptionsScreen({ navigation }: any) {
   const subsQuery = useSubscriptions();
@@ -53,15 +72,12 @@ export function SubscriptionsScreen({ navigation }: any) {
     return list.map((s: any) => ({
       id: s.id,
       name: s.name,
-      merchantName: s.merchantName || s.name,
       amount: Number(s.amount),
       frequency: s.frequency,
       status: s.status,
       category: s.category?.name || s.categoryId || 'Other',
-      icon: s.icon || '🔄',
-      color: s.color || Colors.primary,
+      color: s.color || colorForName(s.name || ''),
       nextBillingDate: s.nextBillingDate || new Date().toISOString(),
-      lastPaymentDate: s.lastPaymentDate || new Date().toISOString(),
       totalPaid: Number(s.totalAmountPaid ?? 0),
       paymentCount: s.totalPaymentsCount ?? 0,
       originalAmount: s.originalAmount ? Number(s.originalAmount) : undefined,
@@ -76,35 +92,22 @@ export function SubscriptionsScreen({ navigation }: any) {
   const [filter, setFilter] = useState<FilterType>('all');
   const [selectedSub, setSelectedSub] = useState<Subscription | null>(null);
 
-  // Calculate stats
   const stats = useMemo(() => {
     const active = subscriptions.filter((s) => s.status === 'ACTIVE');
-    const monthlyTotal = active.reduce((sum, s) => {
-      if (s.frequency === 'MONTHLY') return sum + s.amount;
-      if (s.frequency === 'YEARLY') return sum + s.amount / 12;
-      if (s.frequency === 'WEEKLY') return sum + s.amount * 4;
-      if (s.frequency === 'QUARTERLY') return sum + s.amount / 3;
-      return sum;
-    }, 0);
-    const yearlyTotal = monthlyTotal * 12;
+    const monthlyTotal = active.reduce((sum, s) => sum + monthlyEquivalent(s), 0);
     const leakSavings = active
-      .filter(
-        (s) => s.isLowUsage || (s.isDuplicate && s.duplicateGroup === 'music' && s.id === '3'),
-      )
-      .reduce((sum, s) => sum + (s.frequency === 'MONTHLY' ? s.amount : s.amount / 12), 0);
-
+      .filter((s) => s.isLowUsage || s.isDuplicate)
+      .reduce((sum, s) => sum + monthlyEquivalent(s), 0);
     return {
       activeCount: active.length,
       monthlyTotal: Math.round(monthlyTotal),
-      yearlyTotal: Math.round(yearlyTotal),
+      yearlyTotal: Math.round(monthlyTotal * 12),
       leakSavings: Math.round(leakSavings),
     };
   }, [subscriptions]);
 
-  // Filter subscriptions
   const filtered = useMemo(() => {
     let list = subscriptions.filter((s) => s.status === 'ACTIVE');
-
     if (filter === 'leaks') {
       list = list.filter((s) => s.isLowUsage || s.priceIncreasePercent || s.isDuplicate);
     } else if (filter === 'upcoming') {
@@ -117,144 +120,84 @@ export function SubscriptionsScreen({ navigation }: any) {
       list.sort(
         (a, b) => new Date(a.nextBillingDate).getTime() - new Date(b.nextBillingDate).getTime(),
       );
-    } else if (filter === 'active') {
-      list.sort((a, b) => b.amount - a.amount);
     } else {
       list.sort((a, b) => b.amount - a.amount);
     }
-
     return list;
   }, [subscriptions, filter]);
-
-  // Group duplicates for visualization
-  const duplicateGroups = useMemo(() => {
-    const groups: Record<string, Subscription[]> = {};
-    subscriptions
-      .filter((s) => s.status === 'ACTIVE' && s.isDuplicate && s.duplicateGroup)
-      .forEach((s) => {
-        if (!groups[s.duplicateGroup!]) groups[s.duplicateGroup!] = [];
-        groups[s.duplicateGroup!].push(s);
-      });
-    return groups;
-  }, [subscriptions]);
 
   const handleCancel = (sub: Subscription) => {
     Alert.alert(
       `Cancel ${sub.name}?`,
-      `You'll save ₹${
-        sub.frequency === 'MONTHLY' ? sub.amount : Math.round(sub.amount / 12)
-      }/month. Cancel guidance will be shown.`,
+      `You'll save ${formatCurrency(monthlyEquivalent(sub))}/month. Cancel guidance will be shown.`,
       [
         { text: 'Not now', style: 'cancel' },
         {
-          text: 'Show Cancel Guide',
-          onPress: () => {
-            setSelectedSub(sub);
-          },
+          text: 'Show cancel guide',
+          onPress: () => setSelectedSub(sub),
         },
       ],
     );
   };
 
-  const handlePause = (sub: Subscription) => {
-    if (sub.status === 'PAUSED') {
-      // Resume
-      pauseSub.mutate(sub.id);
-    } else {
-      pauseSub.mutate(sub.id);
-    }
-  };
+  const handlePause = (sub: Subscription) => pauseSub.mutate(sub.id);
 
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Subscriptions</Text>
-          <Text style={styles.subtitle}>Track and optimize your recurring payments</Text>
+          <View>
+            <Text style={styles.title}>Subscriptions</Text>
+            <Text style={styles.subtitle}>Track and optimize your recurring spend</Text>
+          </View>
         </View>
 
-        {/* Stats card */}
-        <Card style={styles.statsCard}>
+        {/* Hero stats card */}
+        <Card variant="hero" style={styles.statsCard} padding="lg">
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
+            <View style={styles.statColumn}>
               <Text style={styles.statValue}>{stats.activeCount}</Text>
               <Text style={styles.statLabel}>Active</Text>
             </View>
             <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>₹{stats.monthlyTotal.toLocaleString()}</Text>
+            <View style={styles.statColumn}>
+              <Text style={styles.statValue}>
+                {formatCurrency(stats.monthlyTotal, { compact: true })}
+              </Text>
               <Text style={styles.statLabel}>Monthly</Text>
             </View>
             <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>₹{stats.yearlyTotal.toLocaleString()}</Text>
+            <View style={styles.statColumn}>
+              <Text style={styles.statValue}>
+                {formatCurrency(stats.yearlyTotal, { compact: true })}
+              </Text>
               <Text style={styles.statLabel}>Yearly</Text>
             </View>
           </View>
         </Card>
 
-        {/* Leaks alert */}
+        {/* AI savings card */}
         {stats.leakSavings > 0 && (
-          <Card
-            style={[
-              styles.alertCard,
-              { backgroundColor: Tints.errorBg, borderColor: Tints.errorBorder },
-            ]}
-          >
-            <View style={styles.alertRow}>
-              <Text style={styles.alertIcon}>💧</Text>
+          <Card variant="ai" style={styles.aiSavings}>
+            <View style={styles.aiSavingsRow}>
+              <View style={styles.aiSavingsIcon}>
+                <Sparkles size={18} color={Colors.accentAi} strokeWidth={1.75} />
+              </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.alertTitle}>Save ₹{stats.leakSavings}/month</Text>
-                <Text style={styles.alertSubtitle}>
+                <Text style={styles.aiSavingsTitle}>
+                  Save up to {formatCurrency(stats.leakSavings, { compact: true })}/mo
+                </Text>
+                <Text style={styles.aiSavingsBody}>
                   Cancel low-usage and duplicate subscriptions
                 </Text>
               </View>
-              <Button
-                title="Review"
-                onPress={() => setFilter('leaks')}
-                size="sm"
-                variant="danger"
-              />
+              <Button title="Review" onPress={() => setFilter('leaks')} size="sm" variant="ai" />
             </View>
           </Card>
         )}
 
-        {/* Duplicate groups alert */}
-        {Object.entries(duplicateGroups).map(([group, subs]) => (
-          <Card key={group} style={styles.duplicateCard}>
-            <View style={styles.duplicateHeader}>
-              <Text style={styles.duplicateIcon}>🔁</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.duplicateTitle}>
-                  {subs.length} {group} services overlap
-                </Text>
-                <Text style={styles.duplicateSubtitle}>
-                  Keep one, save ₹
-                  {subs
-                    .slice(1)
-                    .reduce(
-                      (sum, s) => sum + (s.frequency === 'MONTHLY' ? s.amount : s.amount / 12),
-                      0,
-                    )
-                    .toFixed(0)}
-                  /month
-                </Text>
-              </View>
-            </View>
-            <View style={styles.duplicateList}>
-              {subs.map((s) => (
-                <View key={s.id} style={styles.duplicateItem}>
-                  <Text style={styles.duplicateItemIcon}>{s.icon}</Text>
-                  <Text style={styles.duplicateItemName}>{s.name}</Text>
-                  <Text style={styles.duplicateItemAmount}>₹{s.amount}</Text>
-                </View>
-              ))}
-            </View>
-          </Card>
-        ))}
-
-        {/* Filter tabs */}
+        {/* Filter chip rail */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -262,26 +205,35 @@ export function SubscriptionsScreen({ navigation }: any) {
         >
           {(
             [
-              { key: 'all', label: 'All' },
-              { key: 'leaks', label: '💧 Leaks' },
-              { key: 'upcoming', label: '📅 Upcoming' },
-            ] as { key: FilterType; label: string }[]
-          ).map((tab) => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[styles.filterTab, filter === tab.key && styles.filterTabActive]}
-              onPress={() => setFilter(tab.key)}
-            >
-              <Text
-                style={[styles.filterTabText, filter === tab.key && styles.filterTabTextActive]}
+              { key: 'all', label: 'All', icon: Repeat },
+              { key: 'leaks', label: 'Leaks', icon: Droplet },
+              { key: 'upcoming', label: 'Upcoming', icon: CalendarIcon },
+            ] as Array<{ key: FilterType; label: string; icon: React.ComponentType<any> }>
+          ).map((tab) => {
+            const Icon = tab.icon;
+            const active = filter === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[styles.chip, active && styles.chipActive]}
+                onPress={() => setFilter(tab.key)}
+                accessibilityRole="button"
+                accessibilityLabel={tab.label}
               >
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Icon
+                  size={14}
+                  color={active ? Colors.white : Colors.textSecondary}
+                  strokeWidth={1.75}
+                />
+                <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
 
-        {/* Subscription list */}
+        {/* List */}
         <View style={styles.list}>
           {filtered.map((sub) => (
             <SubscriptionCard
@@ -291,232 +243,283 @@ export function SubscriptionsScreen({ navigation }: any) {
               onPause={() => handlePause(sub)}
             />
           ))}
+          {filtered.length === 0 && (
+            <Text style={styles.emptyText}>No subscriptions match this filter.</Text>
+          )}
         </View>
 
-        <View style={{ height: Spacing['2xl'] }} />
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
 
-      {/* Cancel Guide Modal */}
-      <Modal
-        visible={!!selectedSub}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setSelectedSub(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            {selectedSub && (
-              <>
-                <View style={styles.modalHeader}>
-                  <Text style={styles.modalIcon}>{selectedSub.icon}</Text>
-                  <Text style={styles.modalTitle}>Cancel {selectedSub.name}</Text>
-                  <TouchableOpacity onPress={() => setSelectedSub(null)}>
-                    <Text style={styles.modalClose}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.modalSavings}>
-                  <Text style={styles.modalSavingsLabel}>You'll save</Text>
-                  <Text style={styles.modalSavingsAmount}>
-                    ₹
-                    {(selectedSub.frequency === 'MONTHLY'
-                      ? selectedSub.amount * 12
-                      : selectedSub.amount
-                    ).toLocaleString()}
-                  </Text>
-                  <Text style={styles.modalSavingsPeriod}>per year</Text>
-                </View>
-
-                <Text style={styles.modalStepsTitle}>Steps to cancel:</Text>
-                {getCancelSteps(selectedSub.name).map((step, idx) => (
-                  <View key={idx} style={styles.modalStep}>
-                    <View style={styles.modalStepNumber}>
-                      <Text style={styles.modalStepNumberText}>{idx + 1}</Text>
-                    </View>
-                    <Text style={styles.modalStepText}>{step}</Text>
-                  </View>
-                ))}
-
-                <View style={styles.modalActions}>
-                  <Button
-                    title="Mark as Cancelled"
-                    onPress={() => {
-                      cancelSub.mutate(selectedSub.id);
-                      setSelectedSub(null);
-                    }}
-                    variant="success"
-                    fullWidth
-                  />
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
+      {/* Cancel guide modal */}
+      <CancelGuideModal
+        sub={selectedSub}
+        onClose={() => setSelectedSub(null)}
+        onConfirm={() => {
+          if (selectedSub) {
+            cancelSub.mutate(selectedSub.id);
+          }
+          setSelectedSub(null);
+        }}
+      />
     </View>
   );
 }
 
-interface SubscriptionCardProps {
+// =============================================================
+// Subscription card
+// =============================================================
+function SubscriptionCard({
+  subscription,
+  onCancel,
+  onPause,
+}: {
   subscription: Subscription;
   onCancel: () => void;
   onPause: () => void;
-}
-
-function SubscriptionCard({ subscription, onCancel, onPause }: SubscriptionCardProps) {
+}) {
   const daysUntilBilling = Math.ceil(
     (new Date(subscription.nextBillingDate).getTime() - Date.now()) / (24 * 3600 * 1000),
   );
 
+  const usageColor =
+    subscription.usageScore < 0.3
+      ? Colors.accentError
+      : subscription.usageScore < 0.6
+        ? Colors.accentWarning
+        : Colors.accentSuccess;
+
+  const initial = (subscription.name?.[0] || '?').toUpperCase();
+
   return (
     <Card style={styles.subCard}>
-      <View style={styles.subHeader}>
-        <View style={[styles.subIcon, { backgroundColor: subscription.color + '20' }]}>
-          <Text style={styles.subIconText}>{subscription.icon}</Text>
+      <View style={styles.subTop}>
+        <View
+          style={[
+            styles.subGlyph,
+            {
+              backgroundColor: subscription.color + '22',
+              borderColor: subscription.color + '44',
+            },
+          ]}
+        >
+          <Text style={[styles.subGlyphLetter, { color: subscription.color }]}>{initial}</Text>
         </View>
-        <View style={styles.subInfo}>
-          <View style={styles.subTopRow}>
-            <Text style={styles.subName}>{subscription.name}</Text>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <View style={styles.subHeaderRow}>
+            <Text style={styles.subName} numberOfLines={1}>
+              {subscription.name}
+            </Text>
             <Text style={styles.subAmount}>
-              ₹{subscription.amount}
-              <Text style={styles.subFreq}>
-                /
-                {subscription.frequency === 'MONTHLY'
-                  ? 'mo'
-                  : subscription.frequency === 'YEARLY'
-                    ? 'yr'
-                    : 'wk'}
-              </Text>
+              {formatCurrency(subscription.amount)}
+              <Text style={styles.subAmountUnit}> /{frequencySuffix(subscription.frequency)}</Text>
             </Text>
           </View>
-          <Text style={styles.subCategory}>{subscription.category}</Text>
-          <View style={styles.subBadgeRow}>
-            {subscription.isLowUsage && <Badge text="🔇 Low Usage" variant="warning" size="sm" />}
+          <Text style={styles.subCategory} numberOfLines={1}>
+            {subscription.category}
+          </Text>
+          <View style={styles.badgeRow}>
+            {subscription.isLowUsage && <Badge text="Low usage" variant="warning" size="sm" />}
             {subscription.priceIncreasePercent && subscription.priceIncreasePercent > 10 && (
               <Badge
-                text={`📈 +${subscription.priceIncreasePercent.toFixed(0)}%`}
+                text={`+${subscription.priceIncreasePercent.toFixed(0)}% price`}
                 variant="error"
                 size="sm"
               />
             )}
-            {subscription.isDuplicate && <Badge text="🔁 Duplicate" variant="info" size="sm" />}
-            {daysUntilBilling <= 3 && daysUntilBilling >= 0 && (
-              <Badge text={`⏰ Due in ${daysUntilBilling}d`} variant="warning" size="sm" />
+            {subscription.isDuplicate && <Badge text="Duplicate" variant="ai" size="sm" />}
+            {daysUntilBilling >= 0 && daysUntilBilling <= 3 && (
+              <Badge
+                text={`Due ${formatRelativeDays(subscription.nextBillingDate)}`}
+                variant="warning"
+                size="sm"
+              />
             )}
           </View>
         </View>
       </View>
 
-      {/* Usage indicator */}
-      <View style={styles.usageSection}>
+      {/* Usage */}
+      <View style={styles.usageBlock}>
         <View style={styles.usageHeader}>
-          <Text style={styles.usageLabel}>Usage Score</Text>
-          <Text
-            style={[
-              styles.usageValue,
-              {
-                color:
-                  subscription.usageScore < 0.3
-                    ? Colors.error
-                    : subscription.usageScore < 0.6
-                      ? Colors.warning
-                      : Colors.success,
-              },
-            ]}
-          >
+          <Text style={styles.usageLabel}>Usage score</Text>
+          <Text style={[styles.usageValue, { color: usageColor }]}>
             {Math.round(subscription.usageScore * 100)}%
           </Text>
         </View>
-        <ProgressBar
-          progress={subscription.usageScore * 100}
-          color={
-            subscription.usageScore < 0.3
-              ? Colors.error
-              : subscription.usageScore < 0.6
-                ? Colors.warning
-                : Colors.success
-          }
-          height={4}
-        />
+        <ProgressBar progress={subscription.usageScore * 100} color={usageColor} />
       </View>
 
-      {/* Next billing */}
+      {/* Footer */}
       <View style={styles.subFooter}>
-        <View style={styles.subFooterItem}>
-          <Text style={styles.subFooterLabel}>Next billing</Text>
-          <Text style={styles.subFooterValue}>
-            {new Date(subscription.nextBillingDate).toLocaleDateString('en-IN', {
-              day: 'numeric',
-              month: 'short',
-            })}
-          </Text>
-        </View>
-        <View style={styles.subFooterItem}>
-          <Text style={styles.subFooterLabel}>Total paid</Text>
-          <Text style={styles.subFooterValue}>₹{subscription.totalPaid.toLocaleString()}</Text>
-        </View>
-        <View style={styles.subFooterItem}>
-          <Text style={styles.subFooterLabel}>Payments</Text>
-          <Text style={styles.subFooterValue}>{subscription.paymentCount}</Text>
-        </View>
+        <FooterStat
+          label="Next bill"
+          value={new Date(subscription.nextBillingDate).toLocaleDateString('en-IN', {
+            day: 'numeric',
+            month: 'short',
+          })}
+        />
+        <FooterStat
+          label="Total paid"
+          value={formatCurrency(subscription.totalPaid, { compact: true })}
+        />
+        <FooterStat label="Cycles" value={String(subscription.paymentCount)} />
       </View>
 
-      {/* Price hike alert */}
       {subscription.priceIncreasePercent && subscription.priceIncreasePercent > 10 && (
-        <View style={styles.priceHikeAlert}>
-          <Text style={styles.priceHikeText}>
-            📈 Price increased from ₹{subscription.originalAmount} to ₹{subscription.amount}
+        <View style={styles.hikeAlert}>
+          <TrendingUp size={14} color={Colors.accentError} strokeWidth={2} />
+          <Text style={styles.hikeText}>
+            {' '}
+            Price rose from {formatCurrency(subscription.originalAmount ?? 0)} to{' '}
+            {formatCurrency(subscription.amount)}
           </Text>
         </View>
       )}
 
       {/* Actions */}
-      <View style={styles.subActions}>
+      <View style={styles.actionsRow}>
         <Button
-          title={subscription.status === 'PAUSED' ? '▶️ Resume' : '⏸ Pause'}
+          title={subscription.status === 'PAUSED' ? 'Resume' : 'Pause'}
           onPress={onPause}
           variant="secondary"
           size="sm"
+          leadingIcon={
+            subscription.status === 'PAUSED' ? (
+              <Play size={14} color={Colors.textPrimary} strokeWidth={2} />
+            ) : (
+              <Pause size={14} color={Colors.textPrimary} strokeWidth={2} />
+            )
+          }
           style={{ flex: 1 }}
         />
+        <View style={{ width: Spacing.sm }} />
         <Button
           title="Cancel"
           onPress={onCancel}
-          variant="danger"
+          variant="destructive"
           size="sm"
-          style={{ flex: 1, marginLeft: Spacing.sm }}
+          style={{ flex: 1 }}
         />
       </View>
     </Card>
   );
 }
 
+function FooterStat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={styles.footerLabel}>{label}</Text>
+      <Text style={styles.footerValue}>{value}</Text>
+    </View>
+  );
+}
+
+function frequencySuffix(f: Frequency): string {
+  switch (f) {
+    case 'MONTHLY':
+      return 'mo';
+    case 'YEARLY':
+      return 'yr';
+    case 'WEEKLY':
+      return 'wk';
+    case 'QUARTERLY':
+      return 'qtr';
+  }
+}
+
+// =============================================================
+// Cancel guide modal (dark glass)
+// =============================================================
+function CancelGuideModal({
+  sub,
+  onClose,
+  onConfirm,
+}: {
+  sub: Subscription | null;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!sub) return null;
+  const yearly = sub.frequency === 'MONTHLY' ? sub.amount * 12 : sub.amount;
+  const steps = getCancelSteps(sub.name);
+
+  return (
+    <Modal visible={!!sub} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <View style={[styles.modalIcon, { backgroundColor: sub.color + '22' }]}>
+              <Text style={[styles.modalIconLetter, { color: sub.color }]}>
+                {(sub.name?.[0] || '?').toUpperCase()}
+              </Text>
+            </View>
+            <Text style={styles.modalTitle} numberOfLines={1}>
+              Cancel {sub.name}
+            </Text>
+            <TouchableOpacity onPress={onClose} hitSlop={8}>
+              <X size={20} color={Colors.textSecondary} strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.savingsBlock}>
+            <Text style={styles.savingsLabel}>You&apos;ll save</Text>
+            <Text style={styles.savingsAmount}>{formatCurrency(yearly)}</Text>
+            <Text style={styles.savingsPeriod}>per year</Text>
+          </View>
+
+          <Text style={styles.stepsTitle}>Steps to cancel</Text>
+          {steps.map((step, idx) => (
+            <View key={idx} style={styles.stepRow}>
+              <View style={styles.stepNumber}>
+                <Text style={styles.stepNumberText}>{idx + 1}</Text>
+              </View>
+              <Text style={styles.stepText}>{step}</Text>
+            </View>
+          ))}
+
+          <View style={{ marginTop: Spacing.xl }}>
+            <Button
+              title="Mark as cancelled"
+              onPress={onConfirm}
+              fullWidth
+              trailingIcon={<ArrowRight size={16} color={Colors.white} strokeWidth={2} />}
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function getCancelSteps(name: string): string[] {
   const lower = name.toLowerCase();
-  if (lower.includes('netflix')) {
+  if (lower.includes('netflix'))
     return [
       'Open Netflix.com or the app',
-      "Go to Account > 'Cancel Membership'",
+      "Go to Account → 'Cancel Membership'",
       'Confirm cancellation',
       'Service continues until end of billing period',
     ];
-  }
-  if (lower.includes('spotify')) {
+  if (lower.includes('spotify'))
     return [
       'Visit spotify.com/account',
       "Click 'Subscription' on the left",
       "Select 'Change or Cancel'",
       "Choose 'Cancel Premium'",
     ];
-  }
   return [
     `Open ${name} app or website`,
     'Navigate to Account or Subscription settings',
-    "Find 'Cancel Subscription' option",
+    "Find 'Cancel subscription'",
     'Confirm cancellation',
   ];
 }
 
+// =============================================================
+// Styles
+// =============================================================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -528,15 +531,19 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.base,
   },
   title: {
-    fontSize: Typography.sizes['2xl'],
+    fontSize: Typography.sizes['3xl'],
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
+    letterSpacing: -0.6,
   },
   subtitle: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
     marginTop: 4,
   },
+
+  // Hero stats
   statsCard: {
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.base,
@@ -545,152 +552,127 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  statItem: {
+  statColumn: {
     flex: 1,
     alignItems: 'center',
   },
   statValue: {
-    fontSize: Typography.sizes.xl,
+    fontSize: Typography.sizes['2xl'],
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.4,
   },
   statLabel: {
     fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
     marginTop: 4,
   },
   statDivider: {
     width: 1,
-    height: 36,
-    backgroundColor: Colors.border,
+    height: 40,
+    backgroundColor: Colors.borderDefault,
   },
-  alertCard: {
+
+  // AI savings
+  aiSavings: {
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.base,
-    borderWidth: 1,
   },
-  alertRow: {
+  aiSavingsRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  alertIcon: {
-    fontSize: 28,
+  aiSavingsIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(34,211,238,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.sm,
   },
-  alertTitle: {
+  aiSavingsTitle: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
   },
-  alertSubtitle: {
+  aiSavingsBody: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
     marginTop: 2,
   },
-  // Duplicate
-  duplicateCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-    backgroundColor: Tints.warningBg,
-    borderWidth: 1,
-    borderColor: Tints.warningBorder,
-  },
-  duplicateHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-  },
-  duplicateIcon: {
-    fontSize: 24,
-    marginRight: Spacing.sm,
-  },
-  duplicateTitle: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-    textTransform: 'capitalize',
-  },
-  duplicateSubtitle: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.success,
-    fontWeight: Typography.weights.semiBold,
-    marginTop: 2,
-  },
-  duplicateList: {
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.base,
-    padding: Spacing.sm,
-  },
-  duplicateItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.xs,
-  },
-  duplicateItemIcon: {
-    fontSize: 18,
-    marginRight: Spacing.sm,
-  },
-  duplicateItemName: {
-    flex: 1,
-    fontSize: Typography.sizes.sm,
-    color: Colors.textPrimary,
-  },
-  duplicateItemAmount: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-  },
-  // Filter tabs
+
+  // Chip rail
   filterTabs: {
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.base,
+    paddingVertical: Spacing.sm,
     gap: Spacing.sm,
   },
-  filterTab: {
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
     marginRight: Spacing.sm,
   },
-  filterTabActive: {
-    backgroundColor: Colors.primary,
+  chipActive: {
+    backgroundColor: Colors.accentPrimary,
+    borderColor: Colors.accentPrimary,
   },
-  filterTabText: {
+  chipLabel: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.medium,
     color: Colors.textSecondary,
+    marginLeft: 6,
   },
-  filterTabTextActive: {
+  chipLabelActive: {
     color: Colors.white,
   },
+
   // List
   list: {
     paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
   },
-  // Subscription card
+  emptyText: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+    paddingVertical: Spacing.xl,
+    textAlign: 'center',
+  },
+
+  // Sub card
   subCard: {
     marginBottom: Spacing.base,
   },
-  subHeader: {
+  subTop: {
     flexDirection: 'row',
-    marginBottom: Spacing.sm,
   },
-  subIcon: {
+  subGlyph: {
     width: 48,
     height: 48,
     borderRadius: BorderRadius.md,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
     marginRight: Spacing.sm,
   },
-  subIconText: {
-    fontSize: 24,
+  subGlyphLetter: {
+    fontSize: Typography.sizes.lg,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
   },
-  subInfo: {
-    flex: 1,
-  },
-  subTopRow: {
+  subHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -698,14 +680,19 @@ const styles = StyleSheet.create({
   subName: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
+    flexShrink: 1,
+    paddingRight: Spacing.sm,
   },
   subAmount: {
     fontSize: Typography.sizes.lg,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
   },
-  subFreq: {
+  subAmountUnit: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.regular,
     color: Colors.textSecondary,
@@ -715,17 +702,19 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
   },
-  subBadgeRow: {
+  badgeRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 4,
     marginTop: Spacing.xs,
   },
+
   // Usage
-  usageSection: {
+  usageBlock: {
+    marginTop: Spacing.sm,
     paddingTop: Spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: Colors.gray100,
+    borderTopColor: Colors.borderDefault,
   },
   usageHeader: {
     flexDirection: 'row',
@@ -734,63 +723,85 @@ const styles = StyleSheet.create({
   },
   usageLabel: {
     fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   usageValue: {
     fontSize: Typography.sizes.xs,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
   },
+
   // Footer
   subFooter: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     paddingTop: Spacing.sm,
     marginTop: Spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: Colors.gray100,
+    borderTopColor: Colors.borderDefault,
   },
-  subFooterItem: {
-    flex: 1,
-  },
-  subFooterLabel: {
+  footerLabel: {
     fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
-  subFooterValue: {
+  footerValue: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
     marginTop: 2,
+    fontVariant: ['tabular-nums'] as any,
   },
-  // Price hike
-  priceHikeAlert: {
-    backgroundColor: Tints.errorBg,
-    padding: Spacing.sm,
+
+  // Hike alert
+  hikeAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,180,171,0.10)',
     borderRadius: BorderRadius.base,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
     marginTop: Spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255,180,171,0.30)',
   },
-  priceHikeText: {
+  hikeText: {
+    flex: 1,
     fontSize: Typography.sizes.sm,
-    color: Colors.error,
+    color: Colors.accentError,
     fontWeight: Typography.weights.medium,
   },
-  // Actions
-  subActions: {
+  actionsRow: {
     flexDirection: 'row',
     marginTop: Spacing.sm,
   },
+
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
     justifyContent: 'flex-end',
   },
-  modalContent: {
-    backgroundColor: Colors.white,
+  modalSheet: {
+    backgroundColor: Colors.surfaceContainerHighest,
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
     padding: Spacing.lg,
     paddingBottom: Spacing['3xl'],
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.outline,
+    alignSelf: 'center',
+    marginBottom: Spacing.base,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -798,73 +809,86 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   modalIcon: {
-    fontSize: 32,
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.sm,
+  },
+  modalIconLetter: {
+    fontSize: Typography.sizes.lg,
+    fontWeight: Typography.weights.bold,
   },
   modalTitle: {
     flex: 1,
     fontSize: Typography.sizes.xl,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
   },
-  modalClose: {
-    fontSize: 24,
-    color: Colors.textSecondary,
-  },
-  modalSavings: {
-    backgroundColor: Tints.successBg,
+  savingsBlock: {
+    backgroundColor: 'rgba(16,185,129,0.10)',
+    borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
-    borderRadius: BorderRadius.md,
     alignItems: 'center',
     marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(16,185,129,0.25)',
   },
-  modalSavingsLabel: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
+  savingsLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
-  modalSavingsAmount: {
-    fontSize: Typography.sizes['3xl'],
+  savingsAmount: {
+    fontSize: 40,
+    lineHeight: 44,
+    color: Colors.accentSuccess,
     fontWeight: Typography.weights.bold,
-    color: Colors.success,
-    marginVertical: 4,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    marginVertical: 6,
   },
-  modalSavingsPeriod: {
+  savingsPeriod: {
     fontSize: Typography.sizes.xs,
     color: Colors.textSecondary,
   },
-  modalStepsTitle: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
+  stepsTitle: {
+    fontSize: Typography.sizes.sm,
+    fontWeight: Typography.weights.semiBold,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
     marginBottom: Spacing.sm,
   },
-  modalStep: {
+  stepRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: Spacing.sm,
   },
-  modalStepNumber: {
+  stepNumber: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
+    backgroundColor: 'rgba(59,130,246,0.20)',
+    borderWidth: 1,
+    borderColor: 'rgba(59,130,246,0.40)',
     alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.sm,
     marginTop: 2,
   },
-  modalStepNumberText: {
+  stepNumberText: {
     fontSize: Typography.sizes.xs,
+    color: Colors.accentPrimary,
     fontWeight: Typography.weights.bold,
-    color: Colors.white,
   },
-  modalStepText: {
+  stepText: {
     flex: 1,
     fontSize: Typography.sizes.sm,
     color: Colors.textPrimary,
     lineHeight: Typography.sizes.sm * 1.5,
-  },
-  modalActions: {
-    marginTop: Spacing.lg,
   },
 });
