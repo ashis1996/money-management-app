@@ -4,8 +4,10 @@ import { ConfigService } from '@nestjs/config';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
+import pinoHttp from 'pino-http';
 import { AppModule } from './modules/app.module';
 import { Logger } from './common/utils/logger';
+import { rootLogger } from './common/utils/pino-logger';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { validateRequiredSecrets } from './config/secret-validation';
 
@@ -55,6 +57,61 @@ async function bootstrap() {
   // user.module.ts / auth.service.ts, but it gives operators a single
   // unified error message at startup.
   validateRequiredSecrets(configService);
+
+  // -----------------------------------------------------------------
+  // Request-scoped HTTP logging.
+  //
+  // pino-http logs one structured line per request with method, path,
+  // status, latency, and the same `reqId` that RequestContextMiddleware
+  // attaches to AsyncLocalStorage. Health probes are dropped to noise-
+  // level so a 5s-interval K8s liveness probe doesn't drown the log.
+  //
+  // Mounted before helmet so even helmet's own response (e.g. when it
+  // rejects a malformed origin) gets a request line and a reqId
+  // returned to the caller.
+  // -----------------------------------------------------------------
+  app.use(
+    pinoHttp({
+      logger: rootLogger,
+      // pino-http already writes its own `reqId`. We pull it from the
+      // header set by RequestContextMiddleware (or generate a new one
+      // if the middleware hasn't run yet, which happens for routes
+      // outside the global prefix).
+      genReqId: (req, res) => {
+        const fromHeader = req.headers['x-request-id'];
+        if (typeof fromHeader === 'string' && fromHeader.length > 0) {
+          res.setHeader('X-Request-Id', fromHeader);
+          return fromHeader;
+        }
+        // Fall back to whatever pino-http generated; let the middleware
+        // win for in-prefix routes.
+        return (req as any).id;
+      },
+      customLogLevel: (_req, res, err) => {
+        if (err || res.statusCode >= 500) return 'error';
+        if (res.statusCode >= 400) return 'warn';
+        // Health probes pollute the log when they fire every few seconds.
+        if ((_req as any).url?.endsWith('/health')) return 'debug';
+        return 'info';
+      },
+      // Trim default fields we don't need; reqId + method + url + status
+      // is enough for correlation, and the redact paths in
+      // pino-logger.ts strip authorization etc. from anything that
+      // does land.
+      serializers: {
+        req(req: any) {
+          return {
+            id: req.id,
+            method: req.method,
+            url: req.url,
+          };
+        },
+        res(res: any) {
+          return { statusCode: res.statusCode };
+        },
+      },
+    }),
+  );
 
   // Security
   app.use(helmet());
@@ -121,10 +178,7 @@ async function bootstrap() {
   // it can't gulp a backlog and lock up the worker; light work
   // (notifications, subscription.detected) gets a higher prefetch.
   // ------------------------------------------------------------------
-  const rabbitUrl = configService.get<string>(
-    'RABBITMQ_URL',
-    'amqp://guest:guest@localhost:5672',
-  );
+  const rabbitUrl = configService.get<string>('RABBITMQ_URL', 'amqp://guest:guest@localhost:5672');
 
   const queues: Array<{ env: string; fallback: string; prefetch: number; label: string }> = [
     {
@@ -186,6 +240,9 @@ async function bootstrap() {
 }
 
 bootstrap().catch((error) => {
-  console.error('Failed to start application:', error);
+  // No `console.error` here — bootstrap failure is the one place where
+  // the structured logger may not be fully wired, but pino-logger.ts
+  // exports the root pino instance which is initialized at module load.
+  rootLogger.fatal({ err: error }, 'Failed to start application');
   process.exit(1);
 });

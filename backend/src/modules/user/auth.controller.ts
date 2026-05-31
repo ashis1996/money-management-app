@@ -1,4 +1,5 @@
 import { Controller, Post, Body, UseGuards, HttpCode, Req } from '@nestjs/common';
+import { Request } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from '../../common/guards/local-auth.guard';
@@ -20,8 +21,11 @@ export class AuthController {
   @Public()
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
-  async register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto.email, dto.password, dto.name, dto.phone);
+  // The Express request is passed to the service so the AuditLog row can
+  // capture IP + user-agent. Without it the audit trail loses the
+  // investigation-critical "where" dimension.
+  async register(@Body() dto: RegisterDto, @Req() req: Request) {
+    return this.authService.register(dto.email, dto.password, dto.name, dto.phone, req);
   }
 
   @Public()
@@ -30,9 +34,10 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Login user' })
   // The body is also documented for Swagger; LocalAuthGuard validates it
-  // via passport-local using the email/password fields.
-  async login(@User() user: RequestUser, @Body() _dto: LoginDto) {
-    return this.authService.generateSession(user as any);
+  // via passport-local using the email/password fields. The req is
+  // passed to record IP / UA in the audit log.
+  async login(@User() user: RequestUser, @Body() _dto: LoginDto, @Req() req: Request) {
+    return this.authService.generateSession(user as any, req);
   }
 
   @Public()
@@ -40,16 +45,16 @@ export class AuthController {
   @UseGuards(RefreshTokenGuard)
   @HttpCode(200)
   @ApiOperation({ summary: 'Refresh access token' })
-  async refreshTokens(@Body() dto: RefreshTokenDto) {
-    return this.authService.refreshTokens(dto.refreshToken);
+  async refreshTokens(@Body() dto: RefreshTokenDto, @Req() req: Request) {
+    return this.authService.refreshTokens(dto.refreshToken, req);
   }
 
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout user' })
-  async logout(@User() user: RequestUser, @Body() dto: LogoutDto) {
-    await this.authService.logout(user.id, dto.refreshToken);
+  async logout(@User() user: RequestUser, @Body() dto: LogoutDto, @Req() req: Request) {
+    await this.authService.logout(user.id, dto.refreshToken, req);
     return { message: 'Logged out successfully' };
   }
 }

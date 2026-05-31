@@ -100,6 +100,15 @@ export const createMockPrisma = () => ({
   budget: {
     findMany: jest.fn(),
   },
+  goal: {
+    findMany: jest.fn(),
+  },
+  // AuditService writes here for every login / logout / register / data
+  // export / delete-self event. The mock just absorbs the create so
+  // tests can also assert it was called when they care.
+  auditLog: {
+    create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
+  },
 });
 
 export const createMockRabbitMQ = () => ({
@@ -172,8 +181,7 @@ export async function createTestApp(options?: {
     mockPrisma,
     mockRabbitMQ,
     jwtService,
-    generateToken: (userId: string, email: string) =>
-      jwtService.sign({ sub: userId, email }),
+    generateToken: (userId: string, email: string) => jwtService.sign({ sub: userId, email }),
   };
 }
 

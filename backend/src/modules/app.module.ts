@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { CacheModule } from '@nestjs/cache-manager';
@@ -18,9 +18,11 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
 import { AiProxyModule } from './ai-proxy/ai-proxy.module';
 import { PushModule } from './push/push.module';
 import { HealthModule } from './health/health.module';
+import { AuditModule } from './audit/audit.module';
 import { PrismaModule } from '../config/prisma.module';
 import { RabbitMQModule } from '../config/rabbitmq.module';
 import { ConsumersModule } from '../common/consumers/consumers.module';
+import { RequestContextMiddleware } from '../common/middleware/request-context.middleware';
 
 @Module({
   imports: [
@@ -98,9 +100,23 @@ import { ConsumersModule } from '../common/consumers/consumers.module';
     WeeklySummaryModule,
     PushModule,
     HealthModule,
+    AuditModule,
 
     // Event Consumers
     ConsumersModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  /**
+   * Mount RequestContextMiddleware ahead of every route.
+   *
+   * The middleware reads (or generates) `X-Request-Id` and stashes it
+   * in AsyncLocalStorage so every log line emitted while handling the
+   * request — at any depth, in any service — automatically carries the
+   * same correlation id. Without this, service-level logs are
+   * orphaned from the HTTP request that triggered them.
+   */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+  }
+}

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { UserService } from './user.service';
 import { PrismaService } from '../../config/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { HashUtils } from '../../common/utils/hash';
 
 jest.mock('../../common/utils/hash');
@@ -35,6 +36,12 @@ describe('UserService', () => {
       delete: jest.fn(),
       count: jest.fn(),
     },
+    // Password updates revoke every outstanding refresh token. The mock
+    // resolves the deleteMany to a benign result so the test still
+    // reaches the post-update assertion.
+    refreshToken: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
     account: {
       create: jest.fn(),
       findMany: jest.fn(),
@@ -55,6 +62,10 @@ describe('UserService', () => {
       providers: [
         UserService,
         { provide: PrismaService, useValue: mockPrismaService },
+        // UserService writes USER_PASSWORD_CHANGED / USER_DELETE_SELF /
+        // USER_DATA_EXPORT audit rows. The mock just absorbs them so the
+        // unit tests don't require a real PrismaService write path.
+        { provide: AuditService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -100,9 +111,7 @@ describe('UserService', () => {
     });
 
     it('should throw ConflictException when phone already exists', async () => {
-      mockPrismaService.user.findUnique
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(mockUser);
+      mockPrismaService.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(mockUser);
 
       await expect(
         service.create({ email: 'new@example.com', password: 'password', phone: '+1234567890' }),

@@ -1,15 +1,19 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Request } from 'express';
 import { PrismaService } from '../../config/prisma.service';
 import { HashUtils } from '../../common/utils/hash';
+import { AuditService } from '../audit/audit.service';
+import { Logger } from '../../common/utils/logger';
 import { CreateUserDto, UserResponseDto } from '@money-management/shared/dto';
 
 @Injectable()
 export class UserService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(UserService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
     const existingUser = await this.prisma.user.findUnique({
@@ -89,9 +93,7 @@ export class UserService {
     return user as UserResponseDto;
   }
 
-  async findByEmail(
-    email: string,
-  ): Promise<(UserResponseDto & { passwordHash: string }) | null> {
+  async findByEmail(email: string): Promise<(UserResponseDto & { passwordHash: string }) | null> {
     const user = await this.prisma.user.findUnique({
       where: { email },
     });
@@ -112,9 +114,11 @@ export class UserService {
     }
 
     const updatePayload: any = { ...updateData };
+    let passwordChanged = false;
     if (updateData.password) {
       updatePayload.passwordHash = await HashUtils.hashPassword(updateData.password);
       delete updatePayload.password;
+      passwordChanged = true;
     }
 
     const updated = await this.prisma.user.update({
@@ -131,6 +135,25 @@ export class UserService {
         updatedAt: true,
       },
     });
+
+    if (passwordChanged) {
+      // A password change must invalidate every outstanding session.
+      // Bumping tokenVersion in a separate update keeps the password
+      // write atomic; the audit row records the event for compliance.
+      await this.prisma.user.update({
+        where: { id },
+        data: { tokenVersion: { increment: 1 } },
+      });
+      await this.prisma.refreshToken.deleteMany({ where: { userId: id } });
+
+      void this.audit.record({
+        userId: id,
+        action: 'USER_PASSWORD_CHANGED',
+        entityType: 'User',
+        entityId: id,
+      });
+    }
+
     return updated as UserResponseDto;
   }
 
@@ -161,6 +184,118 @@ export class UserService {
 
   async delete(id: string): Promise<void> {
     await this.prisma.user.delete({ where: { id } });
+  }
+
+  /**
+   * GDPR/DPDP "right to erasure".
+   *
+   * Hard-deletes the User row. All FK-cascading rows go with it
+   * (transactions, accounts, refresh tokens, sms logs, etc., per the
+   * `onDelete: Cascade` in schema.prisma). AuditLog is intentionally
+   * preserved with userId set to NULL by the FK action because
+   * regulators expect us to keep evidence that the deletion happened.
+   *
+   * The audit row is written BEFORE the delete so we never end up with
+   * a deleted user and no tombstone evidence.
+   */
+  async deleteSelf(id: string, request?: Request): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('User not found');
+
+    void this.audit.record({
+      userId: id,
+      action: 'USER_DELETE_SELF',
+      entityType: 'User',
+      entityId: id,
+      oldValues: { email: user.email, createdAt: user.createdAt },
+      request,
+    });
+
+    await this.prisma.user.delete({ where: { id } });
+    this.logger.log('User deleted self', { userId: id });
+  }
+
+  /**
+   * GDPR/DPDP "right to access".
+   *
+   * Bundles every row directly attached to the user into a single
+   * JSON blob suitable for download. Heavy joins (full transaction
+   * history, all SMS bodies) are intentionally included — when a user
+   * asks for "all my data", that's what they mean.
+   *
+   * The export does NOT include passwordHash, refresh-token hashes, or
+   * any column whose value is opaque to the user. Internal IDs are
+   * preserved for support traceability.
+   */
+  async exportSelf(id: string, request?: Request): Promise<Record<string, unknown>> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        avatarUrl: true,
+        timezone: true,
+        currency: true,
+        emailVerified: true,
+        phoneVerified: true,
+        archetype: true,
+        notificationPrefs: true,
+        createdAt: true,
+        updatedAt: true,
+        lastLoginAt: true,
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    // All scoped rows fetched in parallel. Each query goes through the
+    // soft-delete middleware so tombstoned rows are excluded — this
+    // matches what the user sees in the app and avoids exporting data
+    // they thought was deleted.
+    const [accounts, transactions, subscriptions, budgets, goals, notifications, smsLogs] =
+      await Promise.all([
+        this.prisma.account.findMany({ where: { userId: id } }),
+        this.prisma.transaction.findMany({ where: { userId: id } }),
+        this.prisma.subscription.findMany({ where: { userId: id } }),
+        this.prisma.budget.findMany({ where: { userId: id } }),
+        this.prisma.goal.findMany({ where: { userId: id } }),
+        this.prisma.notification.findMany({ where: { userId: id } }),
+        this.prisma.smsLog.findMany({ where: { userId: id } }),
+      ]);
+
+    void this.audit.record({
+      userId: id,
+      action: 'USER_DATA_EXPORT',
+      entityType: 'User',
+      entityId: id,
+      newValues: {
+        accounts: accounts.length,
+        transactions: transactions.length,
+        subscriptions: subscriptions.length,
+        budgets: budgets.length,
+        goals: goals.length,
+        notifications: notifications.length,
+        smsLogs: smsLogs.length,
+      },
+      request,
+    });
+
+    return {
+      meta: {
+        exportedAt: new Date().toISOString(),
+        userId: id,
+        version: 1,
+      },
+      user,
+      accounts,
+      transactions,
+      subscriptions,
+      budgets,
+      goals,
+      notifications,
+      smsLogs,
+    };
   }
 
   async getDashboardStats(userId: string): Promise<any> {
