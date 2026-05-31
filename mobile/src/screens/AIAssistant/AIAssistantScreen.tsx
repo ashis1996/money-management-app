@@ -10,13 +10,21 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { Card, Header } from '../../components/shared';
 import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-} from '../../styles/theme';
+  Sparkles,
+  Send,
+  Mic,
+  Trash2,
+  ArrowRight,
+  Droplet,
+  Target,
+  PieChart,
+  Repeat,
+  TrendingUp,
+} from 'lucide-react-native';
+import { AiOrb, Card, Header, IconButton } from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
+import { formatCurrency } from '../../utils';
 import { useAskAi } from '../../hooks';
 
 interface Message {
@@ -28,19 +36,21 @@ interface Message {
 }
 
 const SUGGESTED_QUERIES = [
-  { icon: '💧', text: 'Where did I waste money this month?' },
-  { icon: '💰', text: 'How can I save ₹10,000/month?' },
-  { icon: '📱', text: 'Can I afford a ₹50,000 phone?' },
-  { icon: '🔄', text: 'What subscriptions should I cancel?' },
-  { icon: '📊', text: 'Compare my spending to last month' },
-  { icon: '🔮', text: 'Will I have money left at month end?' },
+  { icon: Droplet, text: 'Where did I waste money this month?' },
+  { icon: TrendingUp, text: 'How can I save ₹10,000/month?' },
+  { icon: PieChart, text: 'Compare my spending to last month' },
+  { icon: Repeat, text: 'What subscriptions should I cancel?' },
 ];
 
-const QUICK_TOPICS = [
-  { icon: '💧', label: 'Money Leaks' },
-  { icon: '🎯', label: 'Goals' },
-  { icon: '📊', label: 'Budgets' },
-  { icon: '🔄', label: 'Subscriptions' },
+const QUICK_TOPICS: Array<{
+  label: string;
+  prompt: string;
+  icon: React.ComponentType<any>;
+}> = [
+  { label: 'Money Leaks', prompt: 'Tell me about my money leaks', icon: Droplet },
+  { label: 'Goals', prompt: 'How are my goals tracking?', icon: Target },
+  { label: 'Budgets', prompt: 'How am I doing against my budgets?', icon: PieChart },
+  { label: 'Subscriptions', prompt: 'Audit my subscriptions', icon: Repeat },
 ];
 
 export function AIAssistantScreen({ navigation }: any) {
@@ -51,20 +61,7 @@ export function AIAssistantScreen({ navigation }: any) {
   const askAi = useAskAi();
 
   useEffect(() => {
-    // Initial greeting
-    setMessages([
-      {
-        id: '1',
-        role: 'assistant',
-        content:
-          "Hi! I'm your AI financial assistant. I can help you understand your spending, find money leaks, plan savings, and answer questions about your finances. What would you like to know?",
-        timestamp: new Date().toISOString(),
-      },
-    ]);
-  }, []);
-
-  useEffect(() => {
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
   }, [messages]);
 
   const handleSend = async (text?: string) => {
@@ -89,7 +86,7 @@ export function AIAssistantScreen({ navigation }: any) {
         result?.text ??
         result?.message ??
         result?.data?.answer ??
-        "I couldn't generate a response right now. Try rephrasing your question.";
+        "I couldn't generate a response right now. Try rephrasing.";
 
       setMessages((prev) => [
         ...prev,
@@ -101,18 +98,16 @@ export function AIAssistantScreen({ navigation }: any) {
           timestamp: new Date().toISOString(),
         },
       ]);
-    } catch (e: any) {
-      // Fallback to local heuristic so the UI stays useful when offline
-      const response = generateResponse(query);
+    } catch {
+      // Local heuristic fallback so the screen stays useful offline
+      const local = generateLocalResponse(query);
       setMessages((prev) => [
         ...prev,
         {
           id: String(Date.now() + 1),
           role: 'assistant',
-          content:
-            response.text +
-            '\n\n_(AI service unavailable, showing local analysis)_',
-          data: response.data,
+          content: local.text + '\n\n(AI service unreachable, showing local analysis)',
+          data: local.data,
           timestamp: new Date().toISOString(),
         },
       ]);
@@ -121,16 +116,9 @@ export function AIAssistantScreen({ navigation }: any) {
     }
   };
 
-  const handleClear = () => {
-    setMessages([
-      {
-        id: '1',
-        role: 'assistant',
-        content: "Hi again! How can I help with your finances?",
-        timestamp: new Date().toISOString(),
-      },
-    ]);
-  };
+  const handleClear = () => setMessages([]);
+
+  const isEmpty = messages.length === 0 && !isLoading;
 
   return (
     <KeyboardAvoidingView
@@ -139,134 +127,138 @@ export function AIAssistantScreen({ navigation }: any) {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
       <Header
-        title="AI Assistant"
-        subtitle="Ask anything about your money"
+        title="AI Coach"
+        subtitle={isEmpty ? undefined : 'Ask anything about your money'}
         onBack={() => navigation.goBack()}
-        rightIcon="🗑️"
-        onRightPress={handleClear}
+        rightContent={
+          messages.length > 0 ? (
+            <IconButton
+              name="trash-2"
+              onPress={handleClear}
+              accessibilityLabel="Clear conversation"
+              size="md"
+              variant="ghost"
+            />
+          ) : undefined
+        }
       />
 
       <ScrollView
         ref={scrollRef}
-        style={styles.messagesContainer}
-        contentContainerStyle={styles.messagesContent}
+        style={styles.scroll}
+        contentContainerStyle={[styles.messagesContent, isEmpty && styles.emptyContent]}
         showsVerticalScrollIndicator={false}
       >
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
-        ))}
-
-        {isLoading && (
-          <View style={styles.typingContainer}>
-            <View style={styles.aiAvatar}>
-              <Text style={styles.aiAvatarIcon}>🤖</Text>
-            </View>
-            <View style={styles.typingBubble}>
-              <ActivityIndicator size="small" color={Colors.primary} />
-              <Text style={styles.typingText}>Thinking...</Text>
-            </View>
-          </View>
+        {isEmpty ? (
+          <EmptyHero onSelect={(q) => handleSend(q)} />
+        ) : (
+          messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)
         )}
 
-        {/* Suggested queries (only on first message) */}
-        {messages.length === 1 && !isLoading && (
-          <View style={styles.suggestionsContainer}>
-            <Text style={styles.suggestionsTitle}>Try asking:</Text>
-            {SUGGESTED_QUERIES.map((s, idx) => (
-              <TouchableOpacity
-                key={idx}
-                style={styles.suggestion}
-                onPress={() => handleSend(s.text)}
-              >
-                <Text style={styles.suggestionIcon}>{s.icon}</Text>
-                <Text style={styles.suggestionText}>{s.text}</Text>
-                <Text style={styles.suggestionArrow}>→</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
+        {isLoading && <TypingIndicator />}
       </ScrollView>
 
-      {/* Quick Topics */}
-      {messages.length > 1 && (
+      {/* Quick topics rail (when conversation is active) */}
+      {messages.length > 0 && !isLoading && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.topicsRow}
         >
-          {QUICK_TOPICS.map((t) => (
-            <TouchableOpacity
-              key={t.label}
-              style={styles.topicChip}
-              onPress={() => handleSend(`Tell me about my ${t.label.toLowerCase()}`)}
-            >
-              <Text style={styles.topicIcon}>{t.icon}</Text>
-              <Text style={styles.topicLabel}>{t.label}</Text>
-            </TouchableOpacity>
-          ))}
+          {QUICK_TOPICS.map((t) => {
+            const Icon = t.icon;
+            return (
+              <TouchableOpacity
+                key={t.label}
+                style={styles.topicChip}
+                onPress={() => handleSend(t.prompt)}
+                accessibilityRole="button"
+                accessibilityLabel={t.label}
+              >
+                <Icon size={14} color={Colors.accentAi} strokeWidth={1.75} />
+                <Text style={styles.topicLabel}>{t.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       )}
 
-      {/* Input */}
-      <View style={styles.inputContainer}>
-        <TouchableOpacity style={styles.voiceBtn}>
-          <Text style={styles.voiceIcon}>🎤</Text>
-        </TouchableOpacity>
-        <TextInput
-          style={styles.input}
-          placeholder="Ask about your finances..."
-          placeholderTextColor={Colors.textTertiary}
-          value={input}
-          onChangeText={setInput}
-          multiline
-          maxLength={500}
-          onSubmitEditing={() => handleSend()}
-        />
-        <TouchableOpacity
-          style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
-          onPress={() => handleSend()}
-          disabled={!input.trim() || isLoading}
-        >
-          <Text style={styles.sendIcon}>➤</Text>
-        </TouchableOpacity>
-      </View>
+      <InputBar
+        value={input}
+        onChange={setInput}
+        onSend={() => handleSend()}
+        disabled={isLoading || !input.trim()}
+      />
     </KeyboardAvoidingView>
   );
 }
 
+// =============================================================
+// Empty hero (the crown-jewel landing)
+// =============================================================
+function EmptyHero({ onSelect }: { onSelect: (q: string) => void }) {
+  return (
+    <View style={styles.emptyHero}>
+      <AiOrb size={120} decorative />
+
+      <Text style={styles.emptyTitle}>Hi, I&apos;m your money coach</Text>
+      <Text style={styles.emptySubtitle}>
+        Ask me anything about your spending, savings, subscriptions, or goals.
+      </Text>
+
+      <View style={styles.suggestionList}>
+        {SUGGESTED_QUERIES.map((s) => {
+          const Icon = s.icon;
+          return (
+            <TouchableOpacity
+              key={s.text}
+              style={styles.suggestionRow}
+              onPress={() => onSelect(s.text)}
+              accessibilityRole="button"
+              accessibilityLabel={s.text}
+            >
+              <View style={styles.suggestionIconHost}>
+                <Icon size={16} color={Colors.accentAi} strokeWidth={1.75} />
+              </View>
+              <Text style={styles.suggestionText} numberOfLines={2}>
+                {s.text}
+              </Text>
+              <ArrowRight size={16} color={Colors.accentPrimary} strokeWidth={1.75} />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+// =============================================================
+// Message bubble
+// =============================================================
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'user';
 
   return (
-    <View style={[styles.messageRow, isUser ? styles.messageRowUser : styles.messageRowAi]}>
+    <View
+      style={[
+        styles.messageRow,
+        isUser ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' },
+      ]}
+    >
       {!isUser && (
         <View style={styles.aiAvatar}>
-          <Text style={styles.aiAvatarIcon}>🤖</Text>
+          <Sparkles size={14} color={Colors.accentAi} strokeWidth={2} />
         </View>
       )}
-      <View
-        style={[
-          styles.bubble,
-          isUser ? styles.bubbleUser : styles.bubbleAi,
-        ]}
-      >
+      <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAi]}>
         <Text
-          style={[
-            styles.bubbleText,
-            isUser ? styles.bubbleTextUser : styles.bubbleTextAi,
-          ]}
+          style={[styles.bubbleText, isUser ? styles.bubbleTextUser : styles.bubbleTextAi]}
+          selectable
         >
           {message.content}
         </Text>
-
         {message.data && <DataVisualization data={message.data} />}
-
-        <Text
-          style={[
-            styles.bubbleTime,
-            isUser ? styles.bubbleTimeUser : styles.bubbleTimeAi,
-          ]}
-        >
+        <Text style={[styles.bubbleTime, isUser ? styles.bubbleTimeUser : styles.bubbleTimeAi]}>
           {new Date(message.timestamp).toLocaleTimeString('en-IN', {
             hour: 'numeric',
             minute: '2-digit',
@@ -278,20 +270,37 @@ function MessageBubble({ message }: { message: Message }) {
   );
 }
 
+function TypingIndicator() {
+  return (
+    <View style={styles.messageRow}>
+      <View style={styles.aiAvatar}>
+        <Sparkles size={14} color={Colors.accentAi} strokeWidth={2} />
+      </View>
+      <View style={[styles.bubble, styles.bubbleAi, styles.typingBubble]}>
+        <ActivityIndicator size="small" color={Colors.accentAi} />
+        <Text style={styles.typingText}>Thinking…</Text>
+      </View>
+    </View>
+  );
+}
+
+// =============================================================
+// Generated data widgets (rendered inside AI bubbles)
+// =============================================================
 function DataVisualization({ data }: { data: any }) {
   if (data?.type === 'leaks') {
     return (
       <View style={styles.dataCard}>
-        <Text style={styles.dataTitle}>💧 Money Leaks Found</Text>
+        <Text style={styles.dataTitle}>Money Leaks Found</Text>
         {data.leaks.map((leak: any, idx: number) => (
           <View key={idx} style={styles.dataRow}>
             <Text style={styles.dataLabel}>{leak.title}</Text>
-            <Text style={styles.dataValue}>₹{leak.amount}/mo</Text>
+            <Text style={styles.dataValue}>{formatCurrency(leak.amount)}/mo</Text>
           </View>
         ))}
         <View style={styles.dataTotalRow}>
-          <Text style={styles.dataTotalLabel}>Total Potential Savings</Text>
-          <Text style={styles.dataTotalValue}>₹{data.total}/mo</Text>
+          <Text style={styles.dataTotalLabel}>Potential savings</Text>
+          <Text style={styles.dataTotalValue}>{formatCurrency(data.total)}/mo</Text>
         </View>
       </View>
     );
@@ -303,22 +312,20 @@ function DataVisualization({ data }: { data: any }) {
         <Text
           style={[
             styles.dataTitle,
-            { color: data.canAfford ? Colors.success : Colors.warning },
+            {
+              color: data.canAfford ? Colors.accentSuccess : Colors.accentWarning,
+            },
           ]}
         >
-          {data.canAfford ? '✓ You can afford this' : '⚠️ Stretch your budget'}
+          {data.canAfford ? 'You can afford this' : 'Stretch your budget'}
         </Text>
         <View style={styles.dataRow}>
-          <Text style={styles.dataLabel}>Item Cost</Text>
-          <Text style={styles.dataValue}>₹{data.amount?.toLocaleString()}</Text>
+          <Text style={styles.dataLabel}>Item cost</Text>
+          <Text style={styles.dataValue}>{formatCurrency(data.amount)}</Text>
         </View>
         <View style={styles.dataRow}>
           <Text style={styles.dataLabel}>Months to save</Text>
           <Text style={styles.dataValue}>{data.monthsToSave}</Text>
-        </View>
-        <View style={styles.dataRow}>
-          <Text style={styles.dataLabel}>% of monthly savings</Text>
-          <Text style={styles.dataValue}>{data.percentOfSavings}%</Text>
         </View>
       </View>
     );
@@ -327,7 +334,7 @@ function DataVisualization({ data }: { data: any }) {
   if (data?.type === 'savings_plan') {
     return (
       <View style={styles.dataCard}>
-        <Text style={styles.dataTitle}>💰 Your Savings Plan</Text>
+        <Text style={styles.dataTitle}>Your savings plan</Text>
         {data.steps.map((step: any, idx: number) => (
           <View key={idx} style={styles.stepRow}>
             <View style={styles.stepNumber}>
@@ -335,13 +342,13 @@ function DataVisualization({ data }: { data: any }) {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.stepText}>{step.action}</Text>
-              <Text style={styles.stepImpact}>Save ₹{step.savings}/mo</Text>
+              <Text style={styles.stepImpact}>Save {formatCurrency(step.savings)}/mo</Text>
             </View>
           </View>
         ))}
         <View style={styles.dataTotalRow}>
-          <Text style={styles.dataTotalLabel}>Total Monthly Savings</Text>
-          <Text style={styles.dataTotalValue}>₹{data.total}</Text>
+          <Text style={styles.dataTotalLabel}>Total monthly savings</Text>
+          <Text style={styles.dataTotalValue}>{formatCurrency(data.total)}</Text>
         </View>
       </View>
     );
@@ -350,149 +357,213 @@ function DataVisualization({ data }: { data: any }) {
   return null;
 }
 
-function generateResponse(query: string): { text: string; data?: any } {
-  const q = query.toLowerCase();
+// =============================================================
+// Glass-style input bar
+// =============================================================
+function InputBar({
+  value,
+  onChange,
+  onSend,
+  disabled,
+}: {
+  value: string;
+  onChange: (s: string) => void;
+  onSend: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <View style={styles.inputBar}>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Voice input"
+        style={styles.inputAffordance}
+      >
+        <Mic size={18} color={Colors.textSecondary} strokeWidth={1.75} />
+      </TouchableOpacity>
+      <TextInput
+        style={styles.input}
+        placeholder="Ask anything about your money…"
+        placeholderTextColor={Colors.textTertiary}
+        value={value}
+        onChangeText={onChange}
+        multiline
+        maxLength={500}
+        onSubmitEditing={() => !disabled && onSend()}
+      />
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Send"
+        onPress={onSend}
+        disabled={disabled}
+        style={[styles.sendBtn, disabled && styles.sendBtnDisabled]}
+      >
+        <Send size={18} color={Colors.white} strokeWidth={2} />
+      </TouchableOpacity>
+    </View>
+  );
+}
 
+// =============================================================
+// Local heuristic (fallback when AI service is unreachable)
+// =============================================================
+function generateLocalResponse(query: string): { text: string; data?: any } {
+  const q = query.toLowerCase();
   if (q.includes('waste') || q.includes('leak')) {
     return {
-      text: 'I found 5 money leaks totaling ₹4,500/month. Here are the biggest ones:',
+      text: 'Here are the biggest leaks I can find from local data:',
       data: {
         type: 'leaks',
         leaks: [
           { title: 'Spotify (low usage)', amount: 119 },
           { title: 'Cult.fit (unused)', amount: 999 },
-          { title: 'Late-night impulse spending', amount: 2500 },
-          { title: 'Duplicate music apps', amount: 248 },
-          { title: 'Netflix price hike', amount: 150 },
+          { title: 'Late-night impulse spends', amount: 2500 },
         ],
-        total: 4016,
+        total: 3618,
       },
     };
   }
-
   if (q.includes('afford') || q.includes('buy')) {
-    const match = q.match(/₹?\s*(\d{1,3}(?:,?\d{3})*|\d+k)/);
-    let amount = 50000;
-    if (match) {
-      const cleaned = match[1].replace(',', '').toLowerCase();
-      amount = cleaned.endsWith('k') ? parseInt(cleaned) * 1000 : parseInt(cleaned);
-    }
-    const monthlySavings = 30000;
-    const monthsToSave = Math.ceil(amount / monthlySavings);
     return {
-      text: `Based on your savings rate of 40% (₹30,000/month), here's the breakdown for a ₹${amount.toLocaleString()} purchase:`,
+      text: 'Affordability snapshot based on your last 30 days:',
       data: {
         type: 'affordability',
-        amount,
-        canAfford: amount <= monthlySavings * 2,
-        monthsToSave,
-        percentOfSavings: Math.round((amount / monthlySavings) * 100),
+        amount: 50000,
+        canAfford: true,
+        monthsToSave: 2,
       },
     };
   }
-
-  if (q.includes('save') && (q.includes('10,000') || q.includes('10000') || q.includes('10k'))) {
+  if (q.includes('save') && (q.includes('10') || q.includes('plan'))) {
     return {
-      text: "Here's your personalized plan to save ₹10,000/month:",
+      text: 'A 5-step plan to free up roughly ₹10k/month:',
       data: {
         type: 'savings_plan',
         steps: [
-          { action: 'Cancel unused subscriptions (Spotify, Cult.fit)', savings: 1118 },
+          { action: 'Cancel unused subscriptions', savings: 1118 },
           { action: 'Reduce food delivery by 30%', savings: 2500 },
-          { action: 'Set ₹4000 shopping budget (vs ₹6500 now)', savings: 2500 },
-          { action: 'Avoid late-night impulse purchases', savings: 2000 },
-          { action: 'Optimize subscription duplicates', savings: 2000 },
+          { action: 'Set ₹4,000 shopping budget', savings: 2500 },
+          { action: 'Avoid late-night impulse buys', savings: 2000 },
+          { action: 'Switch one credit card to cashback', savings: 2000 },
         ],
         total: 10118,
       },
     };
   }
-
-  if (q.includes('subscription')) {
-    return {
-      text: "You have 7 active subscriptions costing ₹3,500/month total. I recommend reviewing:\n\n🎵 Spotify (₹119/mo) - Only 15% usage in last 30 days\n🏋️ Cult.fit (₹999/mo) - 0 visits in 30 days\n🎬 Netflix - Price increased from ₹499 to ₹649 (+30%)\n\nYou could save ₹1,118/month by canceling unused services.",
-    };
-  }
-
-  if (q.includes('compare') || q.includes('last month')) {
-    return {
-      text: "Here's how this month compares to last month:\n\n📈 Spending: ₹45,000 (up 7% from ₹42,000)\n📈 Savings: ₹30,000 (up 7% from ₹28,000)\n\nNotable changes:\n• Shopping: +35% (₹6,500 vs ₹4,800) ⚠️\n• Food: +18% (₹12,500 vs ₹10,600)\n• Transport: -8% (₹4,200 vs ₹4,600)\n\nYour shopping increase is concerning. Consider setting a budget.",
-    };
-  }
-
-  if (q.includes('forecast') || q.includes('left') || q.includes('runway') || q.includes('end')) {
-    return {
-      text: "🔮 Based on your current spending pace:\n\n• Days money will last: 18 days\n• Predicted month-end balance: ₹27,500\n• Daily average spending: ₹1,500\n• If you slow down by 20%, you'll have ₹35,000 left\n\nYou're on track but watch your weekend spending.",
-    };
-  }
-
-  if (q.includes('goal')) {
-    return {
-      text: "You have 3 active goals:\n\n🛡️ Emergency Fund: 65% complete (₹65k/₹100k) - On track\n🏖️ Goa Vacation: 64% complete (₹32k/₹50k) - On track\n📱 New iPhone: 19% complete (₹15k/₹80k) - Need ₹5,500/mo more to reach goal\n\nTip: Redirect the ₹4,500 from money leaks to accelerate your goals!",
-    };
-  }
-
-  if (q.includes('budget')) {
-    return {
-      text: "📊 Your budget status:\n\n🍔 Food: ₹8,500/₹10,000 (85% used) ⚠️\n🛍️ Shopping: ₹6,500/₹5,000 (130% - OVER) 🚨\n🚗 Transport: ₹1,800/₹4,000 (45%) ✓\n🎬 Entertainment: ₹850/₹3,000 (28%) ✓\n\nYou're over your shopping budget. Consider pausing purchases until next month.",
-    };
-  }
-
   return {
-    text: "I can help with:\n\n💧 Finding money leaks\n💰 Creating savings plans\n📱 Affordability checks\n🔄 Subscription audits\n📊 Budget tracking\n🎯 Goal progress\n🔮 Cash flow forecasts\n\nWhat would you like to explore?",
+    text: 'I can help with money leaks, savings plans, affordability checks, subscription audits, budget tracking, goal progress, and cash-flow forecasts. What would you like to explore?',
   };
 }
 
+// =============================================================
+// Styles
+// =============================================================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
   },
-  messagesContainer: {
+  scroll: {
     flex: 1,
   },
   messagesContent: {
-    paddingHorizontal: Spacing.base,
+    paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.base,
   },
-  // Message
+  emptyContent: {
+    flexGrow: 1,
+    justifyContent: 'flex-start',
+    paddingTop: Spacing['2xl'],
+    paddingBottom: Spacing.xl,
+  },
+
+  // Empty hero
+  emptyHero: {
+    alignItems: 'center',
+    paddingHorizontal: Spacing.base,
+  },
+  emptyTitle: {
+    fontSize: Typography.sizes['2xl'],
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.textPrimary,
+    letterSpacing: -0.6,
+    marginTop: Spacing.xl,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: Typography.sizes.base,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginTop: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    lineHeight: Typography.sizes.base * 1.5,
+  },
+  suggestionList: {
+    width: '100%',
+    marginTop: Spacing['2xl'],
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  suggestionIconHost: {
+    width: 32,
+    height: 32,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  suggestionText: {
+    flex: 1,
+    fontSize: Typography.sizes.base,
+    color: Colors.textPrimary,
+    fontWeight: Typography.weights.medium,
+    fontFamily: fontFamilyForWeight(Typography.weights.medium),
+  },
+
+  // Messages
   messageRow: {
     flexDirection: 'row',
     marginBottom: Spacing.sm,
     alignItems: 'flex-end',
   },
-  messageRowUser: {
-    justifyContent: 'flex-end',
-  },
-  messageRowAi: {
-    justifyContent: 'flex-start',
-  },
   aiAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.primary,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(34,211,238,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.40)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.xs,
     marginBottom: 4,
   },
-  aiAvatarIcon: {
-    fontSize: 16,
-  },
   bubble: {
-    maxWidth: '80%',
-    padding: Spacing.sm,
+    maxWidth: '82%',
     paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.lg,
+    borderWidth: 1,
   },
   bubbleUser: {
-    backgroundColor: Colors.primary,
-    borderBottomRightRadius: 4,
+    backgroundColor: Colors.accentPrimary,
+    borderBottomRightRadius: 6,
+    borderColor: 'rgba(255,255,255,0.16)',
   },
   bubbleAi: {
-    backgroundColor: Colors.card,
-    borderBottomLeftRadius: 4,
+    backgroundColor: Colors.surfaceContainer,
+    borderBottomLeftRadius: 6,
+    borderColor: Colors.borderDefault,
   },
   bubbleText: {
     fontSize: Typography.sizes.base,
@@ -507,28 +578,19 @@ const styles = StyleSheet.create({
   bubbleTime: {
     fontSize: 10,
     marginTop: 4,
+    letterSpacing: 0.4,
   },
   bubbleTimeUser: {
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.65)',
     textAlign: 'right',
   },
   bubbleTimeAi: {
     color: Colors.textTertiary,
   },
-  // Typing
-  typingContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    marginBottom: Spacing.sm,
-  },
   typingBubble: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.card,
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.lg,
-    borderBottomLeftRadius: 4,
+    paddingVertical: Spacing.sm + 2,
   },
   typingText: {
     marginLeft: Spacing.xs,
@@ -536,32 +598,40 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontStyle: 'italic',
   },
-  // Data visualization
+
+  // Data viz
   dataCard: {
     marginTop: Spacing.sm,
     padding: Spacing.sm,
-    backgroundColor: Colors.gray50,
+    backgroundColor: Colors.surfaceContainerLow,
     borderRadius: BorderRadius.base,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
   dataTitle: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
     marginBottom: Spacing.xs,
+    letterSpacing: 0.2,
   },
   dataRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 2,
+    paddingVertical: 3,
   },
   dataLabel: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
+    flex: 1,
   },
   dataValue: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
   },
   dataTotalRow: {
     flexDirection: 'row',
@@ -569,17 +639,19 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.xs,
     marginTop: Spacing.xs,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: Colors.borderDefault,
   },
   dataTotalLabel: {
     fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
     color: Colors.textPrimary,
+    fontWeight: Typography.weights.semiBold,
   },
   dataTotalValue: {
     fontSize: Typography.sizes.base,
+    color: Colors.accentSuccess,
     fontWeight: Typography.weights.bold,
-    color: Colors.success,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
   },
   stepRow: {
     flexDirection: 'row',
@@ -587,18 +659,20 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
   stepNumber: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: Colors.primary,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(34,211,238,0.20)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.40)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: Spacing.xs,
+    marginRight: Spacing.sm,
     marginTop: 2,
   },
   stepNumberText: {
-    color: Colors.white,
-    fontSize: Typography.sizes.xs,
+    color: Colors.accentAi,
+    fontSize: 11,
     fontWeight: Typography.weights.bold,
   },
   stepText: {
@@ -608,116 +682,82 @@ const styles = StyleSheet.create({
   },
   stepImpact: {
     fontSize: Typography.sizes.xs,
-    color: Colors.success,
+    color: Colors.accentSuccess,
     fontWeight: Typography.weights.semiBold,
     marginTop: 2,
+    fontVariant: ['tabular-nums'] as any,
   },
-  // Suggestions
-  suggestionsContainer: {
-    marginTop: Spacing.lg,
-    padding: Spacing.base,
-    backgroundColor: Colors.card,
-    borderRadius: BorderRadius.lg,
-  },
-  suggestionsTitle: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
-    textTransform: 'uppercase',
-  },
-  suggestion: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
-  },
-  suggestionIcon: {
-    fontSize: 18,
-    marginRight: Spacing.sm,
-  },
-  suggestionText: {
-    flex: 1,
-    fontSize: Typography.sizes.sm,
-    color: Colors.textPrimary,
-  },
-  suggestionArrow: {
-    fontSize: 18,
-    color: Colors.primary,
-  },
+
   // Topics row
   topicsRow: {
-    paddingHorizontal: Spacing.base,
+    paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     gap: Spacing.sm,
   },
   topicChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.card,
-    paddingHorizontal: Spacing.base,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
     marginRight: Spacing.sm,
   },
-  topicIcon: {
-    fontSize: 16,
-    marginRight: 4,
-  },
   topicLabel: {
     fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.medium,
     color: Colors.textPrimary,
+    fontWeight: Typography.weights.medium,
+    marginLeft: 6,
   },
-  // Input
-  inputContainer: {
+
+  // Input bar
+  inputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: Spacing.base,
+    paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     paddingBottom: Spacing.lg,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surfaceContainerLow,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: Colors.borderDefault,
   },
-  voiceBtn: {
+  inputAffordance: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.gray100,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.xs,
-  },
-  voiceIcon: {
-    fontSize: 18,
   },
   input: {
     flex: 1,
     fontSize: Typography.sizes.base,
     color: Colors.textPrimary,
-    backgroundColor: Colors.inputBg,
+    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
-    maxHeight: 100,
+    paddingVertical: Spacing.sm + 2,
+    maxHeight: 120,
     minHeight: 40,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
   sendBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.accentPrimary,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: Spacing.xs,
   },
   sendBtnDisabled: {
-    backgroundColor: Colors.gray300,
-  },
-  sendIcon: {
-    fontSize: 18,
-    color: Colors.white,
+    backgroundColor: Colors.surfaceContainerHigh,
+    opacity: 0.5,
   },
 });

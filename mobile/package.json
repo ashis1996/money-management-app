@@ -31,6 +31,7 @@
     "expo-sms": "~11.5.0",
     "expo-status-bar": "~1.11.1",
     "expo-system-ui": "~2.9.3",
+    "lucide-react-native": "^0.378.0",
     "react": "18.2.0",
     "react-native": "0.73.2",
     "react-native-gesture-handler": "~2.14.0",
