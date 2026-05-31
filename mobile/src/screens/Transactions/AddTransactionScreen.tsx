@@ -4,41 +4,62 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
-import { Card, Button, Badge, Header } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import {
+  Utensils,
+  ShoppingBag,
+  Car,
+  Clapperboard,
+  Zap,
+  Pill,
+  Repeat,
+  Package,
+  ArrowLeft,
+  Sparkles,
+  ArrowRight,
+  Building,
+  Wallet as WalletIcon,
+  Coins,
+  Smartphone,
+  type LucideIcon,
+} from 'lucide-react-native';
+import { Badge, Button, Card, Section } from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
 import { useCreateTransaction, useAccounts } from '../../hooks';
+import { formatCurrency } from '../../utils';
 
-type EntryMode = 'manual' | 'assisted' | 'voice';
 type TransactionType = 'CREDIT' | 'DEBIT';
 
-const CATEGORIES = [
-  { id: 'food', label: 'Food', icon: '🍔', color: Tints.errorBg },
-  { id: 'shopping', label: 'Shopping', icon: '🛍️', color: 'rgba(167, 139, 250, 0.16)' },
-  { id: 'transport', label: 'Transport', icon: '🚗', color: Tints.aiBg },
-  { id: 'entertainment', label: 'Entertainment', icon: '🎬', color: 'rgba(244, 114, 182, 0.16)' },
-  { id: 'bills', label: 'Bills', icon: '⚡', color: Tints.warningBg },
-  { id: 'health', label: 'Health', icon: '💊', color: Tints.successBg },
-  { id: 'subscription', label: 'Subscription', icon: '🔄', color: 'rgba(129, 140, 248, 0.16)' },
-  { id: 'other', label: 'Other', icon: '📦', color: Colors.gray100 },
+interface CategoryOption {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  color: string;
+}
+
+const CATEGORIES: CategoryOption[] = [
+  { id: 'food', label: 'Food', icon: Utensils, color: '#EF4444' },
+  { id: 'shopping', label: 'Shopping', icon: ShoppingBag, color: '#A78BFA' },
+  { id: 'transport', label: 'Transport', icon: Car, color: Colors.accentPrimary },
+  { id: 'entertainment', label: 'Entertainment', icon: Clapperboard, color: '#F472B6' },
+  { id: 'bills', label: 'Bills', icon: Zap, color: Colors.accentWarning },
+  { id: 'health', label: 'Health', icon: Pill, color: Colors.accentSuccess },
+  { id: 'subscription', label: 'Subscription', icon: Repeat, color: '#818CF8' },
+  { id: 'other', label: 'Other', icon: Package, color: Colors.outline },
 ];
 
-const ACCOUNTS = [
-  { id: '1', name: 'HDFC Bank', mask: '****4521', icon: '🏦', balance: 45000 },
-  { id: '2', name: 'ICICI Bank', mask: '****1234', icon: '🏦', balance: 12000 },
-  { id: '3', name: 'Cash', mask: '', icon: '💵', balance: 3500 },
-  { id: '4', name: 'Paytm Wallet', mask: '', icon: '📱', balance: 1200 },
-];
-
-interface AISuggestion {
-  category: string;
-  merchant: string;
-  isRecurring: boolean;
-  confidence: number;
-  budgetImpact: { category: string; current: number; limit: number };
+function iconForAccount(type: string): LucideIcon {
+  const t = type?.toLowerCase() ?? '';
+  if (t.includes('wallet') || t.includes('paytm') || t.includes('upi')) return WalletIcon;
+  if (t.includes('cash')) return Coins;
+  if (t.includes('mobile') || t.includes('phone')) return Smartphone;
+  return Building;
 }
 
 export function AddTransactionScreen({ navigation }: any) {
@@ -49,377 +70,323 @@ export function AddTransactionScreen({ navigation }: any) {
     id: a.id,
     name: a.accountName,
     mask: a.maskedAccountNumber || '',
-    icon: a.icon || '🏦',
+    type: a.accountType || a.type || '',
     balance: Number(a.balance ?? 0),
   }));
-  const ACCOUNTS_FALLBACK =
-    accounts.length > 0
-      ? accounts
-      : [{ id: '', name: 'No accounts', mask: '', icon: '🏦', balance: 0 }];
 
-  const [mode, setMode] = useState<EntryMode>('assisted');
   const [type, setType] = useState<TransactionType>('DEBIT');
   const [amount, setAmount] = useState('');
   const [merchant, setMerchant] = useState('');
   const [description, setDescription] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedAccount, setSelectedAccount] = useState<string>(ACCOUNTS_FALLBACK[0]?.id ?? '');
-  const [voiceInput, setVoiceInput] = useState('');
-  const [aiSuggestion, setAiSuggestion] = useState<AISuggestion | null>(null);
+  const [selectedAccount, setSelectedAccount] = useState<string>(accounts[0]?.id ?? '');
+  const [aiSuggestion, setAiSuggestion] = useState<{
+    category: string;
+    confidence: number;
+    isRecurring: boolean;
+  } | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  // Simulate AI analysis when merchant or amount changes (assisted mode)
+  // When merchant + amount are set, simulate an AI suggestion.
   useEffect(() => {
-    if (mode === 'assisted' && merchant.length > 2 && amount) {
-      setIsAnalyzing(true);
-      const timer = setTimeout(() => {
-        setAiSuggestion(generateAISuggestion(merchant, parseFloat(amount)));
-        setIsAnalyzing(false);
-      }, 800);
-      return () => clearTimeout(timer);
-    } else {
+    if (merchant.length < 3 || !amount) {
       setAiSuggestion(null);
+      return;
     }
-  }, [merchant, amount, mode]);
+    setIsAnalyzing(true);
+    const timer = setTimeout(() => {
+      setAiSuggestion(localAISuggestion(merchant));
+      setIsAnalyzing(false);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [merchant, amount]);
+
+  // Auto-pick the AI-suggested category if user hasn't picked one yet.
+  useEffect(() => {
+    if (aiSuggestion && !selectedCategory) {
+      setSelectedCategory(aiSuggestion.category);
+    }
+  }, [aiSuggestion, selectedCategory]);
+
+  // Default to the first account once they load.
+  useEffect(() => {
+    if (!selectedAccount && accounts[0]?.id) {
+      setSelectedAccount(accounts[0].id);
+    }
+  }, [accounts, selectedAccount]);
 
   const handleSubmit = async () => {
-    if (!amount || parseFloat(amount) <= 0) {
-      Alert.alert('Invalid amount', 'Please enter a valid amount');
-      return;
-    }
-    if (!selectedCategory) {
-      Alert.alert('Missing category', 'Please select a category');
-      return;
-    }
+    const value = Number(amount.replace(/[^0-9.]/g, ''));
+    if (!value || value <= 0) return Alert.alert('Invalid amount', 'Enter a positive amount.');
+    if (!selectedCategory)
+      return Alert.alert('Pick a category', 'Choose a category for this transaction.');
 
     try {
       await createTx.mutateAsync({
-        amount: parseFloat(amount),
         type,
-        categoryId: selectedCategory,
-        merchantName: merchant || undefined,
+        amount: value,
+        merchant: merchant || undefined,
         description: description || undefined,
+        categoryId: selectedCategory,
         accountId: selectedAccount || undefined,
-        captureMode: mode === 'manual' ? 'MANUAL' : mode === 'assisted' ? 'ASSISTED' : 'AUTO',
-        source: mode === 'manual' ? 'MANUAL' : mode === 'voice' ? 'VOICE' : 'MANUAL',
-        isUserConfirmed: true,
-      });
-
-      Alert.alert(
-        'Transaction Added',
-        `${type === 'CREDIT' ? '+' : '-'}₹${amount} for ${merchant || 'transaction'}`,
-        [{ text: 'OK', onPress: () => navigation.goBack() }],
-      );
+        date: new Date().toISOString(),
+      } as any);
+      navigation.goBack();
     } catch (e: any) {
-      Alert.alert('Could not save', e?.message ?? 'Unknown error');
+      Alert.alert('Could not save', e?.message ?? 'Try again.');
     }
-  };
-
-  const handleAcceptAI = () => {
-    if (aiSuggestion) {
-      const cat = CATEGORIES.find(
-        (c) => c.label.toLowerCase() === aiSuggestion.category.toLowerCase(),
-      );
-      if (cat) setSelectedCategory(cat.id);
-      setMerchant(aiSuggestion.merchant);
-    }
-  };
-
-  const handleVoiceInput = () => {
-    // Simulate voice recognition
-    Alert.alert('Voice Input', 'Listening... Say something like "Spent 200 on chai"', [
-      {
-        text: 'Use Sample',
-        onPress: () => {
-          setVoiceInput('Spent 200 on chai at tea stall');
-          setAmount('200');
-          setMerchant('Tea stall');
-          setDescription('Chai');
-          setSelectedCategory('food');
-        },
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
   };
 
   return (
-    <View style={styles.container}>
-      <Header title="Add Transaction" onBack={() => navigation.goBack()} />
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel"
+          hitSlop={8}
+          style={styles.headerBtn}
+        >
+          <ArrowLeft size={20} color={Colors.textPrimary} strokeWidth={1.75} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>New transaction</Text>
+        <View style={{ width: 36 }} />
+      </View>
 
       <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Mode selector */}
-        <View style={styles.modeRow}>
-          <ModeButton
-            label="✍️ Manual"
-            active={mode === 'manual'}
-            onPress={() => setMode('manual')}
-          />
-          <ModeButton
-            label="🤖 Assisted"
-            active={mode === 'assisted'}
-            onPress={() => setMode('assisted')}
-          />
-          <ModeButton label="🎤 Voice" active={mode === 'voice'} onPress={() => setMode('voice')} />
-        </View>
+        {/* Hero amount entry */}
+        <Card variant="hero" padding="xl">
+          <View style={styles.typeToggle}>
+            {(['DEBIT', 'CREDIT'] as const).map((t) => {
+              const active = type === t;
+              return (
+                <TouchableOpacity
+                  key={t}
+                  onPress={() => setType(t)}
+                  style={[
+                    styles.typeChip,
+                    active && (t === 'CREDIT' ? styles.typeChipCredit : styles.typeChipDebit),
+                  ]}
+                >
+                  <Text style={[styles.typeChipLabel, active && styles.typeChipLabelActive]}>
+                    {t === 'DEBIT' ? 'Spent' : 'Received'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-        {/* Voice mode */}
-        {mode === 'voice' && (
-          <Card style={styles.voiceCard}>
-            <Text style={styles.voiceTitle}>Voice Entry</Text>
-            <Text style={styles.voiceSubtitle}>
-              Try: "Spent 200 on chai" or "Got 5000 cashback"
-            </Text>
-            <TouchableOpacity style={styles.voiceMic} onPress={handleVoiceInput}>
-              <Text style={styles.voiceMicIcon}>🎤</Text>
-              <Text style={styles.voiceMicText}>Tap to speak</Text>
-            </TouchableOpacity>
-            {voiceInput.length > 0 && (
-              <View style={styles.voiceResult}>
-                <Text style={styles.voiceResultLabel}>Heard:</Text>
-                <Text style={styles.voiceResultText}>"{voiceInput}"</Text>
-              </View>
-            )}
-          </Card>
-        )}
-
-        {/* Type Toggle */}
-        <View style={styles.typeToggle}>
-          <TouchableOpacity
-            style={[
-              styles.typeOption,
-              type === 'DEBIT' && styles.typeOptionActive,
-              type === 'DEBIT' && { backgroundColor: Colors.error },
-            ]}
-            onPress={() => setType('DEBIT')}
-          >
-            <Text style={[styles.typeOptionText, type === 'DEBIT' && styles.typeOptionTextActive]}>
-              💸 Expense
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.typeOption,
-              type === 'CREDIT' && styles.typeOptionActive,
-              type === 'CREDIT' && { backgroundColor: Colors.success },
-            ]}
-            onPress={() => setType('CREDIT')}
-          >
-            <Text style={[styles.typeOptionText, type === 'CREDIT' && styles.typeOptionTextActive]}>
-              💰 Income
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Amount Input */}
-        <Card style={styles.amountCard}>
-          <Text style={styles.amountLabel}>Amount</Text>
-          <View style={styles.amountInputRow}>
-            <Text style={styles.amountCurrency}>₹</Text>
+          <View style={styles.amountRow}>
+            <Text style={styles.amountSign}>{type === 'CREDIT' ? '+' : '−'}</Text>
+            <Text style={styles.amountSymbol}>₹</Text>
             <TextInput
-              style={styles.amountInput}
-              placeholder="0"
-              placeholderTextColor={Colors.textTertiary}
-              keyboardType="numeric"
               value={amount}
               onChangeText={setAmount}
+              placeholder="0"
+              placeholderTextColor={Colors.outline}
+              keyboardType="numeric"
+              style={[
+                styles.amountInput,
+                {
+                  color: type === 'CREDIT' ? Colors.accentSuccess : Colors.textPrimary,
+                },
+              ]}
+              autoFocus
             />
           </View>
         </Card>
 
         {/* Merchant */}
-        <Card style={styles.fieldCard}>
-          <Text style={styles.fieldLabel}>Merchant / Source</Text>
+        <Section
+          title="Merchant"
+          subtitle="Where did this happen?"
+          style={{ marginTop: Spacing.lg }}
+        >
           <TextInput
-            style={styles.fieldInput}
-            placeholder="e.g., Swiggy, Uber, Salary"
-            placeholderTextColor={Colors.textTertiary}
             value={merchant}
             onChangeText={setMerchant}
+            placeholder="e.g. Swiggy, Amazon, Zomato"
+            placeholderTextColor={Colors.textTertiary}
+            style={styles.textInput}
+            autoCapitalize="words"
           />
-        </Card>
+        </Section>
 
-        {/* AI Suggestions Panel */}
-        {mode === 'assisted' && (isAnalyzing || aiSuggestion) && (
-          <Card style={styles.aiCard}>
-            <View style={styles.aiHeader}>
-              <Text style={styles.aiIcon}>🤖</Text>
-              <Text style={styles.aiTitle}>AI Suggestions</Text>
-              {aiSuggestion && (
-                <Badge
-                  text={`${Math.round(aiSuggestion.confidence * 100)}% confident`}
-                  variant="success"
-                  size="sm"
-                />
-              )}
-            </View>
-            {isAnalyzing ? (
-              <Text style={styles.aiAnalyzing}>Analyzing transaction...</Text>
-            ) : aiSuggestion ? (
-              <>
-                <View style={styles.aiSuggestionRow}>
-                  <Text style={styles.aiSuggestionLabel}>Category:</Text>
-                  <Text style={styles.aiSuggestionValue}>{aiSuggestion.category}</Text>
-                </View>
-                <View style={styles.aiSuggestionRow}>
-                  <Text style={styles.aiSuggestionLabel}>Merchant:</Text>
-                  <Text style={styles.aiSuggestionValue}>{aiSuggestion.merchant}</Text>
-                </View>
-                {aiSuggestion.isRecurring && (
-                  <View style={styles.aiAlert}>
-                    <Text style={styles.aiAlertText}>🔄 This looks like a recurring payment</Text>
+        {/* AI suggestion */}
+        {(isAnalyzing || aiSuggestion) && (
+          <Card variant="ai" padding="base" style={{ marginTop: Spacing.sm }}>
+            <View style={styles.aiRow}>
+              <View style={styles.aiIcon}>
+                <Sparkles size={16} color={Colors.accentAi} strokeWidth={1.75} />
+              </View>
+              <View style={{ flex: 1 }}>
+                {isAnalyzing ? (
+                  <View style={styles.aiAnalyzingRow}>
+                    <ActivityIndicator size="small" color={Colors.accentAi} />
+                    <Text style={styles.aiAnalyzingText}>Analysing pattern…</Text>
                   </View>
-                )}
-                {aiSuggestion.budgetImpact && (
-                  <View style={styles.aiAlert}>
-                    <Text style={styles.aiAlertText}>
-                      📊 Will use{' '}
-                      {Math.round(
-                        ((aiSuggestion.budgetImpact.current + parseFloat(amount || '0')) /
-                          aiSuggestion.budgetImpact.limit) *
-                          100,
-                      )}
-                      % of {aiSuggestion.budgetImpact.category} budget
+                ) : aiSuggestion ? (
+                  <>
+                    <Text style={styles.aiSuggestionTitle}>
+                      Looks like a{' '}
+                      <Text style={{ color: Colors.accentAi }}>{aiSuggestion.category}</Text>{' '}
+                      transaction
+                      {aiSuggestion.isRecurring && ' (recurring)'}
                     </Text>
-                  </View>
-                )}
-                <Button
-                  title="Accept Suggestions"
-                  onPress={handleAcceptAI}
-                  variant="primary"
-                  size="sm"
-                  fullWidth
-                  style={{ marginTop: Spacing.sm }}
-                />
-              </>
-            ) : null}
+                    <Text style={styles.aiSuggestionMeta}>
+                      {Math.round(aiSuggestion.confidence * 100)}% confident
+                    </Text>
+                  </>
+                ) : null}
+              </View>
+            </View>
           </Card>
         )}
 
-        {/* Categories */}
-        <View style={styles.fieldCard}>
-          <Text style={styles.fieldLabel}>Category</Text>
+        {/* Category */}
+        <Section
+          title="Category"
+          subtitle="Tap to override the AI suggestion"
+          style={{ marginTop: Spacing.lg }}
+        >
           <View style={styles.categoryGrid}>
-            {CATEGORIES.map((cat) => (
-              <TouchableOpacity
-                key={cat.id}
-                style={[
-                  styles.categoryChip,
-                  { backgroundColor: cat.color },
-                  selectedCategory === cat.id && styles.categoryChipActive,
-                ]}
-                onPress={() => setSelectedCategory(cat.id)}
-              >
-                <Text style={styles.categoryIcon}>{cat.icon}</Text>
-                <Text
+            {CATEGORIES.map((c) => {
+              const active = selectedCategory === c.id;
+              const Icon = c.icon;
+              return (
+                <TouchableOpacity
+                  key={c.id}
+                  onPress={() => setSelectedCategory(c.id)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active }}
                   style={[
-                    styles.categoryLabel,
-                    selectedCategory === cat.id && styles.categoryLabelActive,
+                    styles.categoryTile,
+                    active && {
+                      borderColor: c.color,
+                      backgroundColor: c.color + '14',
+                    },
                   ]}
                 >
-                  {cat.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <Icon
+                    size={20}
+                    color={active ? c.color : Colors.textSecondary}
+                    strokeWidth={1.75}
+                  />
+                  <Text style={[styles.categoryLabel, active && { color: c.color }]}>
+                    {c.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
-        </View>
+        </Section>
 
         {/* Account */}
-        <Card style={styles.fieldCard}>
-          <Text style={styles.fieldLabel}>Account</Text>
-          {ACCOUNTS_FALLBACK.map((account) => (
-            <TouchableOpacity
-              key={account.id}
-              style={[styles.accountRow, selectedAccount === account.id && styles.accountRowActive]}
-              onPress={() => setSelectedAccount(account.id)}
-            >
-              <Text style={styles.accountIcon}>{account.icon}</Text>
-              <View style={styles.accountInfo}>
-                <Text style={styles.accountName}>{account.name}</Text>
-                {account.mask && <Text style={styles.accountMask}>{account.mask}</Text>}
-              </View>
-              <Text style={styles.accountBalance}>₹{account.balance.toLocaleString()}</Text>
-            </TouchableOpacity>
-          ))}
-        </Card>
+        {accounts.length > 0 && (
+          <Section title="Account" style={{ marginTop: Spacing.lg }}>
+            <Card padding="none">
+              {accounts.map((a, i) => {
+                const Icon = iconForAccount(a.type);
+                const active = selectedAccount === a.id;
+                const isLast = i === accounts.length - 1;
+                return (
+                  <TouchableOpacity
+                    key={a.id}
+                    onPress={() => setSelectedAccount(a.id)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: active }}
+                    style={[styles.accountRow, !isLast && styles.accountRowBorder]}
+                  >
+                    <View
+                      style={[
+                        styles.accountIcon,
+                        active && {
+                          backgroundColor: 'rgba(34,211,238,0.12)',
+                          borderColor: 'rgba(34,211,238,0.40)',
+                        },
+                      ]}
+                    >
+                      <Icon
+                        size={18}
+                        color={active ? Colors.accentAi : Colors.textSecondary}
+                        strokeWidth={1.75}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.accountName}>{a.name}</Text>
+                      {a.mask ? <Text style={styles.accountMask}>{a.mask}</Text> : null}
+                    </View>
+                    <Text style={styles.accountBalance}>
+                      {formatCurrency(a.balance, { compact: true })}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </Card>
+          </Section>
+        )}
 
-        {/* Description */}
-        <Card style={styles.fieldCard}>
-          <Text style={styles.fieldLabel}>Note (optional)</Text>
+        {/* Notes */}
+        <Section title="Notes (optional)" style={{ marginTop: Spacing.lg }}>
           <TextInput
-            style={[styles.fieldInput, styles.textArea]}
-            placeholder="Add a note..."
-            placeholderTextColor={Colors.textTertiary}
             value={description}
             onChangeText={setDescription}
+            placeholder="What was this for?"
+            placeholderTextColor={Colors.textTertiary}
+            style={[styles.textInput, { minHeight: 80, textAlignVertical: 'top' }]}
             multiline
-            numberOfLines={3}
           />
-        </Card>
+        </Section>
 
-        {/* Submit */}
-        <Button
-          title={`Add ${type === 'CREDIT' ? 'Income' : 'Expense'}`}
-          onPress={handleSubmit}
-          variant={type === 'CREDIT' ? 'success' : 'primary'}
-          size="lg"
-          fullWidth
-          style={{ marginTop: Spacing.lg, marginBottom: Spacing['3xl'] }}
-        />
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
-    </View>
+
+      <View style={styles.submitBar}>
+        <Button
+          title="Save transaction"
+          onPress={handleSubmit}
+          loading={createTx.isPending}
+          fullWidth
+          size="lg"
+          trailingIcon={<ArrowRight size={16} color={Colors.white} strokeWidth={2} />}
+        />
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
-function ModeButton({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={[styles.modeBtn, active && styles.modeBtnActive]} onPress={onPress}>
-      <Text style={[styles.modeBtnText, active && styles.modeBtnTextActive]}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-function generateAISuggestion(merchant: string, amount: number): AISuggestion {
-  const lower = merchant.toLowerCase();
-  let category = 'Other';
-  let isRecurring = false;
-
-  if (lower.includes('swiggy') || lower.includes('zomato') || lower.includes('food')) {
-    category = 'Food';
-  } else if (lower.includes('uber') || lower.includes('ola')) {
-    category = 'Transport';
-  } else if (lower.includes('netflix') || lower.includes('spotify') || lower.includes('hotstar')) {
-    category = 'Entertainment';
-    isRecurring = true;
-  } else if (lower.includes('amazon') || lower.includes('flipkart')) {
-    category = 'Shopping';
-  } else if (lower.includes('electric') || lower.includes('water') || lower.includes('jio')) {
-    category = 'Bills';
-    isRecurring = true;
-  }
-
-  return {
-    category,
-    merchant: merchant.charAt(0).toUpperCase() + merchant.slice(1).toLowerCase(),
-    isRecurring,
-    confidence: 0.85 + Math.random() * 0.13,
-    budgetImpact: {
-      category,
-      current: 6500,
-      limit: 10000,
-    },
-  };
+// =============================================================
+// Local AI heuristic — keyword match against the merchant string.
+// Same shape the AI proxy returns so future swaps are zero-effort.
+// =============================================================
+function localAISuggestion(merchant: string): {
+  category: string;
+  confidence: number;
+  isRecurring: boolean;
+} {
+  const m = merchant.toLowerCase();
+  if (/swiggy|zomato|domino|kfc|mcd|food|cafe|restaurant/.test(m))
+    return { category: 'food', confidence: 0.94, isRecurring: false };
+  if (/amazon|flipkart|myntra|ajio|nykaa/.test(m))
+    return { category: 'shopping', confidence: 0.91, isRecurring: false };
+  if (/uber|ola|metro|petrol|fuel|cab/.test(m))
+    return { category: 'transport', confidence: 0.9, isRecurring: false };
+  if (/netflix|spotify|prime|hotstar|youtube/.test(m))
+    return { category: 'subscription', confidence: 0.96, isRecurring: true };
+  if (/electric|water|gas|bsnl|airtel|jio|vi/.test(m))
+    return { category: 'bills', confidence: 0.92, isRecurring: true };
+  if (/bms|pvr|inox|cinema|spotify|gaming/.test(m))
+    return { category: 'entertainment', confidence: 0.85, isRecurring: false };
+  if (/hospital|pharmacy|apollo|medplus/.test(m))
+    return { category: 'health', confidence: 0.93, isRecurring: false };
+  return { category: 'other', confidence: 0.6, isRecurring: false };
 }
 
 const styles = StyleSheet.create({
@@ -427,259 +394,196 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
-  content: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: Spacing.lg,
-  },
-  // Mode selector
-  modeRow: {
+
+  header: {
     flexDirection: 'row',
-    backgroundColor: Colors.card,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing['3xl'] + Spacing.lg,
+    paddingBottom: Spacing.base,
+  },
+  headerBtn: {
+    width: 36,
+    height: 36,
     borderRadius: BorderRadius.md,
-    padding: 4,
-    marginBottom: Spacing.lg,
-  },
-  modeBtn: {
-    flex: 1,
-    paddingVertical: Spacing.sm,
-    alignItems: 'center',
-    borderRadius: BorderRadius.base,
-  },
-  modeBtnActive: {
-    backgroundColor: Colors.primary,
-  },
-  modeBtnText: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.medium,
-    color: Colors.textSecondary,
-  },
-  modeBtnTextActive: {
-    color: Colors.white,
-  },
-  // Voice
-  voiceCard: {
-    alignItems: 'center',
-    marginBottom: Spacing.lg,
-  },
-  voiceTitle: {
-    fontSize: Typography.sizes.lg,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  voiceSubtitle: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    marginTop: 4,
-    marginBottom: Spacing.lg,
-    textAlign: 'center',
-  },
-  voiceMic: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  voiceMicIcon: {
-    fontSize: 40,
-  },
-  voiceMicText: {
-    color: Colors.white,
-    fontSize: Typography.sizes.xs,
-    marginTop: 4,
-  },
-  voiceResult: {
-    marginTop: Spacing.lg,
-    padding: Spacing.base,
-    backgroundColor: Colors.gray50,
-    borderRadius: BorderRadius.base,
-    width: '100%',
-  },
-  voiceResultLabel: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-    marginBottom: 4,
-  },
-  voiceResultText: {
-    fontSize: Typography.sizes.base,
+  headerTitle: {
+    fontSize: Typography.sizes.lg,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
-    fontStyle: 'italic',
+    letterSpacing: -0.2,
   },
-  // Type toggle
+
+  scroll: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+  },
+
+  // Hero
   typeToggle: {
     flexDirection: 'row',
     gap: Spacing.sm,
     marginBottom: Spacing.lg,
+    alignSelf: 'center',
   },
-  typeOption: {
-    flex: 1,
-    paddingVertical: Spacing.base,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.card,
-    alignItems: 'center',
+  typeChip: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
-  typeOptionActive: {},
-  typeOptionText: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textSecondary,
+  typeChipDebit: {
+    backgroundColor: 'rgba(255,180,171,0.16)',
+    borderColor: Colors.accentError,
   },
-  typeOptionTextActive: {
-    color: Colors.white,
+  typeChipCredit: {
+    backgroundColor: 'rgba(16,185,129,0.16)',
+    borderColor: Colors.accentSuccess,
   },
-  // Amount
-  amountCard: {
-    marginBottom: Spacing.base,
-    alignItems: 'center',
-  },
-  amountLabel: {
+  typeChipLabel: {
     fontSize: Typography.sizes.sm,
+    fontWeight: Typography.weights.medium,
     color: Colors.textSecondary,
-    marginBottom: Spacing.xs,
+    letterSpacing: 0.4,
   },
-  amountInputRow: {
+  typeChipLabelActive: {
+    color: Colors.textPrimary,
+    fontWeight: Typography.weights.bold,
+  },
+
+  amountRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
   },
-  amountCurrency: {
-    fontSize: Typography.sizes['3xl'],
+  amountSign: {
+    fontSize: 32,
     fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-    marginRight: Spacing.xs,
+    color: Colors.textSecondary,
+  },
+  amountSymbol: {
+    fontSize: 32,
+    fontWeight: Typography.weights.bold,
+    color: Colors.textSecondary,
+    marginRight: 2,
   },
   amountInput: {
-    fontSize: Typography.sizes['4xl'],
+    fontSize: 56,
+    lineHeight: 60,
     fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -2,
     minWidth: 100,
-    textAlign: 'center',
+    textAlign: 'left',
+    paddingVertical: 0,
   },
-  // Field cards
-  fieldCard: {
-    marginBottom: Spacing.base,
-  },
-  fieldLabel: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
-    textTransform: 'uppercase',
-  },
-  fieldInput: {
-    fontSize: Typography.sizes.base,
-    color: Colors.textPrimary,
-    backgroundColor: Colors.inputBg,
-    borderRadius: BorderRadius.base,
+
+  // Inputs
+  textInput: {
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.md,
-  },
-  textArea: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  // AI Card
-  aiCard: {
-    marginBottom: Spacing.base,
-    backgroundColor: Tints.primaryBg,
+    color: Colors.textPrimary,
+    fontSize: Typography.sizes.base,
     borderWidth: 1,
-    borderColor: Colors.primaryLight,
+    borderColor: Colors.borderDefault,
   },
-  aiHeader: {
+
+  // AI
+  aiRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
-    gap: Spacing.xs,
   },
   aiIcon: {
-    fontSize: 20,
-  },
-  aiTitle: {
-    flex: 1,
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  aiAnalyzing: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    fontStyle: 'italic',
-  },
-  aiSuggestionRow: {
-    flexDirection: 'row',
-    paddingVertical: 4,
-  },
-  aiSuggestionLabel: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    width: 90,
-  },
-  aiSuggestionValue: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-    flex: 1,
-  },
-  aiAlert: {
-    backgroundColor: Colors.white,
-    padding: Spacing.sm,
+    width: 32,
+    height: 32,
     borderRadius: BorderRadius.base,
-    marginTop: Spacing.xs,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
   },
-  aiAlertText: {
+  aiAnalyzingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  aiAnalyzingText: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.textSecondary,
+  },
+  aiSuggestionTitle: {
     fontSize: Typography.sizes.sm,
     color: Colors.textPrimary,
+    lineHeight: Typography.sizes.sm * 1.4,
   },
+  aiSuggestionMeta: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    letterSpacing: 0.4,
+    fontVariant: ['tabular-nums'] as any,
+  },
+
   // Categories
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.sm,
   },
-  categoryChip: {
+  categoryTile: {
+    flexBasis: '47%',
     flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  categoryChipActive: {
-    borderColor: Colors.primary,
-  },
-  categoryIcon: {
-    fontSize: 18,
-    marginRight: Spacing.xs,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    gap: Spacing.sm,
   },
   categoryLabel: {
     fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.medium,
-    color: Colors.textPrimary,
+    fontWeight: Typography.weights.semiBold,
+    color: Colors.textSecondary,
   },
-  categoryLabelActive: {
-    fontWeight: Typography.weights.bold,
-  },
+
   // Accounts
   accountRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
-    borderRadius: BorderRadius.base,
-    marginVertical: 2,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
   },
-  accountRowActive: {
-    backgroundColor: Tints.primaryBg,
+  accountRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderDefault,
   },
   accountIcon: {
-    fontSize: 24,
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.base,
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.sm,
-  },
-  accountInfo: {
-    flex: 1,
   },
   accountName: {
     fontSize: Typography.sizes.base,
@@ -690,10 +594,23 @@ const styles = StyleSheet.create({
     fontSize: Typography.sizes.xs,
     color: Colors.textSecondary,
     marginTop: 2,
+    fontVariant: ['tabular-nums'] as any,
   },
   accountBalance: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
+  },
+
+  // Submit bar
+  submitBar: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderDefault,
+    backgroundColor: Colors.surfaceContainerLow,
   },
 });

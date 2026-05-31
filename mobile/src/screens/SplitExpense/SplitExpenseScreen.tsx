@@ -10,8 +10,25 @@ import {
   Alert,
   Share,
 } from 'react-native';
-import { Card, Badge, Button, Header, EmptyState } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import {
+  Users,
+  UserPlus,
+  X,
+  Plus,
+  Minus,
+  Send,
+  Check,
+  Equal,
+  Percent,
+  PieChart,
+  Wallet as WalletIcon,
+  ArrowRight,
+  Trash2,
+  type LucideIcon,
+} from 'lucide-react-native';
+import { Badge, Button, Card, Header, Section } from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
+import { formatCurrency } from '../../utils';
 
 type SplitMode = 'equal' | 'percentage' | 'custom' | 'shares';
 
@@ -20,7 +37,6 @@ interface Person {
   name: string;
   initial: string;
   color: string;
-  // Split data
   amount?: number;
   percentage?: number;
   shares?: number;
@@ -30,12 +46,12 @@ interface Person {
 
 const AVATAR_COLORS = [
   '#EF4444',
-  '#3B82F6',
-  '#10B981',
-  '#F59E0B',
-  '#8B5CF6',
-  '#EC4899',
-  '#06B6D4',
+  Colors.accentPrimary,
+  Colors.accentSuccess,
+  Colors.accentWarning,
+  '#A78BFA',
+  '#F472B6',
+  Colors.accentAi,
   '#84CC16',
 ];
 
@@ -49,6 +65,18 @@ interface PastSplit {
   status: 'pending' | 'settled';
 }
 
+const MODES: Array<{
+  key: SplitMode;
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { key: 'equal', label: 'Equal', icon: Equal },
+  { key: 'percentage', label: 'Percent', icon: Percent },
+  { key: 'shares', label: 'Shares', icon: PieChart },
+  { key: 'custom', label: 'Custom', icon: WalletIcon },
+];
+
+// Mock past splits — list endpoint isn't wired yet; renders examples.
 const mockPastSplits: PastSplit[] = [
   {
     id: 'p1',
@@ -82,7 +110,7 @@ export function SplitExpenseScreen({ navigation, route }: any) {
       id: 'me',
       name: 'You',
       initial: 'Y',
-      color: Colors.primary,
+      color: Colors.accentPrimary,
       isPaid: true,
     },
     {
@@ -96,49 +124,46 @@ export function SplitExpenseScreen({ navigation, route }: any) {
       id: 'p2',
       name: 'Priya',
       initial: 'P',
-      color: AVATAR_COLORS[1],
+      color: AVATAR_COLORS[5],
       isPaid: false,
     },
   ]);
   const [showAddPerson, setShowAddPerson] = useState(false);
   const [newPersonName, setNewPersonName] = useState('');
-  const [showHistory, setShowHistory] = useState(true);
 
   const total = parseFloat(totalAmount) || 0;
   const peopleCount = people.length;
 
-  // Compute splits
   const computedPeople = useMemo(() => {
-    if (total === 0) {
-      return people.map((p) => ({ ...p, amount: 0 }));
-    }
+    if (total === 0) return people.map((p) => ({ ...p, amount: 0 }));
 
     if (splitMode === 'equal') {
       const each = Math.round((total / peopleCount) * 100) / 100;
       return people.map((p) => ({ ...p, amount: each }));
     }
-
     if (splitMode === 'percentage') {
       const equalPct = Math.round(100 / peopleCount);
       return people.map((p) => {
         const pct = p.percentage ?? equalPct;
-        return { ...p, amount: Math.round(((total * pct) / 100) * 100) / 100, percentage: pct };
+        return {
+          ...p,
+          amount: Math.round(((total * pct) / 100) * 100) / 100,
+          percentage: pct,
+        };
       });
     }
-
     if (splitMode === 'shares') {
       const totalShares = people.reduce((s, p) => s + (p.shares ?? 1), 0);
       return people.map((p) => {
         const sh = p.shares ?? 1;
-        return { ...p, amount: Math.round(((total * sh) / totalShares) * 100) / 100, shares: sh };
+        return {
+          ...p,
+          amount: Math.round(((total * sh) / totalShares) * 100) / 100,
+          shares: sh,
+        };
       });
     }
-
-    if (splitMode === 'custom') {
-      return people.map((p) => ({ ...p, amount: p.customAmount ?? 0 }));
-    }
-
-    return people;
+    return people.map((p) => ({ ...p, amount: p.customAmount ?? 0 }));
   }, [people, total, splitMode, peopleCount]);
 
   const customSum = useMemo(() => {
@@ -147,9 +172,8 @@ export function SplitExpenseScreen({ navigation, route }: any) {
   }, [computedPeople, splitMode, total]);
 
   const customDiff = total - customSum;
-
   const yourShare = computedPeople.find((p) => p.id === 'me')?.amount ?? 0;
-  const owedToYou = total - yourShare;
+  const owedToYou = Math.max(0, total - yourShare);
 
   const handleAddPerson = () => {
     if (!newPersonName.trim()) return;
@@ -172,20 +196,18 @@ export function SplitExpenseScreen({ navigation, route }: any) {
     setPeople((prev) => prev.filter((p) => p.id !== id));
   };
 
-  const handleTogglePaid = (id: string) => {
+  const handleTogglePaid = (id: string) =>
     setPeople((prev) => prev.map((p) => (p.id === id ? { ...p, isPaid: !p.isPaid } : p)));
-  };
 
   const handleUpdatePercentage = (id: string, value: string) => {
     const pct = parseFloat(value) || 0;
     setPeople((prev) => prev.map((p) => (p.id === id ? { ...p, percentage: pct } : p)));
   };
 
-  const handleUpdateShares = (id: string, delta: number) => {
+  const handleUpdateShares = (id: string, delta: number) =>
     setPeople((prev) =>
       prev.map((p) => (p.id === id ? { ...p, shares: Math.max(1, (p.shares ?? 1) + delta) } : p)),
     );
-  };
 
   const handleUpdateCustom = (id: string, value: string) => {
     const amt = parseFloat(value) || 0;
@@ -195,24 +217,22 @@ export function SplitExpenseScreen({ navigation, route }: any) {
   const handleSendReminder = async (person: Person) => {
     try {
       await Share.share({
-        message: `Hey ${person.name}! You owe ₹${person.amount?.toLocaleString()} for "${title || 'our split expense'}". Could you settle it when you get a chance? Thanks! 🙏`,
+        message: `Hey ${person.name}, you owe ${formatCurrency(person.amount ?? 0)} for "${title || 'our shared expense'}". Could you settle when you get a chance? — sent via MoneyMind`,
       });
-    } catch {}
+    } catch {
+      /* user cancelled */
+    }
   };
 
   const handleSaveSplit = () => {
-    if (!title || !totalAmount) {
-      Alert.alert('Missing info', 'Add a title and amount to save');
-      return;
-    }
-    if (splitMode === 'custom' && Math.abs(customDiff) > 0.01) {
-      Alert.alert(
-        "Amounts don't match",
-        `Sum is ₹${customSum.toLocaleString()} but total is ₹${total.toLocaleString()}. Adjust the custom amounts.`,
+    if (!title || !totalAmount)
+      return Alert.alert('Missing info', 'Add a title and amount to save.');
+    if (splitMode === 'custom' && Math.abs(customDiff) > 0.01)
+      return Alert.alert(
+        'Amounts don\u2019t match',
+        `Sum is ${formatCurrency(customSum)} but total is ${formatCurrency(total)}.`,
       );
-      return;
-    }
-    Alert.alert('Split saved', 'Reminders will be sent to each person', [
+    Alert.alert('Split saved', 'Reminders will be sent to each person.', [
       { text: 'OK', onPress: () => navigation.goBack() },
     ]);
   };
@@ -225,225 +245,218 @@ export function SplitExpenseScreen({ navigation, route }: any) {
         onBack={() => navigation.goBack()}
       />
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* History toggle */}
-        {mockPastSplits.length > 0 && (
-          <TouchableOpacity
-            style={styles.historyToggle}
-            onPress={() => setShowHistory(!showHistory)}
-          >
-            <Text style={styles.historyToggleText}>📋 Past Splits ({mockPastSplits.length})</Text>
-            <Text style={styles.historyToggleArrow}>{showHistory ? '▼' : '▶'}</Text>
-          </TouchableOpacity>
-        )}
-
-        {showHistory && mockPastSplits.length > 0 && (
-          <View style={styles.history}>
-            {mockPastSplits.map((past) => (
-              <Card key={past.id} style={styles.pastCard} onPress={() => {}}>
-                <View style={styles.pastHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.pastTitle}>{past.title}</Text>
-                    <Text style={styles.pastMeta}>
-                      {new Date(past.date).toLocaleDateString('en-IN', {
-                        day: 'numeric',
-                        month: 'short',
-                      })}{' '}
-                      • {past.people} people
-                    </Text>
-                  </View>
-                  <Badge
-                    text={past.status === 'pending' ? 'Pending' : 'Settled'}
-                    variant={past.status === 'pending' ? 'warning' : 'success'}
-                    size="sm"
-                  />
-                </View>
-                <View style={styles.pastFooter}>
-                  <Text style={styles.pastAmount}>Total ₹{past.totalAmount.toLocaleString()}</Text>
-                  <Text style={styles.pastShare}>
-                    Your share: ₹{past.yourShare.toLocaleString()}
-                  </Text>
-                </View>
-              </Card>
-            ))}
-          </View>
-        )}
-
-        {/* New split form */}
-        <View style={styles.formHeader}>
-          <Text style={styles.formTitle}>✨ New Split</Text>
-        </View>
-
-        <Card style={styles.section}>
-          <Text style={styles.fieldLabel}>Title</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., Pizza Hut, Goa Trip..."
-            placeholderTextColor={Colors.textTertiary}
-            value={title}
-            onChangeText={setTitle}
-          />
-
-          <Text style={styles.fieldLabel}>Total Amount</Text>
-          <View style={styles.amountRow}>
-            <Text style={styles.currency}>₹</Text>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* Hero amount */}
+        <Card variant="hero" padding="xl">
+          <Text style={styles.heroLabel}>TOTAL TO SPLIT</Text>
+          <View style={styles.heroAmountRow}>
+            <Text style={styles.heroAmountSymbol}>₹</Text>
             <TextInput
-              style={styles.amountInput}
-              placeholder="0"
-              placeholderTextColor={Colors.textTertiary}
-              keyboardType="numeric"
               value={totalAmount}
               onChangeText={setTotalAmount}
+              placeholder="0"
+              placeholderTextColor={Colors.outline}
+              keyboardType="numeric"
+              style={styles.heroAmountInput}
             />
           </View>
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            placeholder="What's this for?"
+            placeholderTextColor={Colors.textTertiary}
+            style={styles.heroTitleInput}
+          />
         </Card>
 
-        {/* Split mode selector */}
-        <View style={styles.modeSelector}>
-          <ModeBtn
-            label="Equal"
-            icon="="
-            active={splitMode === 'equal'}
-            onPress={() => setSplitMode('equal')}
-          />
-          <ModeBtn
-            label="Percentage"
-            icon="%"
-            active={splitMode === 'percentage'}
-            onPress={() => setSplitMode('percentage')}
-          />
-          <ModeBtn
-            label="Shares"
-            icon="📊"
-            active={splitMode === 'shares'}
-            onPress={() => setSplitMode('shares')}
-          />
-          <ModeBtn
-            label="Custom"
-            icon="✏️"
-            active={splitMode === 'custom'}
-            onPress={() => setSplitMode('custom')}
-          />
-        </View>
+        {/* Split mode chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.modeRow}
+        >
+          {MODES.map((m) => {
+            const active = splitMode === m.key;
+            const Icon = m.icon;
+            return (
+              <TouchableOpacity
+                key={m.key}
+                onPress={() => setSplitMode(m.key)}
+                accessibilityRole="button"
+                style={[styles.modeChip, active && styles.modeChipActive]}
+              >
+                <Icon
+                  size={14}
+                  color={active ? Colors.white : Colors.textSecondary}
+                  strokeWidth={1.75}
+                />
+                <Text style={[styles.modeChipLabel, active && styles.modeChipLabelActive]}>
+                  {m.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
         {/* People */}
-        <Card style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>People ({peopleCount})</Text>
-            <TouchableOpacity onPress={() => setShowAddPerson(true)}>
-              <Text style={styles.linkText}>+ Add</Text>
-            </TouchableOpacity>
+        <Section
+          title={`People (${peopleCount})`}
+          actionLabel="Add"
+          onActionPress={() => setShowAddPerson(true)}
+          style={{ marginTop: Spacing.lg }}
+        >
+          <View>
+            {computedPeople.map((p) => (
+              <PersonRow
+                key={p.id}
+                person={p}
+                splitMode={splitMode}
+                onTogglePaid={() => handleTogglePaid(p.id)}
+                onRemove={() => handleRemovePerson(p.id)}
+                onUpdatePercentage={(v) => handleUpdatePercentage(p.id, v)}
+                onUpdateShares={(d) => handleUpdateShares(p.id, d)}
+                onUpdateCustom={(v) => handleUpdateCustom(p.id, v)}
+                onRemind={() => handleSendReminder(p)}
+              />
+            ))}
           </View>
+        </Section>
 
-          {computedPeople.map((p) => (
-            <PersonRow
-              key={p.id}
-              person={p}
-              splitMode={splitMode}
-              onRemove={() => handleRemovePerson(p.id)}
-              onTogglePaid={() => handleTogglePaid(p.id)}
-              onUpdatePercentage={(v) => handleUpdatePercentage(p.id, v)}
-              onUpdateShares={(d) => handleUpdateShares(p.id, d)}
-              onUpdateCustom={(v) => handleUpdateCustom(p.id, v)}
-              onRemind={() => handleSendReminder(p)}
-            />
-          ))}
-        </Card>
-
-        {/* Custom validation */}
-        {splitMode === 'custom' && total > 0 && (
+        {/* Custom split warning */}
+        {splitMode === 'custom' && Math.abs(customDiff) > 0.01 && (
           <Card
+            padding="base"
             style={[
-              styles.validCard,
+              styles.diffCard,
               {
-                backgroundColor: Math.abs(customDiff) < 0.01 ? Tints.successBg : Tints.errorBg,
-                borderColor: Math.abs(customDiff) < 0.01 ? Tints.successBorder : Tints.errorBorder,
+                backgroundColor:
+                  customDiff < 0 ? 'rgba(255,180,171,0.10)' : 'rgba(251,191,36,0.10)',
+                borderColor: customDiff < 0 ? 'rgba(255,180,171,0.30)' : 'rgba(251,191,36,0.30)',
               },
             ]}
           >
-            <Text style={styles.validText}>
-              {Math.abs(customDiff) < 0.01
-                ? '✓ Amounts add up correctly'
-                : customDiff > 0
-                  ? `⚠️ Missing ₹${customDiff.toFixed(2)} (sum is short)`
-                  : `⚠️ Over by ₹${Math.abs(customDiff).toFixed(2)}`}
+            <Text
+              style={[
+                styles.diffText,
+                {
+                  color: customDiff < 0 ? Colors.accentError : Colors.accentWarning,
+                },
+              ]}
+            >
+              {customDiff < 0
+                ? `Over by ${formatCurrency(Math.abs(customDiff))}`
+                : `Under by ${formatCurrency(customDiff)}`}
             </Text>
           </Card>
         )}
 
         {/* Summary */}
         {total > 0 && (
-          <Card style={styles.summaryCard}>
-            <Text style={styles.summaryTitle}>📋 Summary</Text>
+          <Card variant="ai" padding="base" style={{ marginTop: Spacing.lg }}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Total bill</Text>
-              <Text style={styles.summaryValue}>₹{total.toLocaleString()}</Text>
-            </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Your share</Text>
-              <Text style={[styles.summaryValue, { color: Colors.primary }]}>
-                ₹{yourShare.toLocaleString()}
-              </Text>
-            </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Friends owe you</Text>
-              <Text style={[styles.summaryValue, { color: Colors.success }]}>
-                ₹{owedToYou.toLocaleString()}
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.summaryLabel}>YOUR SHARE</Text>
+                <Text style={styles.summaryValue}>{formatCurrency(yourShare)}</Text>
+              </View>
+              <View style={styles.summaryDivider} />
+              <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                <Text style={styles.summaryLabel}>OWED TO YOU</Text>
+                <Text style={[styles.summaryValue, { color: Colors.accentSuccess }]}>
+                  {formatCurrency(owedToYou)}
+                </Text>
+              </View>
             </View>
           </Card>
         )}
 
-        {/* Save */}
-        <View style={styles.actions}>
-          <Button
-            title="Save Split"
-            onPress={handleSaveSplit}
-            variant="primary"
-            size="lg"
-            fullWidth
-            disabled={!title || total === 0}
-          />
-        </View>
+        {/* Past splits */}
+        {mockPastSplits.length > 0 && (
+          <Section
+            title="Past splits"
+            subtitle="Stored locally — backend wiring coming soon"
+            style={{ marginTop: Spacing.lg }}
+          >
+            <View>
+              {mockPastSplits.map((past) => (
+                <Card key={past.id} padding="base" style={{ marginBottom: Spacing.sm }}>
+                  <View style={styles.pastTopRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.pastTitle} numberOfLines={1}>
+                        {past.title}
+                      </Text>
+                      <Text style={styles.pastMeta}>
+                        {new Date(past.date).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                        })}
+                        {' • '}
+                        {past.people} people
+                      </Text>
+                    </View>
+                    <Badge
+                      text={past.status}
+                      variant={past.status === 'settled' ? 'success' : 'warning'}
+                      size="sm"
+                    />
+                  </View>
+                  <View style={styles.pastFooter}>
+                    <View>
+                      <Text style={styles.summaryLabel}>TOTAL</Text>
+                      <Text style={styles.pastAmount}>{formatCurrency(past.totalAmount)}</Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.summaryLabel}>YOUR SHARE</Text>
+                      <Text style={[styles.pastAmount, { color: Colors.accentPrimary }]}>
+                        {formatCurrency(past.yourShare)}
+                      </Text>
+                    </View>
+                  </View>
+                </Card>
+              ))}
+            </View>
+          </Section>
+        )}
 
-        <View style={{ height: Spacing['2xl'] }} />
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
 
-      {/* Add Person modal */}
+      <View style={styles.submitBar}>
+        <Button
+          title="Save split"
+          onPress={handleSaveSplit}
+          fullWidth
+          size="lg"
+          trailingIcon={<ArrowRight size={16} color={Colors.white} strokeWidth={2} />}
+        />
+      </View>
+
+      {/* Add person modal */}
       <Modal
         visible={showAddPerson}
-        animationType="fade"
         transparent
+        animationType="slide"
         onRequestClose={() => setShowAddPerson(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.addModal}>
-            <Text style={styles.addTitle}>Add Person</Text>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add a person</Text>
+              <TouchableOpacity onPress={() => setShowAddPerson(false)} hitSlop={8}>
+                <X size={20} color={Colors.textSecondary} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalLabel}>NAME</Text>
             <TextInput
-              style={styles.addInput}
-              placeholder="Name"
-              placeholderTextColor={Colors.textTertiary}
               value={newPersonName}
               onChangeText={setNewPersonName}
+              placeholder="Friend's name"
+              placeholderTextColor={Colors.textTertiary}
               autoFocus
+              style={styles.modalInput}
             />
-            <View style={styles.addActions}>
-              <Button
-                title="Cancel"
-                onPress={() => {
-                  setShowAddPerson(false);
-                  setNewPersonName('');
-                }}
-                variant="ghost"
-                style={{ flex: 1 }}
-              />
-              <Button
-                title="Add"
-                onPress={handleAddPerson}
-                variant="primary"
-                disabled={!newPersonName.trim()}
-                style={{ flex: 1, marginLeft: Spacing.sm }}
-              />
+            <View style={{ marginTop: Spacing.lg }}>
+              <Button title="Add" onPress={handleAddPerson} fullWidth />
             </View>
           </View>
         </View>
@@ -452,123 +465,125 @@ export function SplitExpenseScreen({ navigation, route }: any) {
   );
 }
 
-function ModeBtn({
-  label,
-  icon,
-  active,
-  onPress,
-}: {
-  label: string;
-  icon: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={[styles.modeBtn, active && styles.modeBtnActive]} onPress={onPress}>
-      <Text style={[styles.modeIcon, active && { color: Colors.white }]}>{icon}</Text>
-      <Text style={[styles.modeLabel, active && styles.modeLabelActive]}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-interface PersonRowProps {
-  person: Person & { amount?: number };
-  splitMode: SplitMode;
-  onRemove: () => void;
-  onTogglePaid: () => void;
-  onUpdatePercentage: (v: string) => void;
-  onUpdateShares: (delta: number) => void;
-  onUpdateCustom: (v: string) => void;
-  onRemind: () => void;
-}
-
+// =============================================================
+// Person row
+// =============================================================
 function PersonRow({
   person,
   splitMode,
-  onRemove,
   onTogglePaid,
+  onRemove,
   onUpdatePercentage,
   onUpdateShares,
   onUpdateCustom,
   onRemind,
-}: PersonRowProps) {
+}: {
+  person: Person;
+  splitMode: SplitMode;
+  onTogglePaid: () => void;
+  onRemove: () => void;
+  onUpdatePercentage: (v: string) => void;
+  onUpdateShares: (delta: number) => void;
+  onUpdateCustom: (v: string) => void;
+  onRemind: () => void;
+}) {
   const isMe = person.id === 'me';
 
   return (
-    <View style={styles.personRow}>
-      <View style={[styles.avatar, { backgroundColor: person.color }]}>
-        <Text style={styles.avatarText}>{person.initial}</Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <View style={styles.personTopRow}>
-          <Text style={styles.personName}>{person.name}</Text>
-          {!isMe && !person.isPaid && (
-            <TouchableOpacity onPress={onRemove}>
-              <Text style={styles.removeBtn}>✕</Text>
-            </TouchableOpacity>
+    <Card padding="base" style={{ marginBottom: Spacing.sm }}>
+      <View style={styles.personRow}>
+        <View style={[styles.personAvatar, { backgroundColor: person.color }]}>
+          <Text style={styles.personInitial}>{person.initial}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <View style={styles.personHeader}>
+            <Text style={styles.personName} numberOfLines={1}>
+              {person.name}
+            </Text>
+            {isMe && <Badge text="You" variant="ai" size="sm" />}
+            {person.isPaid && !isMe && <Badge text="Paid" variant="success" size="sm" />}
+          </View>
+          {splitMode === 'percentage' && !isMe && (
+            <View style={styles.modeInputRow}>
+              <TextInput
+                value={String(person.percentage ?? 0)}
+                onChangeText={onUpdatePercentage}
+                keyboardType="numeric"
+                style={styles.modeInput}
+              />
+              <Text style={styles.modeInputUnit}>%</Text>
+            </View>
+          )}
+          {splitMode === 'shares' && !isMe && (
+            <View style={styles.sharesRow}>
+              <TouchableOpacity
+                onPress={() => onUpdateShares(-1)}
+                style={styles.sharesBtn}
+                hitSlop={6}
+              >
+                <Minus size={14} color={Colors.textPrimary} strokeWidth={2} />
+              </TouchableOpacity>
+              <Text style={styles.sharesValue}>{person.shares ?? 1}</Text>
+              <TouchableOpacity
+                onPress={() => onUpdateShares(1)}
+                style={styles.sharesBtn}
+                hitSlop={6}
+              >
+                <Plus size={14} color={Colors.textPrimary} strokeWidth={2} />
+              </TouchableOpacity>
+              <Text style={styles.sharesLabel}>shares</Text>
+            </View>
+          )}
+          {splitMode === 'custom' && !isMe && (
+            <View style={styles.modeInputRow}>
+              <Text style={styles.modeInputUnit}>₹</Text>
+              <TextInput
+                value={String(person.customAmount ?? 0)}
+                onChangeText={onUpdateCustom}
+                keyboardType="numeric"
+                style={[styles.modeInput, { marginLeft: 4 }]}
+              />
+            </View>
           )}
         </View>
 
-        {/* Mode-specific input */}
-        {splitMode === 'percentage' && (
-          <View style={styles.pctInput}>
-            <TextInput
-              style={styles.pctInputField}
-              keyboardType="numeric"
-              value={String(person.percentage ?? 0)}
-              onChangeText={onUpdatePercentage}
-            />
-            <Text style={styles.pctSuffix}>%</Text>
-          </View>
-        )}
-
-        {splitMode === 'shares' && (
-          <View style={styles.sharesRow}>
-            <TouchableOpacity onPress={() => onUpdateShares(-1)} style={styles.sharesBtn}>
-              <Text style={styles.sharesBtnText}>−</Text>
-            </TouchableOpacity>
-            <Text style={styles.sharesValue}>{person.shares ?? 1}</Text>
-            <TouchableOpacity onPress={() => onUpdateShares(1)} style={styles.sharesBtn}>
-              <Text style={styles.sharesBtnText}>+</Text>
-            </TouchableOpacity>
-            <Text style={styles.sharesLabel}>shares</Text>
-          </View>
-        )}
-
-        {splitMode === 'custom' && (
-          <TextInput
-            style={styles.customInput}
-            placeholder="Amount"
-            placeholderTextColor={Colors.textTertiary}
-            keyboardType="numeric"
-            value={String(person.customAmount ?? '')}
-            onChangeText={onUpdateCustom}
-          />
-        )}
-      </View>
-
-      <View style={styles.personRight}>
-        <Text style={[styles.personAmount, isMe && { color: Colors.primary }]}>
-          ₹{(person.amount ?? 0).toLocaleString()}
-        </Text>
-        {!isMe ? (
-          <View style={styles.personActions}>
-            <TouchableOpacity onPress={onTogglePaid} style={styles.paidBtn}>
-              <Text style={[styles.paidBtnText, person.isPaid && styles.paidBtnTextActive]}>
-                {person.isPaid ? '✓ Paid' : 'Mark paid'}
-              </Text>
-            </TouchableOpacity>
-            {!person.isPaid && (
-              <TouchableOpacity onPress={onRemind} style={styles.remindBtn}>
-                <Text style={styles.remindIcon}>📤</Text>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={styles.personAmount}>{formatCurrency(person.amount ?? 0)}</Text>
+          {!isMe && (
+            <View style={styles.personActions}>
+              <TouchableOpacity
+                onPress={onTogglePaid}
+                accessibilityLabel={person.isPaid ? 'Mark unpaid' : 'Mark paid'}
+                hitSlop={4}
+                style={styles.personActionBtn}
+              >
+                <Check
+                  size={14}
+                  color={person.isPaid ? Colors.accentSuccess : Colors.textSecondary}
+                  strokeWidth={2}
+                />
               </TouchableOpacity>
-            )}
-          </View>
-        ) : (
-          <Text style={styles.youLabel}>(you paid)</Text>
-        )}
+              <TouchableOpacity
+                onPress={onRemind}
+                accessibilityLabel="Send reminder"
+                hitSlop={4}
+                style={styles.personActionBtn}
+              >
+                <Send size={14} color={Colors.textSecondary} strokeWidth={1.75} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={onRemove}
+                accessibilityLabel="Remove"
+                hitSlop={4}
+                style={styles.personActionBtn}
+              >
+                <Trash2 size={14} color={Colors.accentError} strokeWidth={1.75} />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </View>
-    </View>
+    </Card>
   );
 }
 
@@ -577,169 +592,89 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
-  // History
-  historyToggle: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  scroll: {
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-  },
-  historyToggleText: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-  },
-  historyToggleArrow: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  history: {
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
-  },
-  pastCard: {
-    marginBottom: Spacing.sm,
-  },
-  pastHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: Spacing.sm,
-  },
-  pastTitle: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  pastMeta: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  pastFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     paddingTop: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.gray100,
   },
-  pastAmount: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
+
+  // Hero
+  heroLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 1.2,
+    fontWeight: Typography.weights.medium,
   },
-  pastShare: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.primary,
-  },
-  // Form
-  formHeader: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  formTitle: {
-    fontSize: Typography.sizes.lg,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  section: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-  },
-  sectionHeader: {
+  heroAmountRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    marginTop: Spacing.xs,
     marginBottom: Spacing.sm,
   },
-  sectionTitle: {
-    fontSize: Typography.sizes.base,
+  heroAmountSymbol: {
+    fontSize: 32,
     fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  linkText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.primary,
-    fontWeight: Typography.weights.semiBold,
-  },
-  fieldLabel: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
     color: Colors.textSecondary,
-    marginBottom: Spacing.xs,
-    textTransform: 'uppercase',
+    marginRight: 4,
   },
-  input: {
-    fontSize: Typography.sizes.base,
+  heroAmountInput: {
+    flex: 1,
+    fontSize: 48,
+    lineHeight: 52,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -1.5,
     color: Colors.textPrimary,
-    backgroundColor: Colors.inputBg,
-    borderRadius: BorderRadius.base,
-    padding: Spacing.base,
-    marginBottom: Spacing.base,
+    paddingVertical: 0,
   },
-  amountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.inputBg,
-    borderRadius: BorderRadius.base,
+  heroTitleInput: {
+    backgroundColor: 'rgba(0,0,0,0.20)',
+    borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.base,
-  },
-  currency: {
-    fontSize: Typography.sizes['2xl'],
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-    marginRight: Spacing.xs,
-  },
-  amountInput: {
-    flex: 1,
-    fontSize: Typography.sizes['2xl'],
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-    paddingVertical: Spacing.base,
-  },
-  // Mode selector
-  modeSelector: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.lg,
-    gap: Spacing.xs,
-    marginBottom: Spacing.base,
-  },
-  modeBtn: {
-    flex: 1,
     paddingVertical: Spacing.sm,
-    backgroundColor: Colors.card,
-    borderRadius: BorderRadius.base,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-  },
-  modeBtnActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  modeIcon: {
-    fontSize: 18,
-    marginBottom: 2,
+    fontSize: Typography.sizes.base,
     color: Colors.textPrimary,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
-  modeLabel: {
-    fontSize: Typography.sizes.xs,
-    fontWeight: Typography.weights.semiBold,
+
+  // Mode chips
+  modeRow: {
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  modeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    marginRight: Spacing.sm,
+    gap: 6,
+  },
+  modeChipActive: {
+    backgroundColor: Colors.accentPrimary,
+    borderColor: Colors.accentPrimary,
+  },
+  modeChipLabel: {
+    fontSize: Typography.sizes.sm,
+    fontWeight: Typography.weights.medium,
     color: Colors.textSecondary,
   },
-  modeLabelActive: {
+  modeChipLabelActive: {
     color: Colors.white,
   },
-  // Person row
+
+  // Person
   personRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
   },
-  avatar: {
+  personAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -747,202 +682,231 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: Spacing.sm,
   },
-  avatarText: {
+  personInitial: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
     color: Colors.white,
   },
-  personTopRow: {
+  personHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.xs,
   },
   personName: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
   },
-  removeBtn: {
-    fontSize: 16,
-    color: Colors.textTertiary,
-    paddingHorizontal: 4,
+  personAmount: {
+    fontSize: Typography.sizes.lg,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.4,
   },
-  // Mode inputs
-  pctInput: {
+  personActions: {
+    flexDirection: 'row',
+    marginTop: Spacing.xs,
+    gap: Spacing.xs,
+  },
+  personActionBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.surfaceContainerHigh,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Mode-specific inputs
+  modeInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.inputBg,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm,
-    width: 80,
-    marginTop: 4,
+    marginTop: 6,
   },
-  pctInputField: {
-    flex: 1,
+  modeInput: {
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: BorderRadius.base,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
     fontSize: Typography.sizes.sm,
     color: Colors.textPrimary,
-    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    width: 80,
+    fontVariant: ['tabular-nums'] as any,
   },
-  pctSuffix: {
+  modeInputUnit: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
+    marginLeft: 6,
   },
   sharesRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 6,
+    gap: Spacing.xs,
   },
   sharesBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.gray100,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sharesBtnText: {
-    fontSize: 18,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
   sharesValue: {
-    fontSize: Typography.sizes.base,
+    fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.bold,
     color: Colors.textPrimary,
-    marginHorizontal: Spacing.sm,
     minWidth: 16,
     textAlign: 'center',
+    fontVariant: ['tabular-nums'] as any,
   },
   sharesLabel: {
     fontSize: Typography.sizes.xs,
     color: Colors.textSecondary,
     marginLeft: 4,
   },
-  customInput: {
+
+  // Diff warning
+  diffCard: {
+    marginTop: Spacing.sm,
+    alignItems: 'center',
+  },
+  diffText: {
     fontSize: Typography.sizes.sm,
-    color: Colors.textPrimary,
-    backgroundColor: Colors.inputBg,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    marginTop: 4,
-    width: 100,
-  },
-  // Right
-  personRight: {
-    alignItems: 'flex-end',
-  },
-  personAmount: {
-    fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
   },
-  personActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-    gap: 4,
-  },
-  paidBtn: {
-    paddingHorizontal: Spacing.xs,
-    paddingVertical: 2,
-  },
-  paidBtnText: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-    fontWeight: Typography.weights.medium,
-  },
-  paidBtnTextActive: {
-    color: Colors.success,
-  },
-  remindBtn: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.gray100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  remindIcon: {
-    fontSize: 12,
-  },
-  youLabel: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textTertiary,
-    marginTop: 2,
-  },
-  // Validation
-  validCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-    borderWidth: 1,
-  },
-  validText: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-  },
+
   // Summary
-  summaryCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-    backgroundColor: Tints.primaryBg,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight,
-  },
-  summaryTitle: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.sm,
-  },
   summaryRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
+    alignItems: 'center',
   },
   summaryLabel: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    fontWeight: Typography.weights.medium,
   },
   summaryValue: {
+    marginTop: 2,
+    fontSize: Typography.sizes.lg,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.4,
+  },
+  summaryDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: Colors.borderDefault,
+    marginHorizontal: Spacing.base,
+  },
+
+  // Past
+  pastTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  pastTitle: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
   },
-  // Actions
-  actions: {
-    paddingHorizontal: Spacing.lg,
-    marginTop: Spacing.base,
+  pastMeta: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    fontVariant: ['tabular-nums'] as any,
   },
+  pastFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderDefault,
+  },
+  pastAmount: {
+    marginTop: 2,
+    fontSize: Typography.sizes.lg,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.4,
+  },
+
+  // Submit
+  submitBar: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderDefault,
+    backgroundColor: Colors.surfaceContainerLow,
+  },
+
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    padding: Spacing.lg,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'flex-end',
   },
-  addModal: {
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.xl,
+  modalSheet: {
+    backgroundColor: Colors.surfaceContainerHighest,
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
     padding: Spacing.lg,
+    paddingBottom: Spacing['3xl'],
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
-  addTitle: {
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.outline,
+    alignSelf: 'center',
+    marginBottom: Spacing.base,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
+  modalTitle: {
     fontSize: Typography.sizes.xl,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
-    marginBottom: Spacing.base,
   },
-  addInput: {
+  modalLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    fontWeight: Typography.weights.semiBold,
+    marginBottom: Spacing.xs,
+  },
+  modalInput: {
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
+    color: Colors.textPrimary,
     fontSize: Typography.sizes.base,
-    color: Colors.textPrimary,
-    backgroundColor: Colors.inputBg,
-    borderRadius: BorderRadius.base,
-    padding: Spacing.base,
-    marginBottom: Spacing.base,
-  },
-  addActions: {
-    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
 });
