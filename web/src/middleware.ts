@@ -50,6 +50,8 @@ export const config = {
     '/transactions/:path*',
     '/subscriptions/:path*',
     '/insights/:path*',
+    '/health-score/:path*',
+    '/money-leaks/:path*',
     '/ai-coach/:path*',
     '/settings/:path*',
   ],
