@@ -8,49 +8,69 @@ import {
   Modal,
   TextInput,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import {
-  Card,
+  Shield,
+  Plane,
+  Smartphone,
+  Car,
+  Home as HomeIcon,
+  GraduationCap,
+  Heart as HeartIcon,
+  Target,
+  Plus,
+  X,
+  Sparkles,
+  ArrowRight,
+  Trash2,
+  type LucideIcon,
+} from 'lucide-react-native';
+import {
   Badge,
   Button,
-  ProgressRing,
-  ProgressBar,
+  Card,
   EmptyState,
+  Header,
+  ProgressRing,
+  Section,
 } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
 import { useGoals, useCreateGoal, useContributeGoal, useDeleteGoal } from '../../hooks';
+import { formatCurrency } from '../../utils';
 
 interface Goal {
   id: string;
   name: string;
-  icon?: string;
-  color?: string;
   category?: string;
   targetAmount: number;
   currentAmount: number;
   targetDate?: string | null;
-  monthlyContribution?: number;
-  autoAllocate?: boolean;
-  priority?: number;
   isCompleted: boolean;
   progressPercent?: number;
   monthsToGoal?: number | null;
-  dailyContributionNeeded?: number | null;
 }
 
-const mockGoals: Goal[] = [];
+interface GoalCategory {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  color: string;
+}
 
-const GOAL_CATEGORIES = [
-  { id: 'emergency', label: 'Emergency Fund', icon: '🛡️', color: '#10B981' },
-  { id: 'travel', label: 'Travel', icon: '✈️', color: '#3B82F6' },
-  { id: 'gadget', label: 'Gadget', icon: '📱', color: '#8B5CF6' },
-  { id: 'vehicle', label: 'Vehicle', icon: '🚗', color: '#F59E0B' },
-  { id: 'home', label: 'Home', icon: '🏠', color: '#EC4899' },
-  { id: 'education', label: 'Education', icon: '🎓', color: '#06B6D4' },
-  { id: 'wedding', label: 'Wedding', icon: '💍', color: '#F472B6' },
-  { id: 'other', label: 'Other', icon: '🎯', color: '#6366F1' },
+const GOAL_CATEGORIES: GoalCategory[] = [
+  { id: 'emergency', label: 'Emergency', icon: Shield, color: Colors.accentSuccess },
+  { id: 'travel', label: 'Travel', icon: Plane, color: Colors.accentPrimary },
+  { id: 'gadget', label: 'Gadget', icon: Smartphone, color: '#A78BFA' },
+  { id: 'vehicle', label: 'Vehicle', icon: Car, color: Colors.accentWarning },
+  { id: 'home', label: 'Home', icon: HomeIcon, color: '#F472B6' },
+  { id: 'education', label: 'Education', icon: GraduationCap, color: Colors.accentAi },
+  { id: 'wedding', label: 'Wedding', icon: HeartIcon, color: '#EC4899' },
+  { id: 'other', label: 'Other', icon: Target, color: '#6366F1' },
 ];
+
+function categoryFor(id: string | undefined): GoalCategory {
+  return GOAL_CATEGORIES.find((c) => c.id === id) ?? GOAL_CATEGORIES[7];
+}
 
 type FilterType = 'active' | 'completed' | 'all';
 
@@ -62,117 +82,39 @@ export function GoalsScreen({ navigation }: any) {
 
   const goals: Goal[] = useMemo(() => {
     const list = goalsQuery.data || [];
-    return list.map((g: any) => {
-      const cat = GOAL_CATEGORIES.find((c) => c.id === g.category);
-      const monthly =
-        g.monthsToGoal && g.monthsToGoal > 0
-          ? Math.round(Math.max(0, g.targetAmount - g.currentAmount) / g.monthsToGoal)
-          : 0;
-      return {
-        ...g,
-        icon: g.icon || cat?.icon || '🎯',
-        color: g.color || cat?.color || Colors.primary,
-        category: g.category || 'other',
-        monthlyContribution: monthly,
-        autoAllocate: !!g.autoAllocate,
-        priority: g.priority ?? 0,
-        isCompleted: !!g.isCompleted,
-      };
-    });
+    return list.map((g: any) => ({
+      id: g.id,
+      name: g.name,
+      category: g.category || g.categoryId,
+      targetAmount: Number(g.targetAmount ?? 0),
+      currentAmount: Number(g.currentAmount ?? 0),
+      targetDate: g.targetDate,
+      isCompleted: !!g.isCompleted,
+      progressPercent: Number(g.progressPercent ?? 0),
+      monthsToGoal: g.monthsToGoal,
+    }));
   }, [goalsQuery.data]);
 
   const [filter, setFilter] = useState<FilterType>('active');
-  const [showCreate, setShowCreate] = useState(false);
-  const [contributingGoal, setContributingGoal] = useState<Goal | null>(null);
-  const [contributionAmount, setContributionAmount] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [contributeFor, setContributeFor] = useState<Goal | null>(null);
 
-  const [newGoal, setNewGoal] = useState({
-    name: '',
-    targetAmount: '',
-    targetDate: '',
-    category: 'emergency',
-    icon: '🛡️',
-    color: '#10B981',
-    autoAllocate: false,
-  });
-
-  const stats = useMemo(() => {
-    const active = goals.filter((g) => !g.isCompleted);
-    const totalTarget = active.reduce((sum, g) => sum + g.targetAmount, 0);
-    const totalSaved = active.reduce((sum, g) => sum + g.currentAmount, 0);
-    const totalMonthly = active.reduce((sum, g) => sum + (g.monthlyContribution || 0), 0);
-    const completedCount = goals.filter((g) => g.isCompleted).length;
-
-    return {
-      activeCount: active.length,
-      totalTarget,
-      totalSaved,
-      totalMonthly,
-      overallProgress: totalTarget > 0 ? (totalSaved / totalTarget) * 100 : 0,
-      completedCount,
-    };
-  }, [goals]);
-
-  const filteredGoals = useMemo(() => {
+  const filtered = useMemo(() => {
     if (filter === 'active') return goals.filter((g) => !g.isCompleted);
     if (filter === 'completed') return goals.filter((g) => g.isCompleted);
     return goals;
   }, [goals, filter]);
 
-  const handleCreate = async () => {
-    if (!newGoal.name || !newGoal.targetAmount) {
-      Alert.alert('Missing fields', 'Please fill goal name and target amount');
-      return;
-    }
-    const cat = GOAL_CATEGORIES.find((c) => c.id === newGoal.category);
-    const target = parseFloat(newGoal.targetAmount);
+  const stats = useMemo(() => {
+    const active = goals.filter((g) => !g.isCompleted);
+    const completed = goals.filter((g) => g.isCompleted).length;
+    const totalTarget = active.reduce((s, g) => s + g.targetAmount, 0);
+    const totalSaved = active.reduce((s, g) => s + g.currentAmount, 0);
+    return { activeCount: active.length, completed, totalTarget, totalSaved };
+  }, [goals]);
 
-    try {
-      await createGoal.mutateAsync({
-        name: newGoal.name,
-        targetAmount: target,
-        targetDate: newGoal.targetDate || undefined,
-        category: newGoal.category,
-        icon: cat?.icon,
-        color: cat?.color,
-        autoAllocate: newGoal.autoAllocate,
-      });
-      setNewGoal({
-        name: '',
-        targetAmount: '',
-        targetDate: '',
-        category: 'emergency',
-        icon: '🛡️',
-        color: '#10B981',
-        autoAllocate: false,
-      });
-      setShowCreate(false);
-    } catch (e: any) {
-      Alert.alert('Could not create goal', e?.message ?? 'Unknown error');
-    }
-  };
-
-  const handleContribute = async () => {
-    if (!contributingGoal || !contributionAmount) return;
-    const amt = parseFloat(contributionAmount);
-    if (isNaN(amt) || amt <= 0) {
-      Alert.alert('Invalid amount', 'Please enter a valid amount');
-      return;
-    }
-    try {
-      await contributeGoal.mutateAsync({
-        id: contributingGoal.id,
-        amount: amt,
-      });
-      setContributingGoal(null);
-      setContributionAmount('');
-    } catch (e: any) {
-      Alert.alert('Could not contribute', e?.message ?? 'Unknown error');
-    }
-  };
-
-  const handleDelete = (id: string) => {
-    Alert.alert('Delete Goal', 'This will remove the goal permanently', [
+  const handleDelete = (id: string) =>
+    Alert.alert('Delete this goal?', 'You\u2019ll lose its history.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -180,423 +122,390 @@ export function GoalsScreen({ navigation }: any) {
         onPress: () => deleteGoal.mutate(id),
       },
     ]);
-  };
-
-  if (goalsQuery.isLoading) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </View>
-    );
-  }
-
-  if (goalsQuery.isError) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', padding: Spacing.xl }]}>
-        <EmptyState
-          icon="⚠️"
-          title="Couldn't load goals"
-          message={(goalsQuery.error as any)?.message || 'Pull to refresh and try again'}
-          actionLabel="Retry"
-          onAction={() => goalsQuery.refetch()}
-        />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>Goals</Text>
-            <Text style={styles.subtitle}>Save with purpose</Text>
-          </View>
-          <TouchableOpacity style={styles.addBtn} onPress={() => setShowCreate(true)}>
-            <Text style={styles.addBtnText}>+</Text>
+      <Header
+        title="Savings Goals"
+        subtitle={`${stats.activeCount} active${stats.completed > 0 ? ` • ${stats.completed} completed` : ''}`}
+        onBack={() => navigation.goBack()}
+        rightContent={
+          <TouchableOpacity
+            onPress={() => setCreateOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Create goal"
+            style={styles.headerCta}
+          >
+            <Plus size={16} color={Colors.white} strokeWidth={2.5} />
+            <Text style={styles.headerCtaText}>New</Text>
           </TouchableOpacity>
-        </View>
+        }
+      />
 
-        {/* Overview card */}
-        <Card style={styles.overview}>
-          <View style={styles.overviewContent}>
-            <ProgressRing
-              progress={stats.overallProgress}
-              size={100}
-              strokeWidth={10}
-              color={Colors.success}
-              showPercentage
-              label="Overall"
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* Hero stats */}
+        <Card variant="hero" padding="xl">
+          <Text style={styles.heroLabel}>SAVED TOWARDS GOALS</Text>
+          <Text style={styles.heroValue}>{formatCurrency(stats.totalSaved)}</Text>
+          <Text style={styles.heroSub}>of {formatCurrency(stats.totalTarget)} target</Text>
+          <View style={{ marginTop: Spacing.base }}>
+            <ProgressRingHero
+              progress={stats.totalTarget > 0 ? (stats.totalSaved / stats.totalTarget) * 100 : 0}
             />
-            <View style={styles.overviewStats}>
-              <View style={styles.overviewStat}>
-                <Text style={styles.overviewStatLabel}>Saved</Text>
-                <Text style={styles.overviewStatValue}>₹{stats.totalSaved.toLocaleString()}</Text>
-              </View>
-              <View style={styles.overviewStat}>
-                <Text style={styles.overviewStatLabel}>Target</Text>
-                <Text style={[styles.overviewStatValue, { color: Colors.textSecondary }]}>
-                  ₹{stats.totalTarget.toLocaleString()}
-                </Text>
-              </View>
-              <View style={styles.overviewStat}>
-                <Text style={styles.overviewStatLabel}>Monthly</Text>
-                <Text style={[styles.overviewStatValue, { color: Colors.primary }]}>
-                  ₹{stats.totalMonthly.toLocaleString()}
-                </Text>
-              </View>
-            </View>
-          </View>
-          {stats.completedCount > 0 && (
-            <View style={styles.completedBanner}>
-              <Text style={styles.completedText}>
-                🎉 {stats.completedCount} goal{stats.completedCount > 1 ? 's' : ''} completed!
-              </Text>
-            </View>
-          )}
-        </Card>
-
-        {/* AI Tip */}
-        <Card style={styles.aiTip}>
-          <Text style={styles.aiTipIcon}>💡</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.aiTipTitle}>AI Suggestion</Text>
-            <Text style={styles.aiTipText}>
-              You can save ₹4,500/month by fixing money leaks. Allocate it to your Goa goal to reach
-              it 1 month earlier!
-            </Text>
           </View>
         </Card>
 
-        {/* Filter tabs */}
-        <View style={styles.filterTabs}>
-          {(['active', 'completed', 'all'] as FilterType[]).map((f) => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterTab, filter === f && styles.filterTabActive]}
-              onPress={() => setFilter(f)}
-            >
-              <Text style={[styles.filterTabText, filter === f && styles.filterTabTextActive]}>
-                {f === 'active'
-                  ? `Active (${stats.activeCount})`
-                  : f === 'completed'
-                    ? `Completed (${stats.completedCount})`
-                    : 'All'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* Filter chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabs}
+        >
+          {(['active', 'completed', 'all'] as FilterType[]).map((f) => {
+            const active = filter === f;
+            return (
+              <TouchableOpacity
+                key={f}
+                onPress={() => setFilter(f)}
+                accessibilityRole="button"
+                style={[styles.chip, active && styles.chipActive]}
+              >
+                <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
-        {/* Goals list */}
-        {filteredGoals.length === 0 ? (
+        {filtered.length === 0 ? (
           <EmptyState
             icon="🎯"
-            title={filter === 'completed' ? 'No completed goals yet' : 'No active goals'}
+            title={filter === 'completed' ? 'No completed goals yet' : 'No goals yet'}
             message={
               filter === 'completed'
-                ? "Keep saving! You'll get there."
-                : 'Create your first goal to start saving with purpose'
+                ? 'Complete a goal to celebrate it here.'
+                : 'Set a savings goal — we\u2019ll track contributions and forecast when you\u2019ll hit it.'
             }
-            actionLabel={filter !== 'completed' ? 'Create Goal' : undefined}
-            onAction={filter !== 'completed' ? () => setShowCreate(true) : undefined}
+            actionLabel={filter !== 'completed' ? 'Create goal' : undefined}
+            onAction={() => setCreateOpen(true)}
           />
         ) : (
-          <View style={styles.list}>
-            {filteredGoals.map((goal) => (
+          <View>
+            {filtered.map((goal) => (
               <GoalCard
                 key={goal.id}
                 goal={goal}
-                onContribute={() => setContributingGoal(goal)}
+                onContribute={() => setContributeFor(goal)}
                 onDelete={() => handleDelete(goal.id)}
               />
             ))}
           </View>
         )}
 
-        <View style={{ height: Spacing['2xl'] }} />
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
 
-      {/* Create Goal Modal */}
-      <Modal
-        visible={showCreate}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowCreate(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <ScrollView
-            contentContainerStyle={styles.modalScrollContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Create Goal</Text>
-                <TouchableOpacity onPress={() => setShowCreate(false)}>
-                  <Text style={styles.modalClose}>✕</Text>
-                </TouchableOpacity>
-              </View>
+      <CreateGoalModal
+        visible={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreate={(payload) => {
+          createGoal.mutate(payload, {
+            onSuccess: () => setCreateOpen(false),
+          });
+        }}
+      />
 
-              <Text style={styles.fieldLabel}>Goal Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., Trip to Goa"
-                placeholderTextColor={Colors.textTertiary}
-                value={newGoal.name}
-                onChangeText={(t) => setNewGoal({ ...newGoal, name: t })}
-              />
-
-              <Text style={styles.fieldLabel}>Category</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.catRow}
-              >
-                {GOAL_CATEGORIES.map((cat) => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[
-                      styles.catChip,
-                      newGoal.category === cat.id && {
-                        borderColor: cat.color,
-                        backgroundColor: cat.color + '15',
-                      },
-                    ]}
-                    onPress={() =>
-                      setNewGoal({
-                        ...newGoal,
-                        category: cat.id,
-                        icon: cat.icon,
-                        color: cat.color,
-                      })
-                    }
-                  >
-                    <Text style={styles.catChipIcon}>{cat.icon}</Text>
-                    <Text
-                      style={[
-                        styles.catChipText,
-                        newGoal.category === cat.id && {
-                          color: cat.color,
-                          fontWeight: Typography.weights.bold,
-                        },
-                      ]}
-                    >
-                      {cat.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <Text style={styles.fieldLabel}>Target Amount (₹)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="50000"
-                placeholderTextColor={Colors.textTertiary}
-                value={newGoal.targetAmount}
-                onChangeText={(t) => setNewGoal({ ...newGoal, targetAmount: t })}
-                keyboardType="numeric"
-              />
-
-              <Text style={styles.fieldLabel}>Target Date (optional)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={Colors.textTertiary}
-                value={newGoal.targetDate}
-                onChangeText={(t) => setNewGoal({ ...newGoal, targetDate: t })}
-              />
-
-              <TouchableOpacity
-                style={styles.autoToggle}
-                onPress={() => setNewGoal({ ...newGoal, autoAllocate: !newGoal.autoAllocate })}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.autoLabel}>🤖 Auto-allocate from savings</Text>
-                  <Text style={styles.autoHint}>AI will automatically add money each month</Text>
-                </View>
-                <View style={[styles.toggle, newGoal.autoAllocate && styles.toggleActive]}>
-                  <View
-                    style={[styles.toggleThumb, newGoal.autoAllocate && styles.toggleThumbActive]}
-                  />
-                </View>
-              </TouchableOpacity>
-
-              {newGoal.targetAmount && (
-                <View style={styles.calculation}>
-                  <Text style={styles.calculationText}>
-                    💡 Save ₹{Math.round(parseFloat(newGoal.targetAmount) / 12).toLocaleString()}
-                    /month to reach goal in 12 months
-                  </Text>
-                </View>
-              )}
-
-              <Button
-                title="Create Goal"
-                onPress={handleCreate}
-                variant="primary"
-                fullWidth
-                style={{ marginTop: Spacing.lg }}
-              />
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
-
-      {/* Contribute Modal */}
-      <Modal
-        visible={!!contributingGoal}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setContributingGoal(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.contributeModal}>
-            {contributingGoal && (
-              <>
-                <Text style={styles.contributeIcon}>{contributingGoal.icon}</Text>
-                <Text style={styles.contributeTitle}>Add to {contributingGoal.name}</Text>
-                <Text style={styles.contributeSubtitle}>
-                  ₹{contributingGoal.currentAmount.toLocaleString()} of ₹
-                  {contributingGoal.targetAmount.toLocaleString()}
-                </Text>
-                <TextInput
-                  style={styles.contributeInput}
-                  placeholder="Amount"
-                  placeholderTextColor={Colors.textTertiary}
-                  keyboardType="numeric"
-                  value={contributionAmount}
-                  onChangeText={setContributionAmount}
-                />
-                <View style={styles.contributePresets}>
-                  {[500, 1000, 2000, 5000].map((amt) => (
-                    <TouchableOpacity
-                      key={amt}
-                      style={styles.preset}
-                      onPress={() => setContributionAmount(String(amt))}
-                    >
-                      <Text style={styles.presetText}>₹{amt}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <View style={styles.contributeActions}>
-                  <Button
-                    title="Cancel"
-                    onPress={() => {
-                      setContributingGoal(null);
-                      setContributionAmount('');
-                    }}
-                    variant="ghost"
-                    style={{ flex: 1 }}
-                  />
-                  <Button
-                    title="Add"
-                    onPress={handleContribute}
-                    variant="success"
-                    style={{ flex: 1, marginLeft: Spacing.sm }}
-                  />
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
+      <ContributeModal
+        goal={contributeFor}
+        onClose={() => setContributeFor(null)}
+        onContribute={(amount) => {
+          if (!contributeFor) return;
+          contributeGoal.mutate(
+            { id: contributeFor.id, amount },
+            { onSuccess: () => setContributeFor(null) },
+          );
+        }}
+      />
     </View>
   );
 }
 
-interface GoalCardProps {
+// =============================================================
+// Hero ring (only renders if there's progress to show)
+// =============================================================
+function ProgressRingHero({ progress }: { progress: number }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <ProgressRing progress={progress} size={64} strokeWidth={6} gradient showPercentage />
+      <Text style={styles.heroProgressText}>
+        {progress > 0
+          ? `You're ${Math.round(progress)}% of the way there`
+          : 'Start contributing to see progress'}
+      </Text>
+    </View>
+  );
+}
+
+// =============================================================
+// Goal card
+// =============================================================
+function GoalCard({
+  goal,
+  onContribute,
+  onDelete,
+}: {
   goal: Goal;
   onContribute: () => void;
   onDelete: () => void;
-}
-
-function GoalCard({ goal, onContribute, onDelete }: GoalCardProps) {
-  const progress = (goal.currentAmount / goal.targetAmount) * 100;
-  const remaining = goal.targetAmount - goal.currentAmount;
-  const monthsLeft = Math.max(
-    1,
-    Math.ceil(
-      (new Date(goal.targetDate ?? Date.now()).getTime() - Date.now()) / (30 * 24 * 3600 * 1000),
-    ),
-  );
-  const monthlyContribution = goal.monthlyContribution ?? 0;
-  const onTrack = monthlyContribution * monthsLeft >= remaining;
+}) {
+  const cat = categoryFor(goal.category);
+  const Icon = cat.icon;
+  const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
+  const monthsToGoal = goal.monthsToGoal ?? null;
 
   return (
-    <Card style={[styles.goalCard, goal.isCompleted && styles.goalCardCompleted]}>
-      <View style={styles.goalHeader}>
-        <View style={styles.goalLeft}>
-          <ProgressRing progress={progress} size={70} strokeWidth={7} color={goal.color}>
-            <Text style={styles.goalRingIcon}>{goal.icon}</Text>
-          </ProgressRing>
+    <Card padding="base" style={styles.goalCard}>
+      <View style={styles.goalTopRow}>
+        <View
+          style={[
+            styles.goalIcon,
+            {
+              backgroundColor: cat.color + '22',
+              borderColor: cat.color + '44',
+            },
+          ]}
+        >
+          <Icon size={18} color={cat.color} strokeWidth={1.75} />
         </View>
-        <View style={styles.goalInfo}>
-          <View style={styles.goalTopRow}>
-            <Text style={styles.goalName}>{goal.name}</Text>
-            {goal.autoAllocate && <Badge text="🤖 Auto" variant="info" size="sm" />}
-            {goal.isCompleted && <Badge text="✓ Done" variant="success" size="sm" />}
-          </View>
-          <Text style={styles.goalAmount}>
-            ₹{goal.currentAmount.toLocaleString()} /{' '}
-            <Text style={{ color: Colors.textSecondary }}>
-              ₹{goal.targetAmount.toLocaleString()}
-            </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.goalName} numberOfLines={1}>
+            {goal.name}
           </Text>
-          <ProgressBar progress={progress} color={goal.color} height={6} style={{ marginTop: 4 }} />
+          <Text style={styles.goalCategory}>{cat.label}</Text>
         </View>
+        {goal.isCompleted && <Badge text="Done" variant="success" size="sm" />}
       </View>
 
-      {!goal.isCompleted && (
-        <>
-          <View style={styles.goalStats}>
-            <View style={styles.goalStat}>
-              <Text style={styles.goalStatLabel}>Remaining</Text>
-              <Text style={styles.goalStatValue}>₹{remaining.toLocaleString()}</Text>
-            </View>
-            <View style={styles.goalStat}>
-              <Text style={styles.goalStatLabel}>Time left</Text>
-              <Text style={styles.goalStatValue}>
-                {monthsLeft} {monthsLeft === 1 ? 'month' : 'months'}
-              </Text>
-            </View>
-            <View style={styles.goalStat}>
-              <Text style={styles.goalStatLabel}>Monthly</Text>
-              <Text
-                style={[styles.goalStatValue, { color: onTrack ? Colors.success : Colors.warning }]}
-              >
-                ₹{monthlyContribution.toLocaleString()}
-              </Text>
-            </View>
-          </View>
-
-          {!onTrack && (
-            <View style={styles.warningBanner}>
-              <Text style={styles.warningText}>
-                ⚠️ Increase to ₹{Math.ceil(remaining / monthsLeft).toLocaleString()}/mo to stay on
-                track
+      <View style={styles.goalProgress}>
+        <ProgressRing
+          progress={Number(goal.progressPercent ?? 0)}
+          size={88}
+          strokeWidth={7}
+          color={cat.color}
+        />
+        <View style={styles.goalProgressInfo}>
+          <Text style={styles.goalAmounts}>
+            <Text style={styles.goalCurrent}>{formatCurrency(goal.currentAmount)}</Text>
+            <Text style={styles.goalSep}> / </Text>
+            <Text style={styles.goalTarget}>{formatCurrency(goal.targetAmount)}</Text>
+          </Text>
+          <Text style={styles.goalRemainingLabel}>{formatCurrency(remaining)} TO GO</Text>
+          {monthsToGoal !== null && monthsToGoal !== undefined && (
+            <View style={styles.goalForecast}>
+              <Sparkles size={12} color={Colors.accentAi} strokeWidth={2} />
+              <Text style={styles.goalForecastText}>
+                {monthsToGoal} {monthsToGoal === 1 ? 'month' : 'months'} at this pace
               </Text>
             </View>
           )}
+        </View>
+      </View>
 
-          <View style={styles.goalActions}>
+      <View style={styles.goalActions}>
+        <Button
+          title="Delete"
+          variant="secondary"
+          size="sm"
+          onPress={onDelete}
+          leadingIcon={<Trash2 size={14} color={Colors.textPrimary} strokeWidth={2} />}
+          style={{ flex: 1 }}
+        />
+        <View style={{ width: Spacing.sm }} />
+        <Button
+          title="Contribute"
+          size="sm"
+          onPress={onContribute}
+          trailingIcon={<ArrowRight size={14} color={Colors.white} strokeWidth={2} />}
+          style={{ flex: 2 }}
+        />
+      </View>
+    </Card>
+  );
+}
+
+// =============================================================
+// Create modal
+// =============================================================
+function CreateGoalModal({
+  visible,
+  onClose,
+  onCreate,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onCreate: (payload: any) => void;
+}) {
+  const [name, setName] = useState('');
+  const [target, setTarget] = useState('');
+  const [category, setCategory] = useState<string>('other');
+
+  const handleCreate = () => {
+    const amount = Number(target.replace(/[^0-9.]/g, ''));
+    if (!name.trim() || !amount || amount <= 0) {
+      Alert.alert('Missing details', 'Please enter a name and target amount.');
+      return;
+    }
+    onCreate({
+      name: name.trim(),
+      targetAmount: amount,
+      category,
+    });
+    setName('');
+    setTarget('');
+    setCategory('other');
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>New goal</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={8}>
+              <X size={20} color={Colors.textSecondary} strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.modalLabel}>NAME</Text>
+          <TextInput
+            value={name}
+            onChangeText={setName}
+            placeholder="Europe trip"
+            placeholderTextColor={Colors.textTertiary}
+            style={styles.modalInput}
+          />
+
+          <Text style={styles.modalLabel}>TARGET AMOUNT (₹)</Text>
+          <TextInput
+            value={target}
+            onChangeText={setTarget}
+            placeholder="300000"
+            placeholderTextColor={Colors.textTertiary}
+            keyboardType="numeric"
+            style={styles.modalInput}
+          />
+
+          <Text style={styles.modalLabel}>CATEGORY</Text>
+          <View style={styles.categoryGrid}>
+            {GOAL_CATEGORIES.map((c) => {
+              const active = category === c.id;
+              const Icon = c.icon;
+              return (
+                <TouchableOpacity
+                  key={c.id}
+                  onPress={() => setCategory(c.id)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active }}
+                  style={[
+                    styles.categoryTile,
+                    active && {
+                      borderColor: c.color,
+                      backgroundColor: c.color + '14',
+                    },
+                  ]}
+                >
+                  <Icon
+                    size={18}
+                    color={active ? c.color : Colors.textSecondary}
+                    strokeWidth={1.75}
+                  />
+                  <Text style={[styles.categoryTileLabel, active && { color: c.color }]}>
+                    {c.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={{ marginTop: Spacing.xl }}>
             <Button
-              title="🗑️"
-              onPress={onDelete}
-              variant="ghost"
-              size="sm"
-              style={styles.deleteBtn}
-            />
-            <Button
-              title="+ Add Money"
-              onPress={onContribute}
-              variant="primary"
-              size="sm"
-              style={{ flex: 1 }}
+              title="Create goal"
+              onPress={handleCreate}
+              fullWidth
+              size="lg"
+              trailingIcon={<ArrowRight size={16} color={Colors.white} strokeWidth={2} />}
             />
           </View>
-        </>
-      )}
-    </Card>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// =============================================================
+// Contribute modal
+// =============================================================
+function ContributeModal({
+  goal,
+  onClose,
+  onContribute,
+}: {
+  goal: Goal | null;
+  onClose: () => void;
+  onContribute: (amount: number) => void;
+}) {
+  const [amount, setAmount] = useState('');
+  if (!goal) return null;
+
+  const handle = () => {
+    const value = Number(amount.replace(/[^0-9.]/g, ''));
+    if (!value || value <= 0) {
+      Alert.alert('Invalid amount', 'Enter a positive number.');
+      return;
+    }
+    onContribute(value);
+    setAmount('');
+  };
+
+  return (
+    <Modal visible={!!goal} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle} numberOfLines={1}>
+              Add to {goal.name}
+            </Text>
+            <TouchableOpacity onPress={onClose} hitSlop={8}>
+              <X size={20} color={Colors.textSecondary} strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.modalLabel}>AMOUNT (₹)</Text>
+          <TextInput
+            value={amount}
+            onChangeText={setAmount}
+            placeholder="5000"
+            placeholderTextColor={Colors.textTertiary}
+            keyboardType="numeric"
+            autoFocus
+            style={styles.modalInput}
+          />
+
+          <View style={{ marginTop: Spacing.xl }}>
+            <Button
+              title="Contribute"
+              onPress={handle}
+              fullWidth
+              size="lg"
+              trailingIcon={<ArrowRight size={16} color={Colors.white} strokeWidth={2} />}
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -605,218 +514,195 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing['3xl'] + Spacing.lg,
-    paddingBottom: Spacing.base,
-  },
-  title: {
-    fontSize: Typography.sizes['2xl'],
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  subtitle: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  addBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addBtnText: {
-    color: Colors.white,
-    fontSize: 28,
-    fontWeight: Typography.weights.bold,
-  },
-  // Overview
-  overview: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-  },
-  overviewContent: {
+
+  headerCta: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.accentPrimary,
+    gap: 4,
   },
-  overviewStats: {
-    flex: 1,
-    marginLeft: Spacing.lg,
-  },
-  overviewStat: {
-    marginVertical: 4,
-  },
-  overviewStatLabel: {
+  headerCtaText: {
     fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-  },
-  overviewStatValue: {
-    fontSize: Typography.sizes.lg,
     fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
+    color: Colors.white,
+    letterSpacing: 0.4,
   },
-  completedBanner: {
-    marginTop: Spacing.sm,
-    padding: Spacing.sm,
-    backgroundColor: Tints.successBg,
-    borderRadius: BorderRadius.base,
-    alignItems: 'center',
-  },
-  completedText: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.success,
-  },
-  // AI Tip
-  aiTip: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: Tints.primaryBg,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight,
-  },
-  aiTipIcon: {
-    fontSize: 24,
-    marginRight: Spacing.sm,
-  },
-  aiTipTitle: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.bold,
-    color: Colors.primary,
-  },
-  aiTipText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textPrimary,
-    marginTop: 2,
-    lineHeight: Typography.sizes.sm * 1.5,
-  },
-  // Tabs
-  filterTabs: {
-    flexDirection: 'row',
+
+  scroll: {
     paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing['3xl'],
+  },
+
+  // Hero
+  heroLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 1.2,
+    fontWeight: Typography.weights.medium,
+  },
+  heroValue: {
+    marginTop: 4,
+    fontSize: 40,
+    lineHeight: 44,
+    color: Colors.textPrimary,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -1,
+  },
+  heroSub: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.textSecondary,
+    fontVariant: ['tabular-nums'] as any,
+  },
+  heroProgressText: {
+    flex: 1,
+    marginLeft: Spacing.base,
+    fontSize: Typography.sizes.sm,
+    color: Colors.textPrimary,
+    lineHeight: Typography.sizes.sm * 1.4,
+  },
+
+  // Tabs
+  tabs: {
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.sm,
     gap: Spacing.sm,
   },
-  filterTab: {
+  chip: {
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    marginRight: Spacing.sm,
   },
-  filterTabActive: {
-    backgroundColor: Colors.primary,
+  chipActive: {
+    backgroundColor: Colors.accentPrimary,
+    borderColor: Colors.accentPrimary,
   },
-  filterTabText: {
+  chipLabel: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.medium,
     color: Colors.textSecondary,
   },
-  filterTabTextActive: {
+  chipLabelActive: {
     color: Colors.white,
   },
-  list: {
-    paddingHorizontal: Spacing.lg,
-  },
+
   // Goal card
   goalCard: {
-    marginBottom: Spacing.base,
-  },
-  goalCardCompleted: {
-    opacity: 0.7,
-  },
-  goalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: Spacing.sm,
-  },
-  goalLeft: {
-    marginRight: Spacing.sm,
-  },
-  goalRingIcon: {
-    fontSize: 24,
-  },
-  goalInfo: {
-    flex: 1,
   },
   goalTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
-    marginBottom: 4,
+    marginBottom: Spacing.sm,
+  },
+  goalIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
   },
   goalName: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
   },
-  goalAmount: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-  },
-  goalStats: {
-    flexDirection: 'row',
-    paddingVertical: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.gray100,
-    marginTop: Spacing.sm,
-  },
-  goalStat: {
-    flex: 1,
-  },
-  goalStatLabel: {
+  goalCategory: {
     fontSize: Typography.sizes.xs,
     color: Colors.textSecondary,
-  },
-  goalStatValue: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
+    letterSpacing: 0.4,
     marginTop: 2,
   },
-  warningBanner: {
-    backgroundColor: Tints.warningBg,
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.base,
-    marginBottom: Spacing.sm,
-  },
-  warningText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.warning,
-    fontWeight: Typography.weights.medium,
-  },
-  goalActions: {
+
+  goalProgress: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderDefault,
   },
-  deleteBtn: {
-    width: 44,
-    marginRight: Spacing.sm,
+  goalProgressInfo: {
+    flex: 1,
+    marginLeft: Spacing.lg,
   },
+  goalAmounts: {
+    fontSize: Typography.sizes.base,
+    fontVariant: ['tabular-nums'] as any,
+  },
+  goalCurrent: {
+    color: Colors.textPrimary,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+  },
+  goalSep: {
+    color: Colors.textTertiary,
+    fontWeight: Typography.weights.regular,
+  },
+  goalTarget: {
+    color: Colors.textSecondary,
+    fontWeight: Typography.weights.regular,
+  },
+  goalRemainingLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.accentSuccess,
+    fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+    letterSpacing: 0.6,
+    marginTop: 4,
+    fontVariant: ['tabular-nums'] as any,
+  },
+  goalForecast: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Spacing.xs,
+    gap: 4,
+  },
+  goalForecastText: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.accentAi,
+  },
+
+  goalActions: {
+    flexDirection: 'row',
+    paddingTop: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderDefault,
+  },
+
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
     justifyContent: 'flex-end',
   },
-  modalScrollContent: {
-    flexGrow: 1,
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: Colors.white,
+  modalSheet: {
+    backgroundColor: Colors.surfaceContainerHighest,
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
     padding: Spacing.lg,
     paddingBottom: Spacing['3xl'],
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.outline,
+    alignSelf: 'center',
+    marginBottom: Spacing.base,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -825,151 +711,52 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   modalTitle: {
+    flex: 1,
     fontSize: Typography.sizes.xl,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
   },
-  modalClose: {
-    fontSize: 24,
-    color: Colors.textSecondary,
-  },
-  fieldLabel: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.xs,
-    textTransform: 'uppercase',
-  },
-  input: {
-    fontSize: Typography.sizes.base,
-    color: Colors.textPrimary,
-    backgroundColor: Colors.inputBg,
-    borderRadius: BorderRadius.base,
-    padding: Spacing.base,
-    marginBottom: Spacing.base,
-  },
-  catRow: {
-    gap: Spacing.sm,
-    marginBottom: Spacing.base,
-  },
-  catChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
-    backgroundColor: Colors.gray100,
-    borderRadius: BorderRadius.full,
-    marginRight: Spacing.sm,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  catChipIcon: {
-    fontSize: 16,
-    marginRight: 4,
-  },
-  catChipText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textPrimary,
-  },
-  autoToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    marginBottom: Spacing.base,
-  },
-  autoLabel: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-  },
-  autoHint: {
+  modalLabel: {
     fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  toggle: {
-    width: 48,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.gray300,
-    padding: 2,
-    justifyContent: 'center',
-  },
-  toggleActive: {
-    backgroundColor: Colors.primary,
-  },
-  toggleThumb: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.white,
-  },
-  toggleThumbActive: {
-    transform: [{ translateX: 20 }],
-  },
-  calculation: {
-    backgroundColor: Tints.primaryBg,
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.base,
-    marginBottom: Spacing.base,
-  },
-  calculationText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.primary,
-  },
-  // Contribute modal
-  contributeModal: {
-    backgroundColor: Colors.white,
-    margin: Spacing.lg,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.xl,
-    alignItems: 'center',
-  },
-  contributeIcon: {
-    fontSize: 48,
-  },
-  contributeTitle: {
-    fontSize: Typography.sizes.lg,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    fontWeight: Typography.weights.semiBold,
+    marginBottom: Spacing.xs,
     marginTop: Spacing.sm,
   },
-  contributeSubtitle: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    marginVertical: Spacing.sm,
-  },
-  contributeInput: {
-    fontSize: Typography.sizes['2xl'],
-    fontWeight: Typography.weights.bold,
+  modalInput: {
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
     color: Colors.textPrimary,
-    backgroundColor: Colors.inputBg,
-    borderRadius: BorderRadius.base,
-    padding: Spacing.base,
-    width: '100%',
-    textAlign: 'center',
-    marginVertical: Spacing.base,
+    fontSize: Typography.sizes.base,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
-  contributePresets: {
+
+  // Category grid
+  categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.sm,
-    justifyContent: 'center',
-    marginBottom: Spacing.lg,
+    marginTop: Spacing.xs,
   },
-  preset: {
+  categoryTile: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.sm,
-    backgroundColor: Colors.gray100,
-    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceContainerLow,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    gap: 6,
   },
-  presetText: {
+  categoryTileLabel: {
     fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-  },
-  contributeActions: {
-    flexDirection: 'row',
-    width: '100%',
+    fontWeight: Typography.weights.medium,
+    color: Colors.textSecondary,
   },
 });

@@ -4,26 +4,34 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import {
-  Card,
-  Badge,
-  ProgressRing,
-  ProgressBar,
-  Header,
-  EmptyState,
-} from '../../components/shared';
+  PiggyBank,
+  PieChart,
+  Repeat,
+  TrendingUp,
+  Target as TargetIcon,
+  CreditCard,
+  Sparkles,
+  ArrowRight,
+  CheckCircle2,
+  Lightbulb,
+  type LucideIcon,
+} from 'lucide-react-native';
 import {
-  Colors,
-  Typography,
-  Spacing,
-  BorderRadius,
-  HealthScoreColors,
-  Tints,
-} from '../../styles/theme';
+  Badge,
+  Card,
+  EmptyState,
+  Header,
+  ProgressBar,
+  ProgressRing,
+  Section,
+} from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
 import { useHealthScore } from '../../hooks';
+import { getHealthRating } from '../../utils';
 
 interface HealthComponent {
   key: string;
@@ -34,41 +42,56 @@ interface HealthComponent {
   description: string;
   details: string;
   improvementTips: string[];
-  icon: string;
+  icon: LucideIcon;
 }
 
+// =============================================================
+// Component definitions — icon + display name + weight per the
+// scoring model. Data fields (score, status, tips) come from the
+// AI service.
+// =============================================================
 const COMPONENT_DEFS: Record<string, Pick<HealthComponent, 'key' | 'name' | 'weight' | 'icon'>> = {
-  savings_rate: { key: 'savings_rate', name: 'Savings Rate', weight: 25, icon: '💰' },
+  savings_rate: {
+    key: 'savings_rate',
+    name: 'Savings Rate',
+    weight: 25,
+    icon: PiggyBank,
+  },
   budget_adherence: {
     key: 'budget_adherence',
     name: 'Budget Adherence',
     weight: 20,
-    icon: '📊',
+    icon: PieChart,
   },
   subscription_health: {
     key: 'subscription_health',
     name: 'Subscription Health',
     weight: 15,
-    icon: '🔄',
+    icon: Repeat,
   },
   spending_consistency: {
     key: 'spending_consistency',
     name: 'Spending Consistency',
     weight: 15,
-    icon: '📈',
+    icon: TrendingUp,
   },
   impulse_control: {
     key: 'impulse_control',
     name: 'Impulse Control',
     weight: 10,
-    icon: '🎯',
+    icon: TargetIcon,
   },
-  goal_progress: { key: 'goal_progress', name: 'Goal Progress', weight: 10, icon: '🎯' },
+  goal_progress: {
+    key: 'goal_progress',
+    name: 'Goal Progress',
+    weight: 10,
+    icon: TargetIcon,
+  },
   credit_utilization: {
     key: 'credit_utilization',
-    name: 'Credit Utilization',
+    name: 'Credit Utilisation',
     weight: 5,
-    icon: '💳',
+    icon: CreditCard,
   },
 };
 
@@ -80,10 +103,41 @@ function statusFromScore(score: number): HealthComponent['status'] {
   return 'CRITICAL';
 }
 
+function colorForStatus(status: HealthComponent['status']): string {
+  switch (status) {
+    case 'EXCELLENT':
+      return Colors.accentSuccess;
+    case 'GOOD':
+      return '#34D399';
+    case 'FAIR':
+      return Colors.accentWarning;
+    case 'NEEDS_WORK':
+      return '#F87171';
+    case 'CRITICAL':
+      return Colors.accentError;
+  }
+}
+
+function statusLabel(status: HealthComponent['status']): string {
+  switch (status) {
+    case 'EXCELLENT':
+      return 'Excellent';
+    case 'GOOD':
+      return 'Good';
+    case 'FAIR':
+      return 'Fair';
+    case 'NEEDS_WORK':
+      return 'Needs work';
+    case 'CRITICAL':
+      return 'Critical';
+  }
+}
+
 function buildHealthData(apiResponse: any) {
   if (!apiResponse) return null;
   const score = Number(apiResponse.score ?? apiResponse.healthScore ?? 0);
   const componentsRaw = apiResponse.components ?? apiResponse.componentScores ?? {};
+
   const components: HealthComponent[] = Object.entries(COMPONENT_DEFS).map(([key, def]) => {
     const componentData = componentsRaw[key] ?? {};
     const compScore = Number(
@@ -99,275 +153,236 @@ function buildHealthData(apiResponse: any) {
     };
   });
 
+  const recommendations: string[] = Array.isArray(apiResponse.recommendations)
+    ? apiResponse.recommendations
+    : [];
+
   const history: number[] = apiResponse.history ?? apiResponse.scoreHistory ?? [score];
 
   return {
     score,
     rating: statusFromScore(score),
-    trend: 'stable' as 'up' | 'down' | 'stable',
-    trendValue: 0,
-    history,
     components,
+    recommendations,
+    history,
   };
-}
-
-function getRatingInfo(score: number) {
-  if (score >= 85) return { label: 'Excellent', color: HealthScoreColors.excellent, emoji: '🎉' };
-  if (score >= 70) return { label: 'Good', color: HealthScoreColors.good, emoji: '👍' };
-  if (score >= 55) return { label: 'Fair', color: HealthScoreColors.fair, emoji: '👌' };
-  if (score >= 40) return { label: 'Needs Work', color: HealthScoreColors.poor, emoji: '⚠️' };
-  return { label: 'Critical', color: HealthScoreColors.critical, emoji: '🚨' };
-}
-
-function getStatusColor(status: string) {
-  switch (status) {
-    case 'EXCELLENT':
-      return Colors.success;
-    case 'GOOD':
-      return Colors.successLight;
-    case 'FAIR':
-      return Colors.warning;
-    case 'NEEDS_WORK':
-      return Colors.error;
-    case 'CRITICAL':
-      return Colors.error;
-    default:
-      return Colors.gray400;
-  }
 }
 
 export function HealthScoreScreen({ navigation }: any) {
   const healthQuery = useHealthScore();
-  const healthData = useMemo(() => buildHealthData(healthQuery.data), [healthQuery.data]);
+  const data = useMemo(() => buildHealthData(healthQuery.data), [healthQuery.data]);
 
-  if (healthQuery.isLoading) {
+  if (healthQuery.isLoading && !data) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color={Colors.accentAi} />
+        <Text style={styles.loadingText}>Calculating your health score…</Text>
       </View>
     );
   }
 
-  if (!healthData) {
+  if (!data) {
     return (
       <View style={styles.container}>
         <Header title="Health Score" onBack={() => navigation.goBack()} />
         <EmptyState
           icon="📊"
-          title="Score not yet calculated"
-          message="Add transactions and refresh to see your financial health score"
-          actionLabel="Retry"
+          title="No health score yet"
+          message="We need a few weeks of transactions to compute your score. Add transactions or wait for SMS auto-capture to fill in."
+          actionLabel="Refresh"
           onAction={() => healthQuery.refetch()}
         />
       </View>
     );
   }
 
-  const ratingInfo = getRatingInfo(healthData.score);
-
-  // Sort components by weighted contribution (lowest score first)
-  const sortedComponents = [...healthData.components].sort((a, b) => a.score - b.score);
-
-  // Calculate next-level threshold
-  const nextLevel =
-    healthData.score >= 85 ? null : healthData.score >= 70 ? 85 : healthData.score >= 55 ? 70 : 55;
-
   return (
     <View style={styles.container}>
-      <Header
-        title="Financial Health"
-        subtitle="Your money score breakdown"
-        onBack={() => navigation.goBack()}
-      />
+      <Header title="Health Score" onBack={() => navigation.goBack()} />
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Hero score card */}
-        <Card style={styles.heroCard}>
-          <View style={styles.heroContent}>
-            <ProgressRing
-              progress={healthData.score}
-              size={180}
-              strokeWidth={16}
-              color={ratingInfo.color}
-              backgroundColor={Colors.gray100}
-            >
-              <Text style={styles.heroEmoji}>{ratingInfo.emoji}</Text>
-              <Text style={[styles.heroScore, { color: ratingInfo.color }]}>
-                {healthData.score}
-              </Text>
-              <Text style={styles.heroMax}>out of 100</Text>
-            </ProgressRing>
-          </View>
-          <Badge text={ratingInfo.label} variant="success" />
-          <View style={styles.trendRow}>
-            <Text
-              style={[
-                styles.trendIcon,
-                {
-                  color:
-                    healthData.trend === 'up'
-                      ? Colors.success
-                      : healthData.trend === 'down'
-                        ? Colors.error
-                        : Colors.textSecondary,
-                },
-              ]}
-            >
-              {healthData.trend === 'up' ? '↑' : healthData.trend === 'down' ? '↓' : '→'}
-            </Text>
-            <Text style={styles.trendText}>+{healthData.trendValue} from last week</Text>
-          </View>
-        </Card>
+        <Card variant="ai" padding="xl" style={{ alignItems: 'center' }}>
+          <ProgressRing progress={data.score} size={200} strokeWidth={14} gradient>
+            <Text style={styles.heroScore}>{Math.round(data.score)}</Text>
+            <Text style={styles.heroScoreUnit}>OUT OF 100</Text>
+          </ProgressRing>
 
-        {/* History sparkline */}
-        <Card style={styles.historyCard}>
-          <Text style={styles.historyTitle}>Score History (7 weeks)</Text>
-          <View style={styles.sparkline}>
-            {healthData.history.map((score, idx) => {
-              const max = Math.max(...healthData.history);
-              const heightRatio = score / max;
-              const isLatest = idx === healthData.history.length - 1;
-              return (
-                <View key={idx} style={styles.sparkBar}>
-                  <View
-                    style={[
-                      styles.sparkBarFill,
-                      {
-                        height: `${heightRatio * 100}%`,
-                        backgroundColor: isLatest ? ratingInfo.color : Colors.gray300,
-                      },
-                    ]}
-                  />
-                  <Text style={styles.sparkLabel}>{score}</Text>
-                </View>
-              );
-            })}
+          <View style={styles.ratingRow}>
+            <Sparkles size={14} color={Colors.accentAi} strokeWidth={2} />
+            <Text style={styles.ratingText}>{getHealthRating(data.score)}</Text>
           </View>
-        </Card>
 
-        {/* Next level */}
-        {nextLevel && (
-          <Card style={styles.nextLevelCard}>
-            <View style={styles.nextLevelHeader}>
-              <Text style={styles.nextLevelIcon}>🎯</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.nextLevelTitle}>
-                  {nextLevel - healthData.score} points to next level
-                </Text>
-                <Text style={styles.nextLevelSubtitle}>
-                  Reach {nextLevel} to be{' '}
-                  {nextLevel === 85 ? 'Excellent' : nextLevel === 70 ? 'Good' : 'Fair'}
-                </Text>
-              </View>
+          {data.history.length > 1 && (
+            <View style={styles.historyBlock}>
+              <Text style={styles.historyLabel}>30-DAY HISTORY</Text>
+              <SparkBar values={data.history.slice(-12)} />
             </View>
-            <ProgressBar
-              progress={(healthData.score / nextLevel) * 100}
-              color={ratingInfo.color}
-              height={8}
-              style={{ marginTop: Spacing.sm }}
-            />
-          </Card>
+          )}
+        </Card>
+
+        {/* Components */}
+        <Section
+          title="What drives your score"
+          subtitle="Each factor is weighted by how strongly it influences your overall score."
+          style={{ marginTop: Spacing.lg }}
+        >
+          <View>
+            {data.components.map((c) => (
+              <ComponentRow key={c.key} component={c} />
+            ))}
+          </View>
+        </Section>
+
+        {/* AI recommendations */}
+        {data.recommendations.length > 0 && (
+          <Section
+            title="AI recommendations"
+            subtitle="Top actions to improve your score this month"
+            highlightTitle
+            style={{ marginTop: Spacing.lg }}
+          >
+            <View>
+              {data.recommendations.slice(0, 5).map((rec, idx) => (
+                <Card key={idx} variant="ai" padding="base" style={{ marginBottom: Spacing.sm }}>
+                  <View style={styles.recRow}>
+                    <View style={styles.recIcon}>
+                      <Lightbulb size={16} color={Colors.accentAi} strokeWidth={1.75} />
+                    </View>
+                    <Text style={styles.recText}>{rec}</Text>
+                  </View>
+                </Card>
+              ))}
+            </View>
+          </Section>
         )}
 
-        {/* Component breakdown */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Score Breakdown</Text>
-          <Text style={styles.sectionSubtitle}>Lowest scores first - focus on these</Text>
-          {sortedComponents.map((comp) => (
-            <ComponentCard key={comp.key} component={comp} />
-          ))}
-        </View>
+        {/* Score scale legend */}
+        <Section title="Score guide" style={{ marginTop: Spacing.lg }}>
+          <Card padding="base">
+            <ScoreRange label="Excellent" range="85–100" color={Colors.accentSuccess} />
+            <ScoreRange label="Good" range="70–84" color="#34D399" />
+            <ScoreRange label="Fair" range="55–69" color={Colors.accentWarning} />
+            <ScoreRange label="Needs work" range="40–54" color="#F87171" />
+            <ScoreRange label="Critical" range="0–39" color={Colors.accentError} isLast />
+          </Card>
+        </Section>
 
-        {/* What this means */}
-        <Card style={styles.explainCard}>
-          <Text style={styles.explainTitle}>📚 What is the Health Score?</Text>
-          <Text style={styles.explainText}>
-            Your Financial Health Score is like CIBIL but for spending behavior. It evaluates your
-            habits across 7 dimensions weighted by importance.
-          </Text>
-          <View style={styles.scoreRanges}>
-            <ScoreRange label="Excellent" range="85-100" color={HealthScoreColors.excellent} />
-            <ScoreRange label="Good" range="70-84" color={HealthScoreColors.good} />
-            <ScoreRange label="Fair" range="55-69" color={HealthScoreColors.fair} />
-            <ScoreRange label="Needs Work" range="40-54" color={HealthScoreColors.poor} />
-            <ScoreRange label="Critical" range="0-39" color={HealthScoreColors.critical} />
-          </View>
-        </Card>
-
-        <View style={{ height: Spacing['2xl'] }} />
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
     </View>
   );
 }
 
-function ComponentCard({ component: comp }: { component: HealthComponent }) {
-  const statusColor = getStatusColor(comp.status);
+// =============================================================
+// Component row
+// =============================================================
+function ComponentRow({ component }: { component: HealthComponent }) {
+  const Icon = component.icon;
+  const color = colorForStatus(component.status);
 
   return (
-    <Card style={styles.componentCard}>
-      <View style={styles.compHeader}>
-        <Text style={styles.compIcon}>{comp.icon}</Text>
+    <Card padding="base" style={{ marginBottom: Spacing.sm }}>
+      <View style={styles.componentRow}>
+        <View
+          style={[
+            styles.componentIcon,
+            {
+              backgroundColor: color + '22',
+              borderColor: color + '44',
+            },
+          ]}
+        >
+          <Icon size={18} color={color} strokeWidth={1.75} />
+        </View>
         <View style={{ flex: 1 }}>
-          <View style={styles.compTitleRow}>
-            <Text style={styles.compName}>{comp.name}</Text>
-            <Text style={styles.compWeight}>{comp.weight}% weight</Text>
+          <View style={styles.componentTitleRow}>
+            <Text style={styles.componentName}>{component.name}</Text>
+            <Text style={[styles.componentScore, { color }]}>{Math.round(component.score)}</Text>
           </View>
-          <Text style={styles.compDescription}>{comp.description}</Text>
-        </View>
-      </View>
-
-      {/* Score */}
-      <View style={styles.compScoreRow}>
-        <Text style={[styles.compScoreValue, { color: statusColor }]}>{comp.score}</Text>
-        <Text style={styles.compScoreMax}>/100</Text>
-        <View style={styles.compScoreBadge}>
-          <Badge
-            text={comp.status.replace('_', ' ')}
-            variant={
-              comp.status === 'EXCELLENT'
-                ? 'success'
-                : comp.status === 'GOOD'
+          <View style={{ marginTop: 4 }}>
+            <ProgressBar progress={component.score} color={color} />
+          </View>
+          <View style={styles.componentMeta}>
+            <Text style={styles.componentWeight}>Weight: {component.weight}%</Text>
+            <Badge
+              text={statusLabel(component.status)}
+              variant={
+                component.status === 'EXCELLENT'
                   ? 'success'
-                  : comp.status === 'FAIR'
-                    ? 'warning'
-                    : 'error'
-            }
-            size="sm"
-          />
+                  : component.status === 'GOOD'
+                    ? 'success'
+                    : component.status === 'FAIR'
+                      ? 'warning'
+                      : 'error'
+              }
+              size="sm"
+            />
+          </View>
+          {component.description ? (
+            <Text style={styles.componentDescription}>{component.description}</Text>
+          ) : null}
+          {component.improvementTips.length > 0 && (
+            <View style={styles.tipsBlock}>
+              {component.improvementTips.slice(0, 2).map((tip, i) => (
+                <View key={i} style={styles.tipRow}>
+                  <CheckCircle2 size={12} color={Colors.accentAi} strokeWidth={2} />
+                  <Text style={styles.tipText}>{tip}</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       </View>
-
-      <ProgressBar
-        progress={comp.score}
-        color={statusColor}
-        height={8}
-        style={{ marginVertical: Spacing.sm }}
-      />
-
-      <Text style={styles.compDetails}>{comp.details}</Text>
-
-      {/* Improvement tips */}
-      {comp.score < 80 && (
-        <View style={styles.tipsContainer}>
-          <Text style={styles.tipsHeader}>💡 How to improve</Text>
-          {comp.improvementTips.map((tip, idx) => (
-            <View key={idx} style={styles.tipRow}>
-              <Text style={styles.tipBullet}>•</Text>
-              <Text style={styles.tipItem}>{tip}</Text>
-            </View>
-          ))}
-        </View>
-      )}
     </Card>
   );
 }
 
-function ScoreRange({ label, range, color }: { label: string; range: string; color: string }) {
+function ScoreRange({
+  label,
+  range,
+  color,
+  isLast,
+}: {
+  label: string;
+  range: string;
+  color: string;
+  isLast?: boolean;
+}) {
   return (
-    <View style={styles.rangeRow}>
-      <View style={[styles.rangeDot, { backgroundColor: color }]} />
-      <Text style={styles.rangeLabel}>{label}</Text>
-      <Text style={styles.rangeValue}>{range}</Text>
+    <View style={[styles.scoreRangeRow, !isLast && styles.scoreRangeBordered]}>
+      <View style={[styles.scoreRangeDot, { backgroundColor: color }]} />
+      <Text style={styles.scoreRangeLabel}>{label}</Text>
+      <Text style={styles.scoreRangeValue}>{range}</Text>
+    </View>
+  );
+}
+
+// =============================================================
+// Mini sparkline using stacked bars (no SVG dependency)
+// =============================================================
+function SparkBar({ values }: { values: number[] }) {
+  const max = Math.max(...values, 1);
+  return (
+    <View style={styles.sparkRow}>
+      {values.map((v, i) => {
+        const h = Math.max(4, (v / max) * 28);
+        const tone =
+          v >= 70 ? Colors.accentSuccess : v >= 55 ? Colors.accentWarning : Colors.accentError;
+        return (
+          <View
+            key={i}
+            style={{
+              flex: 1,
+              marginHorizontal: 2,
+              height: h,
+              borderRadius: 2,
+              backgroundColor: tone,
+              opacity: 0.4 + (i / values.length) * 0.6,
+            }}
+          />
+        );
+      })}
     </View>
   );
 }
@@ -377,237 +392,186 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
-  // Hero
-  heroCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
+  center: {
     alignItems: 'center',
-    paddingVertical: Spacing.xl,
+    justifyContent: 'center',
   },
-  heroContent: {
-    alignItems: 'center',
-  },
-  heroEmoji: {
-    fontSize: 24,
-  },
-  heroScore: {
-    fontSize: 56,
-    fontWeight: Typography.weights.bold,
-    lineHeight: 60,
-  },
-  heroMax: {
-    fontSize: Typography.sizes.xs,
+  loadingText: {
+    marginTop: Spacing.base,
+    fontSize: Typography.sizes.base,
     color: Colors.textSecondary,
-    marginTop: -4,
   },
-  trendRow: {
+  scrollContent: {
+    padding: Spacing.lg,
+    paddingTop: Spacing.sm,
+  },
+
+  // Hero
+  heroScore: {
+    fontSize: 72,
+    lineHeight: 78,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -2,
+  },
+  heroScoreUnit: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 1.2,
+    fontWeight: Typography.weights.medium,
+  },
+  ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Spacing.sm,
+    marginTop: Spacing.lg,
+    gap: 6,
   },
-  trendIcon: {
+  ratingText: {
     fontSize: Typography.sizes.lg,
-    marginRight: Spacing.xs,
+    fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+    color: Colors.accentAi,
+    letterSpacing: -0.2,
   },
-  trendText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
+
+  historyBlock: {
+    width: '100%',
+    marginTop: Spacing.xl,
   },
-  // History
-  historyCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-  },
-  historyTitle: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
+  historyLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 1.2,
+    fontWeight: Typography.weights.medium,
     marginBottom: Spacing.sm,
   },
-  sparkline: {
+  sparkRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    height: 80,
-    gap: Spacing.xs,
+    height: 32,
   },
-  sparkBar: {
-    flex: 1,
-    height: '100%',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  sparkBarFill: {
-    width: '100%',
-    borderRadius: 4,
-  },
-  sparkLabel: {
-    fontSize: 9,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  // Next level
-  nextLevelCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-    backgroundColor: Tints.primaryBg,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight,
-  },
-  nextLevelHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  nextLevelIcon: {
-    fontSize: 28,
-    marginRight: Spacing.sm,
-  },
-  nextLevelTitle: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  nextLevelSubtitle: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  // Section
-  section: {
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
-  },
-  sectionTitle: {
-    fontSize: Typography.sizes.lg,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-  },
-  sectionSubtitle: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    marginTop: 2,
-    marginBottom: Spacing.base,
-  },
-  // Component card
-  componentCard: {
-    marginBottom: Spacing.base,
-  },
-  compHeader: {
+
+  // Component
+  componentRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: Spacing.sm,
   },
-  compIcon: {
-    fontSize: 28,
+  componentIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.sm,
   },
-  compTitleRow: {
+  componentTitleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  compName: {
+  componentName: {
     flex: 1,
     fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
+    fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
   },
-  compWeight: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
-  },
-  compDescription: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  compScoreRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: Spacing.xs,
-  },
-  compScoreValue: {
-    fontSize: Typography.sizes['2xl'],
+  componentScore: {
+    fontSize: Typography.sizes.xl,
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.4,
+    marginLeft: Spacing.sm,
   },
-  compScoreMax: {
+  componentMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: Spacing.xs,
+    gap: Spacing.sm,
+  },
+  componentWeight: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.textTertiary,
+    letterSpacing: 0.4,
+  },
+  componentDescription: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
+    marginTop: Spacing.xs,
+    lineHeight: Typography.sizes.sm * 1.4,
   },
-  compScoreBadge: {
-    marginLeft: 'auto',
-  },
-  compDetails: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    fontStyle: 'italic',
-  },
-  // Tips
-  tipsContainer: {
+  tipsBlock: {
     marginTop: Spacing.sm,
     paddingTop: Spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: Colors.gray100,
-  },
-  tipsHeader: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.xs,
+    borderTopColor: Colors.borderDefault,
+    gap: 4,
   },
   tipRow: {
     flexDirection: 'row',
-    paddingVertical: 2,
+    alignItems: 'flex-start',
+    gap: 6,
   },
-  tipBullet: {
-    color: Colors.primary,
-    marginRight: 6,
-    fontWeight: Typography.weights.bold,
-  },
-  tipItem: {
+  tipText: {
     flex: 1,
-    fontSize: Typography.sizes.sm,
-    color: Colors.textPrimary,
-    lineHeight: Typography.sizes.sm * 1.4,
-  },
-  // Explain
-  explainCard: {
-    marginHorizontal: Spacing.lg,
-    backgroundColor: Colors.gray50,
-  },
-  explainTitle: {
-    fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.bold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.sm,
-  },
-  explainText: {
-    fontSize: Typography.sizes.sm,
+    fontSize: Typography.sizes.xs,
     color: Colors.textSecondary,
-    lineHeight: Typography.sizes.sm * 1.6,
-    marginBottom: Spacing.base,
+    lineHeight: Typography.sizes.xs * 1.5,
   },
-  scoreRanges: {
-    marginTop: Spacing.sm,
-  },
-  rangeRow: {
+
+  // Recommendations
+  recRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
+    alignItems: 'flex-start',
   },
-  rangeDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+  recIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.sm,
   },
-  rangeLabel: {
+  recText: {
     flex: 1,
     fontSize: Typography.sizes.sm,
     color: Colors.textPrimary,
+    lineHeight: Typography.sizes.sm * 1.5,
   },
-  rangeValue: {
+
+  // Score range legend
+  scoreRangeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  scoreRangeBordered: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderDefault,
+  },
+  scoreRangeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: Spacing.sm,
+  },
+  scoreRangeLabel: {
+    flex: 1,
+    fontSize: Typography.sizes.sm,
+    color: Colors.textPrimary,
+    fontWeight: Typography.weights.medium,
+  },
+  scoreRangeValue: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
-    fontWeight: Typography.weights.semiBold,
+    fontVariant: ['tabular-nums'] as any,
   },
 });
