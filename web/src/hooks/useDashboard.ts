@@ -4,10 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import {
   dashboardApi,
   aiApi,
-  goalsApi,
   actionCardsApi,
   subscriptionsApi,
-  accountsApi,
 } from '@/lib/api';
 import { QK } from './queryKeys';
 
@@ -44,13 +42,6 @@ export function useMoneyLeaks() {
   });
 }
 
-export function useGoals(params?: { isCompleted?: boolean }) {
-  return useQuery({
-    queryKey: QK.goals(params),
-    queryFn: async () => (await goalsApi.getAll(params)).data,
-  });
-}
-
 export function useActionCards(params?: { status?: string }) {
   return useQuery({
     queryKey: QK.actionCards(params),
@@ -72,13 +63,8 @@ export function useActiveSubscriptions() {
   });
 }
 
-export function useAccounts(params?: { isActive?: boolean }) {
-  return useQuery({
-    queryKey: QK.accounts,
-    queryFn: async () => (await accountsApi.getAll()).data,
-    select: (rows) =>
-      params?.isActive
-        ? rows.filter((a) => (a as { isActive?: boolean }).isActive !== false)
-        : rows,
-  });
-}
+// `useAccounts` and `useGoals` used to live here. They moved to
+// `useAccounts.ts` and `useGoals.ts` once Phase 8 introduced full CRUD
+// for both — keeping a single canonical hook per domain is what lets
+// `hooks/index.ts` re-export everything without duplicate-symbol
+// conflicts.

@@ -30,4 +30,12 @@ export const QK = {
 
   notifications: (unread?: boolean) => ['notifications', { unread }] as const,
   notificationsUnreadCount: ['notifications', 'unread-count'] as const,
+  notificationPreferences: ['notifications', 'preferences'] as const,
+
+  weeklySummaryCurrent: ['weekly-summary', 'current'] as const,
+  weeklySummaryHistory: (limit?: number) => ['weekly-summary', 'history', { limit }] as const,
+  weeklySummaryById: (id: string) => ['weekly-summary', id] as const,
+
+  pushTokens: ['push', 'tokens'] as const,
+  netWorth: ['accounts', 'net-worth'] as const,
 };

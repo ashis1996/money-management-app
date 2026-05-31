@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { useAccounts } from '@/hooks/useDashboard';
+import { useAccounts } from '@/hooks/useAccounts';
 import { useCreateTransaction } from '@/hooks/useTransactions';
 import { CATEGORIES, type CategoryOption } from '@/lib/categories';
 import { cn } from '@/lib/cn';
@@ -62,7 +62,11 @@ function localAISuggestion(merchant: string): {
 
 export default function NewTransactionPage() {
   const router = useRouter();
-  const accountsQuery = useAccounts({ isActive: true });
+  // The new accounts hook fetches an `isActive: true` filter
+  // server-side already (the backend's findAll filters out inactive
+  // and soft-deleted rows), so passing a type filter here is no longer
+  // necessary.
+  const accountsQuery = useAccounts();
   const createTx = useCreateTransaction();
 
   const accounts: AccountLite[] = useMemo(() => {
