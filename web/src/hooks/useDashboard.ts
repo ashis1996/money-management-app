@@ -1,7 +1,14 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { dashboardApi, aiApi, goalsApi, actionCardsApi, subscriptionsApi } from '@/lib/api';
+import {
+  dashboardApi,
+  aiApi,
+  goalsApi,
+  actionCardsApi,
+  subscriptionsApi,
+  accountsApi,
+} from '@/lib/api';
 import { QK } from './queryKeys';
 
 export function useDashboard() {
@@ -62,5 +69,16 @@ export function useActiveSubscriptions() {
   return useQuery({
     queryKey: QK.subscriptions('ACTIVE'),
     queryFn: async () => (await subscriptionsApi.getAll('ACTIVE')).data,
+  });
+}
+
+export function useAccounts(params?: { isActive?: boolean }) {
+  return useQuery({
+    queryKey: QK.accounts,
+    queryFn: async () => (await accountsApi.getAll()).data,
+    select: (rows) =>
+      params?.isActive
+        ? rows.filter((a) => (a as { isActive?: boolean }).isActive !== false)
+        : rows,
   });
 }
