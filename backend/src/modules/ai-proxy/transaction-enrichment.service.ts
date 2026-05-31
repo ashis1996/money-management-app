@@ -83,6 +83,19 @@ export class TransactionEnrichmentService {
       this.recomputeHealthScore(userId),
       this.regenerateActionCards(userId),
     ]);
+
+    // Recompute landed (or at least we tried). Drop every cached AI
+    // response for this user so the next dashboard / health-score read
+    // sees fresh data within the next request, not after the cache TTL.
+    // Failure here is logged but never thrown — the cache miss is
+    // recoverable on its own.
+    try {
+      await this.aiProxy.invalidateUser(userId);
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to invalidate AI cache for user=${userId}: ${err?.message ?? err}`,
+      );
+    }
   }
 
   /** Cooldown key for a given user. Namespaced so it can't collide. */

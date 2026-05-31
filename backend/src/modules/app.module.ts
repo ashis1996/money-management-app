@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { CacheModule } from '@nestjs/cache-manager';
+import { ScheduleModule } from '@nestjs/schedule';
 import { redisStore } from 'cache-manager-redis-store';
 import { UserModule } from './user/user.module';
 import { TransactionModule } from './transaction/transaction.module';
@@ -36,6 +37,10 @@ import { ConsumersModule } from '../common/consumers/consumers.module';
         limit: 100,
       },
     ]),
+
+    // Cron jobs (e.g. weekly subscription scan in SubscriptionScanCron).
+    // forRoot() registers the discovery service that finds @Cron handlers.
+    ScheduleModule.forRoot(),
 
     // -----------------------------------------------------------------
     // Caching.
