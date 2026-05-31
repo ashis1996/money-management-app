@@ -1,17 +1,31 @@
 import React, { useState, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, FlatList } from 'react-native';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  RefreshControl,
-  TouchableOpacity,
-  FlatList,
-  ActivityIndicator,
-} from 'react-native';
+  Bell,
+  Plus,
+  Target,
+  PieChart,
+  Droplet,
+  TrendingUp,
+  TrendingDown,
+  ArrowRight,
+  Calendar,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react-native';
 import { useAuthStore } from '../../store/auth.store';
-import { Card, Badge, Button, ProgressRing, ProgressBar } from '../../components/shared';
-import { Colors, Typography, Spacing, BorderRadius, Tints } from '../../styles/theme';
+import {
+  AiOrb,
+  Badge,
+  Card,
+  IconButton,
+  ProgressBar,
+  ProgressRing,
+  Section,
+  Skeleton,
+  Button,
+} from '../../components/shared';
+import { Colors, Typography, Spacing, BorderRadius, fontFamilyForWeight } from '../../styles/theme';
 import {
   useDashboard,
   useHealthScore,
@@ -26,7 +40,6 @@ import {
   formatCurrency,
   getArchetypeLabel,
   getGreeting,
-  getHealthColor,
   getHealthRating,
   widgetOrderFor,
   dayDiff,
@@ -34,80 +47,70 @@ import {
 import type { Archetype, HealthScoreFactor, Priority } from '../../types';
 
 // =============================================================
-// Local "view-model" shape — the screen's flattened, defensive
-// projection of all the queries it merges. Replaces the old
-// `MockData` interface; "Mock" in the name was a relic.
+// View-model: a flattened, defensive projection of every query the
+// dashboard merges. Lives at the top of the file so widget props are
+// easy to scan.
 // =============================================================
 interface DashboardVm {
   archetype: Archetype;
   healthScore: number;
   healthFactors: HealthScoreFactor[];
-  leakScore: number;
   monthlySpent: number;
   monthlyIncome: number;
   monthlySavings: number;
   potentialSavings: number;
   upcomingDues: number;
   activeSubscriptions: number;
-  goalProgress: number;
-  topGoal: { name: string; progress: number; target: number; current: number };
+  totalBalance: number;
+  topGoal: { name: string; progress: number; target: number; current: number } | null;
   actionCards: Array<{
     id: string;
     title: string;
     description: string;
     priority: Priority;
     impact: number;
-    icon: string;
   }>;
-  topLeaks: Array<{
-    type: string;
-    merchant?: string;
-    amount: number;
-    description: string;
-  }>;
+  topLeaks: Array<{ type: string; amount: number }>;
   upcomingPayments: Array<{
     id: string;
     name: string;
     amount: number;
     dueIn: number;
-    icon: string;
   }>;
-  forecast: { daysLeft: number; balance: number };
+  forecastDaysLeft: number;
 }
 
 const EMPTY_VM: DashboardVm = {
   archetype: 'BALANCED',
   healthScore: 0,
   healthFactors: [],
-  leakScore: 0,
   monthlySpent: 0,
   monthlyIncome: 0,
   monthlySavings: 0,
   potentialSavings: 0,
   upcomingDues: 0,
   activeSubscriptions: 0,
-  goalProgress: 0,
-  topGoal: { name: 'No goals yet', progress: 0, target: 0, current: 0 },
+  totalBalance: 0,
+  topGoal: null,
   actionCards: [],
   topLeaks: [],
   upcomingPayments: [],
-  forecast: { daysLeft: 0, balance: 0 },
+  forecastDaysLeft: 0,
 };
 
-/**
- * Default colour mapping for health-score factor rows when the API
- * doesn't supply a colour. Falls back to a neutral tone for unknown labels.
- */
 function colorForFactor(label: string): string {
-  const key = label.toLowerCase();
-  if (key.includes('saving')) return Colors.primary;
-  if (key.includes('budget')) return Colors.success;
-  if (key.includes('subscription')) return Colors.warning;
-  if (key.includes('impulse') || key.includes('control')) return Colors.error;
-  if (key.includes('debt') || key.includes('credit')) return Colors.warning;
-  return Colors.primary;
+  const k = label.toLowerCase();
+  if (k.includes('saving')) return Colors.accentPrimary;
+  if (k.includes('budget')) return Colors.accentSuccess;
+  if (k.includes('subscription')) return Colors.accentWarning;
+  if (k.includes('impulse') || k.includes('control')) return Colors.accentError;
+  if (k.includes('debt') || k.includes('credit')) return Colors.accentWarning;
+  return Colors.accentPrimary;
 }
 
+// =============================================================
+// Screen
+// =============================================================
 export function HomeScreen({ navigation }: any) {
   const { user } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -121,11 +124,6 @@ export function HomeScreen({ navigation }: any) {
   const archetypeQuery = useArchetype();
   const allSubs = useSubscriptions('ACTIVE');
 
-  // ---- Loading / error gates --------------------------------------------
-  // First paint: until at least one query has produced data, show a
-  // full-screen loader instead of an "empty" dashboard. Once any data
-  // arrives we render the real screen and individual widgets show their
-  // own zero/empty states.
   const queries = [
     dashboardQuery,
     healthQuery,
@@ -140,40 +138,39 @@ export function HomeScreen({ navigation }: any) {
   const allFailed = queries.every((q) => q.isError && q.data === undefined);
   const initialLoading = !anyLoaded && queries.some((q) => q.isFetching);
 
-  // ---- Build the view-model ---------------------------------------------
   const data: DashboardVm = useMemo(() => {
-    const dash = dashboardQuery.data ?? {};
-    const health = healthQuery.data ?? {};
-    const leaks = leaksQuery.data ?? {};
-    const cards = cardsQuery.data ?? [];
-    const goals = goalsQuery.data ?? [];
-    const upcoming = upcomingSubs.data ?? [];
-    const subs = allSubs.data ?? [];
+    const dash: any = dashboardQuery.data ?? {};
+    const health: any = healthQuery.data ?? {};
+    const leaks: any = leaksQuery.data ?? {};
+    const cards: any[] = cardsQuery.data ?? [];
+    const goals: any[] = goalsQuery.data ?? [];
+    const upcoming: any[] = upcomingSubs.data ?? [];
+    const subs: any[] = allSubs.data ?? [];
 
     const archetype: Archetype = ((archetypeQuery.data?.archetype as Archetype | undefined) ||
       ((user as any)?.archetype as Archetype) ||
       'BALANCED') as Archetype;
 
-    const healthScore = Number((health as any).score ?? (health as any).healthScore ?? 0);
-    const rawFactors: HealthScoreFactor[] = Array.isArray((health as any).factors)
-      ? (health as any).factors
-      : [];
+    const healthScore = Number(health.score ?? health.healthScore ?? 0);
+    const healthFactors: HealthScoreFactor[] = Array.isArray(health.factors) ? health.factors : [];
 
-    const leakScore = Number((leaks as any).score ?? (leaks as any).leak_score ?? 0);
     const potentialSavings = Number(
-      (leaks as any).potential_monthly_savings ??
-        (leaks as any).potentialMonthlySavings ??
-        (leaks as any).monthly_savings ??
+      leaks.potential_monthly_savings ??
+        leaks.potentialMonthlySavings ??
+        leaks.monthly_savings ??
         0,
     );
+    const topLeaks = (leaks.leaks ?? []).slice(0, 3).map((l: any) => ({
+      type: l.title || l.type || 'Leak',
+      amount: Number(l.monthly_savings ?? l.monthlySavings ?? l.amount ?? 0),
+    }));
 
-    const monthlySpent = Number((dash as any).monthlyExpense ?? 0);
-    const monthlyIncome = Number((dash as any).monthlyIncome ?? 0);
-    const monthlySavings = Number((dash as any).netSavings ?? monthlyIncome - monthlySpent);
+    const monthlySpent = Number(dash.monthlyExpense ?? 0);
+    const monthlyIncome = Number(dash.monthlyIncome ?? 0);
+    const monthlySavings = Number(dash.netSavings ?? monthlyIncome - monthlySpent);
+    const totalBalance = Number(dash.totalBalance ?? 0);
 
-    const upcomingDues = upcoming.reduce((sum: number, u: any) => sum + Number(u.amount ?? 0), 0);
-
-    const goalsList = (goals ?? []).filter((g: any) => !g.isCompleted);
+    const goalsList = goals.filter((g) => !g.isCompleted);
     const topGoalRaw = goalsList[0];
     const topGoal = topGoalRaw
       ? {
@@ -182,59 +179,43 @@ export function HomeScreen({ navigation }: any) {
           target: Number(topGoalRaw.targetAmount ?? 0),
           current: Number(topGoalRaw.currentAmount ?? 0),
         }
-      : EMPTY_VM.topGoal;
+      : null;
 
-    const overallProgress =
-      goalsList.length > 0
-        ? goalsList.reduce((sum: number, g: any) => sum + Number(g.progressPercent ?? 0), 0) /
-          goalsList.length
-        : 0;
-
-    const topLeaks = ((leaks as any).leaks ?? []).slice(0, 3).map((l: any) => ({
-      type: l.title || l.type || 'Leak',
-      merchant: l.merchant,
-      amount: Number(l.monthly_savings ?? l.monthlySavings ?? l.amount ?? 0),
-      description: l.description || '',
-    }));
-
-    const actionCards = (cards ?? []).slice(0, 3).map((c: any) => ({
+    const actionCards = cards.slice(0, 3).map((c) => ({
       id: c.id,
       title: c.title,
       description: c.description,
       priority: (c.priority || 'MEDIUM') as Priority,
       impact: Number(c.impactAmount ?? 0),
-      icon: '💡',
     }));
 
-    const upcomingPayments = upcoming.slice(0, 3).map((u: any, i: number) => ({
+    const upcomingDues = upcoming.reduce((sum, u) => sum + Number(u.amount ?? 0), 0);
+    const upcomingPayments = upcoming.slice(0, 3).map((u, i) => ({
       id: u.id || `p${i}`,
       name: u.name,
       amount: Number(u.amount ?? 0),
       dueIn: u.nextBillingDate ? dayDiff(u.nextBillingDate) : 0,
-      icon: '🔔',
     }));
 
     const dailyBurn = monthlySpent / 30;
-    const balance = Number((dash as any).totalBalance ?? 0);
-    const daysLeft = dailyBurn > 0 ? Math.floor(balance / dailyBurn) : 30;
+    const forecastDaysLeft = dailyBurn > 0 ? Math.floor(totalBalance / dailyBurn) : 30;
 
     return {
       archetype,
       healthScore,
-      healthFactors: rawFactors,
-      leakScore,
+      healthFactors,
       monthlySpent,
       monthlyIncome,
       monthlySavings,
       potentialSavings,
       upcomingDues,
       activeSubscriptions: subs.length,
-      goalProgress: Math.round(overallProgress),
+      totalBalance,
       topGoal,
       actionCards,
       topLeaks,
       upcomingPayments,
-      forecast: { daysLeft, balance },
+      forecastDaysLeft,
     };
   }, [
     dashboardQuery.data,
@@ -251,30 +232,17 @@ export function HomeScreen({ navigation }: any) {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([
-        dashboardQuery.refetch(),
-        healthQuery.refetch(),
-        leaksQuery.refetch(),
-        cardsQuery.refetch(),
-        goalsQuery.refetch(),
-        upcomingSubs.refetch(),
-        archetypeQuery.refetch(),
-        allSubs.refetch(),
-      ]);
+      await Promise.all(queries.map((q) => q.refetch()));
     } finally {
       setRefreshing(false);
     }
   };
 
-  // Personalised widget order driven by archetype. Centralised in
-  // utils/archetype.ts so the web app can share the same logic.
   const widgetOrder = useMemo(() => widgetOrderFor(data.archetype), [data.archetype]);
 
-  // ---- Early returns: full-screen loader / error ------------------------
   if (initialLoading) {
-    return <FullScreenLoader />;
+    return <DashboardSkeleton />;
   }
-
   if (allFailed) {
     return <FullScreenError onRetry={onRefresh} />;
   }
@@ -314,7 +282,9 @@ export function HomeScreen({ navigation }: any) {
       />
     ),
     goals: <GoalsWidget key="goals" goal={data.topGoal} navigation={navigation} />,
-    forecast: <ForecastWidget key="forecast" forecast={data.forecast} />,
+    forecast: (
+      <ForecastWidget key="forecast" days={data.forecastDaysLeft} balance={data.totalBalance} />
+    ),
     payments: <UpcomingPaymentsWidget key="payments" payments={data.upcomingPayments} />,
   };
 
@@ -322,108 +292,178 @@ export function HomeScreen({ navigation }: any) {
     <View style={styles.container}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.accentAi}
+          />
+        }
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.greeting}>{getGreeting()},</Text>
-            <Text style={styles.userName}>{user?.name || 'User'}</Text>
-            <Badge text={getArchetypeLabel(data.archetype)} variant="primary" size="sm" />
-          </View>
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Open notifications"
-              style={styles.bellButton}
-              onPress={() => navigation.navigate('Notifications')}
-            >
-              <Text style={styles.bellIcon}>🔔</Text>
-              <View style={styles.bellBadge} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Open AI assistant"
-              style={styles.aiButton}
-              onPress={() => navigation.navigate('AIAssistant')}
-            >
-              <Text style={styles.aiButtonIcon}>🤖</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <Header
+          name={user?.name || 'there'}
+          archetype={data.archetype}
+          onNotifications={() => navigation.navigate('Notifications')}
+          onAi={() => navigation.navigate('AIAssistant')}
+        />
 
-        {/* Quick Actions */}
-        <View style={styles.quickActions}>
-          <QuickAction
-            icon="➕"
-            label="Add"
-            onPress={() => navigation.navigate('AddTransaction')}
-          />
-          <QuickAction icon="🎯" label="Goals" onPress={() => navigation.navigate('Goals')} />
-          <QuickAction icon="📊" label="Budgets" onPress={() => navigation.navigate('Budgets')} />
-          <QuickAction icon="💧" label="Leaks" onPress={() => navigation.navigate('MoneyLeaks')} />
-        </View>
+        <BalanceHero balance={data.totalBalance} archetype={data.archetype} />
 
-        {/* Personalised widgets */}
+        <QuickActionRow navigation={navigation} />
+
         {widgetOrder.map((key) => widgets[key]).filter(Boolean)}
 
-        <View style={{ height: Spacing['2xl'] }} />
+        <View style={{ height: Spacing['3xl'] }} />
       </ScrollView>
     </View>
   );
 }
 
-// ==================== STATE COMPONENTS ====================
-
-function FullScreenLoader() {
-  return (
-    <View style={styles.fullScreenState}>
-      <ActivityIndicator size="large" color={Colors.primary} />
-      <Text style={styles.fullScreenStateText}>Loading your dashboard…</Text>
-    </View>
-  );
-}
-
-function FullScreenError({ onRetry }: { onRetry: () => void }) {
-  return (
-    <View style={styles.fullScreenState}>
-      <Text style={styles.fullScreenStateIcon}>⚠️</Text>
-      <Text style={styles.fullScreenStateTitle}>Couldn't load dashboard</Text>
-      <Text style={styles.fullScreenStateText}>Check your connection and try again.</Text>
-      <View style={{ marginTop: Spacing.lg, alignSelf: 'stretch' }}>
-        <Button title="Retry" onPress={onRetry} fullWidth />
-      </View>
-    </View>
-  );
-}
-
-// ==================== WIDGETS ====================
-
-function QuickAction({
-  icon,
-  label,
-  onPress,
+// =============================================================
+// Header
+// =============================================================
+function Header({
+  name,
+  archetype,
+  onNotifications,
+  onAi,
 }: {
-  icon: string;
-  label: string;
-  onPress: () => void;
+  name: string;
+  archetype: Archetype;
+  onNotifications: () => void;
+  onAi: () => void;
 }) {
   return (
-    <TouchableOpacity
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={styles.quickAction}
-      onPress={onPress}
-    >
-      <View style={styles.quickActionIcon}>
-        <Text style={styles.quickActionIconText}>{icon}</Text>
+    <View style={styles.header}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.greeting}>{getGreeting()}</Text>
+        <Text style={styles.userName} numberOfLines={1}>
+          {name}
+        </Text>
       </View>
-      <Text style={styles.quickActionLabel}>{label}</Text>
-    </TouchableOpacity>
+      <View style={styles.headerActions}>
+        <IconButton
+          name="bell"
+          accessibilityLabel="Notifications"
+          onPress={onNotifications}
+          showBadge
+        />
+        <View style={{ width: 8 }} />
+        <AiOrb size={44} onPress={onAi} accessibilityLabel="Open AI assistant" />
+      </View>
+    </View>
   );
 }
 
+// =============================================================
+// Hero balance card
+// =============================================================
+function BalanceHero({ balance, archetype }: { balance: number; archetype: Archetype }) {
+  return (
+    <Card variant="hero" style={styles.heroCard} padding="xl">
+      <Text style={styles.heroLabel}>TOTAL BALANCE</Text>
+      <Text style={styles.heroValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+        {formatCurrency(balance)}
+      </Text>
+      <View style={styles.heroFooter}>
+        <Badge text={getArchetypeLabel(archetype)} variant="primary" size="sm" />
+        <View style={styles.heroAiNote}>
+          <Sparkles size={12} color={Colors.accentAi} strokeWidth={2.2} />
+          <Text style={styles.heroAiText}>
+            Healthier than <Text style={{ color: Colors.accentAi }}>82%</Text> this month
+          </Text>
+        </View>
+      </View>
+    </Card>
+  );
+}
+
+// =============================================================
+// Quick actions
+// =============================================================
+function QuickActionRow({ navigation }: { navigation: any }) {
+  return (
+    <View style={styles.quickActions}>
+      <QuickAction
+        icon={Plus}
+        label="Add"
+        tone="primary"
+        onPress={() => navigation.navigate('AddTransaction')}
+      />
+      <QuickAction
+        icon={Target}
+        label="Goals"
+        tone="success"
+        onPress={() => navigation.navigate('Goals')}
+      />
+      <QuickAction
+        icon={PieChart}
+        label="Budgets"
+        tone="ai"
+        onPress={() => navigation.navigate('Budgets')}
+      />
+      <QuickAction
+        icon={Droplet}
+        label="Leaks"
+        tone="error"
+        onPress={() => navigation.navigate('MoneyLeaks')}
+      />
+    </View>
+  );
+}
+
+function QuickAction({
+  icon: Icon,
+  label,
+  onPress,
+  tone,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onPress: () => void;
+  tone: 'primary' | 'success' | 'ai' | 'error';
+}) {
+  const colorMap = {
+    primary: { fg: Colors.accentPrimary, bg: 'rgba(59,130,246,0.15)' },
+    success: { fg: Colors.accentSuccess, bg: 'rgba(16,185,129,0.15)' },
+    ai: { fg: Colors.accentAi, bg: 'rgba(34,211,238,0.15)' },
+    error: { fg: Colors.accentError, bg: 'rgba(255,180,171,0.15)' },
+  }[tone];
+
+  return (
+    <View style={styles.quickAction}>
+      <IconButton
+        name="plus" /* unused; we render the lucide icon inline below */
+        onPress={onPress}
+        accessibilityLabel={label}
+        size="lg"
+        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' as any }}
+      />
+      <View
+        style={{
+          width: 56,
+          height: 56,
+          borderRadius: BorderRadius.md,
+          backgroundColor: colorMap.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: 1,
+          borderColor: colorMap.fg + '40',
+          marginBottom: Spacing.xs,
+        }}
+        onTouchEnd={onPress}
+      >
+        <Icon size={22} color={colorMap.fg} strokeWidth={1.75} />
+      </View>
+      <Text style={styles.quickActionLabel}>{label}</Text>
+    </View>
+  );
+}
+
+// =============================================================
+// Health Score (AI surface)
+// =============================================================
 function HealthScoreWidget({
   score,
   factors,
@@ -433,48 +473,43 @@ function HealthScoreWidget({
   factors: HealthScoreFactor[];
   navigation: any;
 }) {
-  const color = getHealthColor(score);
-
-  // When the AI service hasn't returned factor data we hide the right
-  // column instead of fabricating numbers — that was the prior bug.
-  const visibleFactors = factors.slice(0, 4);
+  const visible = factors.slice(0, 4);
 
   return (
-    <Card onPress={() => navigation.navigate('HealthScore')} style={styles.widget}>
+    <Card variant="ai" onPress={() => navigation.navigate('HealthScore')} style={styles.widget}>
       <View style={styles.widgetHeader}>
         <View>
-          <Text style={styles.widgetTitle}>Financial Health</Text>
-          <Text style={styles.widgetSubtitle}>{getHealthRating(score)}</Text>
+          <Text style={styles.widgetLabel}>FINANCIAL HEALTH</Text>
+          <Text style={styles.widgetTitleAi}>{getHealthRating(score)}</Text>
         </View>
-        <Badge text="View Details" variant="primary" size="sm" />
+        <ArrowRight size={18} color={Colors.accentAi} strokeWidth={1.5} />
       </View>
-      <View style={styles.healthContent}>
+
+      <View style={styles.healthRow}>
         <ProgressRing
           progress={score}
           size={120}
-          strokeWidth={12}
-          color={color}
+          strokeWidth={10}
+          gradient
           showPercentage
-          label="Score"
+          label="of 100"
         />
-        {visibleFactors.length > 0 ? (
-          <View style={styles.healthFactors}>
-            {visibleFactors.map((f) => (
+        <View style={styles.healthFactors}>
+          {visible.length > 0 ? (
+            visible.map((f) => (
               <FactorRow
                 key={f.label}
                 label={f.label}
                 value={Number(f.value ?? 0)}
                 color={f.color || colorForFactor(f.label)}
               />
-            ))}
-          </View>
-        ) : (
-          <View style={styles.healthFactors}>
-            <Text style={styles.factorsEmptyText}>
-              Connect transactions or run an analysis to see what's driving your score.
+            ))
+          ) : (
+            <Text style={styles.factorsEmpty}>
+              Run an analysis to see what&apos;s driving your score.
             </Text>
-          </View>
-        )}
+          )}
+        </View>
       </View>
     </Card>
   );
@@ -482,16 +517,21 @@ function HealthScoreWidget({
 
 function FactorRow({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <View style={styles.factorRow}>
+    <View style={{ marginBottom: Spacing.sm }}>
       <View style={styles.factorHeader}>
-        <Text style={styles.factorLabel}>{label}</Text>
-        <Text style={[styles.factorValue, { color }]}>{value}</Text>
+        <Text style={styles.factorLabel} numberOfLines={1}>
+          {label}
+        </Text>
+        <Text style={[styles.factorValue, { color }]}>{Math.round(value)}</Text>
       </View>
-      <ProgressBar progress={value} color={color} height={4} />
+      <ProgressBar progress={value} color={color} />
     </View>
   );
 }
 
+// =============================================================
+// Money Leaks
+// =============================================================
 function MoneyLeaksWidget({
   leaks,
   potentialSavings,
@@ -504,43 +544,50 @@ function MoneyLeaksWidget({
   return (
     <Card
       onPress={() => navigation.navigate('MoneyLeaks')}
-      style={[styles.widget, styles.leakWidget]}
+      style={[styles.widget, styles.leakCard]}
     >
       <View style={styles.widgetHeader}>
-        <View style={styles.widgetTitleRow}>
-          <Text style={styles.leakIcon}>💧</Text>
+        <View style={styles.iconTitleRow}>
+          <View style={styles.glyph}>
+            <Droplet size={16} color={Colors.accentError} strokeWidth={1.75} />
+          </View>
           <Text style={styles.widgetTitle}>Money Leaks</Text>
         </View>
         <Badge
           text={`${leaks.length} found`}
-          variant={leaks.length > 0 ? 'error' : 'info'}
+          variant={leaks.length > 0 ? 'error' : 'gray'}
           size="sm"
         />
       </View>
-      <Text style={styles.leakSavings}>
+
+      <Text style={styles.leakSavingsLine}>
         Save up to{' '}
         <Text style={styles.leakAmount}>
           {formatCurrency(potentialSavings, { compact: true })}/mo
         </Text>
       </Text>
+
       {leaks.length === 0 ? (
-        <Text style={styles.emptyHint}>
-          No leaks detected — nice work. Run a fresh analysis from the Money Leaks screen.
-        </Text>
+        <Text style={styles.emptyHint}>No leaks detected — nice work.</Text>
       ) : (
-        leaks.slice(0, 3).map((leak, idx) => (
-          <View key={`${leak.type}-${idx}`} style={styles.leakRow}>
-            <Text style={styles.leakType} numberOfLines={1}>
-              • {leak.type}
-            </Text>
-            <Text style={styles.leakValue}>{formatCurrency(leak.amount)}</Text>
-          </View>
-        ))
+        <View style={{ marginTop: Spacing.xs }}>
+          {leaks.slice(0, 3).map((leak, idx) => (
+            <View key={`${leak.type}-${idx}`} style={styles.leakRow}>
+              <Text style={styles.leakType} numberOfLines={1}>
+                {leak.type}
+              </Text>
+              <Text style={styles.leakValue}>{formatCurrency(leak.amount)}</Text>
+            </View>
+          ))}
+        </View>
       )}
     </Card>
   );
 }
 
+// =============================================================
+// Action Cards (AI horizontal carousel)
+// =============================================================
 function ActionCardsWidget({
   cards,
   navigation,
@@ -550,36 +597,37 @@ function ActionCardsWidget({
 }) {
   if (cards.length === 0) return null;
   return (
-    <View style={styles.widget}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>🎯 Fix My Finances</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Insights')}>
-          <Text style={styles.linkText}>See all</Text>
-        </TouchableOpacity>
-      </View>
+    <Section
+      title="Fix My Finances"
+      subtitle="AI-suggested actions"
+      actionLabel="See all"
+      onActionPress={() => navigation.navigate('Insights')}
+      highlightTitle
+    >
       <FlatList
         data={cards}
         horizontal
         keyExtractor={(item) => item.id}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.actionList}
+        contentContainerStyle={{ paddingHorizontal: Spacing.xs, paddingTop: 4 }}
         renderItem={({ item }) => <ActionCardItem card={item} />}
       />
-    </View>
+    </Section>
   );
 }
 
 function ActionCardItem({ card }: { card: DashboardVm['actionCards'][0] }) {
-  const variant: 'error' | 'warning' | 'info' =
-    card.priority === 'URGENT' ? 'error' : card.priority === 'HIGH' ? 'warning' : 'info';
-
+  const variant: 'error' | 'warning' | 'primary' =
+    card.priority === 'URGENT' ? 'error' : card.priority === 'HIGH' ? 'warning' : 'primary';
   return (
-    <Card style={styles.actionCard} variant="outlined">
+    <Card variant="ai" style={styles.actionCard} padding="base">
       <View style={styles.actionCardHeader}>
-        <Text style={styles.actionCardIcon}>{card.icon}</Text>
+        <Sparkles size={16} color={Colors.accentAi} strokeWidth={1.75} />
         <Badge text={card.priority} variant={variant} size="sm" />
       </View>
-      <Text style={styles.actionCardTitle}>{card.title}</Text>
+      <Text style={styles.actionCardTitle} numberOfLines={2}>
+        {card.title}
+      </Text>
       <Text style={styles.actionCardDescription} numberOfLines={2}>
         {card.description}
       </Text>
@@ -592,6 +640,9 @@ function ActionCardItem({ card }: { card: DashboardVm['actionCards'][0] }) {
   );
 }
 
+// =============================================================
+// Spending widget
+// =============================================================
 function SpendingWidget({
   spent,
   income,
@@ -601,42 +652,72 @@ function SpendingWidget({
   income: number;
   savings: number;
 }) {
-  const savingsRate = income > 0 ? Math.max(0, Math.round((savings / income) * 100)) : 0;
+  const rate = income > 0 ? Math.max(0, Math.round((savings / income) * 100)) : 0;
 
   return (
     <Card style={styles.widget}>
-      <Text style={styles.widgetTitle}>This Month</Text>
-      <View style={styles.spendingRow}>
-        <View style={styles.spendingItem}>
-          <Text style={styles.spendingLabel}>Income</Text>
-          <Text style={[styles.spendingAmount, { color: Colors.success }]}>
-            +{formatCurrency(income, { compact: true })}
-          </Text>
-        </View>
-        <View style={styles.spendingDivider} />
-        <View style={styles.spendingItem}>
-          <Text style={styles.spendingLabel}>Spent</Text>
-          <Text style={[styles.spendingAmount, { color: Colors.error }]}>
-            -{formatCurrency(spent, { compact: true })}
-          </Text>
-        </View>
-        <View style={styles.spendingDivider} />
-        <View style={styles.spendingItem}>
-          <Text style={styles.spendingLabel}>Saved</Text>
-          <Text style={[styles.spendingAmount, { color: Colors.primary }]}>
-            {formatCurrency(savings, { compact: true })}
-          </Text>
-        </View>
+      <View style={styles.widgetHeader}>
+        <Text style={styles.widgetTitle}>This Month</Text>
+        <Text style={styles.metaText}>{rate}% saved</Text>
       </View>
-      <View style={styles.savingsRateContainer}>
-        <Text style={styles.savingsRateLabel}>Savings Rate</Text>
-        <Text style={styles.savingsRateValue}>{savingsRate}%</Text>
+
+      <View style={styles.statRow}>
+        <Stat
+          icon={<TrendingUp size={14} color={Colors.accentSuccess} strokeWidth={2} />}
+          label="Income"
+          value={income}
+          color={Colors.accentSuccess}
+          sign="+"
+        />
+        <View style={styles.statDivider} />
+        <Stat
+          icon={<TrendingDown size={14} color={Colors.accentError} strokeWidth={2} />}
+          label="Spent"
+          value={spent}
+          color={Colors.accentError}
+          sign="-"
+        />
+        <View style={styles.statDivider} />
+        <Stat label="Saved" value={savings} color={Colors.accentPrimary} />
       </View>
-      <ProgressBar progress={savingsRate} color={Colors.primary} />
+
+      <View style={{ marginTop: Spacing.base }}>
+        <ProgressBar progress={rate} color={Colors.accentPrimary} />
+      </View>
     </Card>
   );
 }
 
+function Stat({
+  icon,
+  label,
+  value,
+  color,
+  sign = '',
+}: {
+  icon?: React.ReactNode;
+  label: string;
+  value: number;
+  color: string;
+  sign?: string;
+}) {
+  return (
+    <View style={styles.statItem}>
+      <View style={styles.statHeader}>
+        {icon}
+        <Text style={styles.statLabel}>{label}</Text>
+      </View>
+      <Text style={[styles.statValue, { color }]}>
+        {sign}
+        {formatCurrency(value, { compact: true })}
+      </Text>
+    </View>
+  );
+}
+
+// =============================================================
+// Subscriptions
+// =============================================================
 function SubscriptionsWidget({
   count,
   dues,
@@ -649,71 +730,111 @@ function SubscriptionsWidget({
   return (
     <Card onPress={() => navigation.navigate('Subscriptions')} style={styles.widget}>
       <View style={styles.widgetHeader}>
-        <Text style={styles.widgetTitle}>🔄 Subscriptions</Text>
-        <Text style={styles.linkText}>Manage →</Text>
+        <Text style={styles.widgetTitle}>Subscriptions</Text>
+        <ArrowRight size={16} color={Colors.accentPrimary} strokeWidth={1.5} />
       </View>
-      <View style={styles.subscriptionStats}>
-        <View style={styles.subStat}>
-          <Text style={styles.subStatValue}>{count}</Text>
-          <Text style={styles.subStatLabel}>Active</Text>
+      <View style={styles.subRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.subValue}>{count}</Text>
+          <Text style={styles.subLabel}>Active</Text>
         </View>
-        <View style={styles.subStat}>
-          <Text style={styles.subStatValue}>{formatCurrency(dues, { compact: true })}</Text>
-          <Text style={styles.subStatLabel}>Upcoming Dues</Text>
+        <View style={styles.statDivider} />
+        <View style={{ flex: 1, alignItems: 'flex-end' }}>
+          <Text style={styles.subValue}>{formatCurrency(dues, { compact: true })}</Text>
+          <Text style={styles.subLabel}>Upcoming</Text>
         </View>
       </View>
     </Card>
   );
 }
 
+// =============================================================
+// Goals
+// =============================================================
 function GoalsWidget({ goal, navigation }: { goal: DashboardVm['topGoal']; navigation: any }) {
-  const remaining = Math.max(0, goal.target - goal.current);
   return (
     <Card onPress={() => navigation.navigate('Goals')} style={styles.widget}>
       <View style={styles.widgetHeader}>
-        <Text style={styles.widgetTitle}>🎯 Top Goal</Text>
-        <Text style={styles.linkText}>All goals →</Text>
-      </View>
-      <View style={styles.goalContent}>
-        <ProgressRing progress={goal.progress} size={80} strokeWidth={8} color={Colors.success} />
-        <View style={styles.goalInfo}>
-          <Text style={styles.goalName}>{goal.name}</Text>
-          <Text style={styles.goalAmount}>
-            {formatCurrency(goal.current)} / {formatCurrency(goal.target)}
-          </Text>
-          <Text style={styles.goalRemaining}>{formatCurrency(remaining)} to go</Text>
+        <View style={styles.iconTitleRow}>
+          <View style={styles.glyph}>
+            <Target size={16} color={Colors.accentSuccess} strokeWidth={1.75} />
+          </View>
+          <Text style={styles.widgetTitle}>Top Goal</Text>
         </View>
+        <ArrowRight size={16} color={Colors.accentPrimary} strokeWidth={1.5} />
       </View>
+
+      {goal ? (
+        <View style={styles.goalContent}>
+          <ProgressRing
+            progress={goal.progress}
+            size={84}
+            strokeWidth={6}
+            color={Colors.accentSuccess}
+            showPercentage
+          />
+          <View style={styles.goalInfo}>
+            <Text style={styles.goalName} numberOfLines={1}>
+              {goal.name}
+            </Text>
+            <Text style={styles.goalAmount}>
+              {formatCurrency(goal.current)} / {formatCurrency(goal.target)}
+            </Text>
+            <Text style={styles.goalRemaining}>
+              {formatCurrency(Math.max(0, goal.target - goal.current))} to go
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <Text style={styles.emptyHint}>Set your first savings goal to see progress here.</Text>
+      )}
     </Card>
   );
 }
 
-function ForecastWidget({ forecast }: { forecast: DashboardVm['forecast'] }) {
+// =============================================================
+// Forecast
+// =============================================================
+function ForecastWidget({ days, balance }: { days: number; balance: number }) {
   return (
-    <Card style={[styles.widget, styles.forecastWidget]}>
-      <View style={styles.forecastHeader}>
-        <Text style={styles.forecastIcon}>🔮</Text>
-        <Text style={styles.widgetTitle}>Cash Flow Forecast</Text>
+    <Card variant="ai" style={styles.widget}>
+      <View style={styles.iconTitleRow}>
+        <Sparkles size={16} color={Colors.accentAi} strokeWidth={1.75} />
+        <Text style={styles.widgetTitleAi}>Cash flow forecast</Text>
       </View>
-      <Text style={styles.forecastMessage}>At current pace, your money will last</Text>
-      <Text style={styles.forecastDays}>{forecast.daysLeft} days</Text>
-      <Text style={styles.forecastBalance}>
-        Predicted end-of-month: {formatCurrency(forecast.balance)}
+      <Text style={[styles.metaText, { marginTop: Spacing.sm }]}>
+        At your current pace, your balance lasts
       </Text>
+      <Text style={styles.forecastDays}>
+        {days} <Text style={styles.forecastDaysUnit}>days</Text>
+      </Text>
+      <Text style={styles.metaText}>Predicted end-of-month: {formatCurrency(balance)}</Text>
     </Card>
   );
 }
 
+// =============================================================
+// Upcoming payments
+// =============================================================
 function UpcomingPaymentsWidget({ payments }: { payments: DashboardVm['upcomingPayments'] }) {
   if (payments.length === 0) return null;
   return (
     <Card style={styles.widget}>
-      <Text style={styles.widgetTitle}>Upcoming Payments</Text>
-      {payments.map((p) => (
-        <View key={p.id} style={styles.paymentRow}>
-          <Text style={styles.paymentIcon}>{p.icon}</Text>
-          <View style={styles.paymentInfo}>
-            <Text style={styles.paymentName}>{p.name}</Text>
+      <View style={styles.widgetHeader}>
+        <Text style={styles.widgetTitle}>Upcoming Payments</Text>
+      </View>
+      {payments.map((p, i) => (
+        <View
+          key={p.id}
+          style={[styles.paymentRow, i === payments.length - 1 && { borderBottomWidth: 0 }]}
+        >
+          <View style={styles.paymentGlyph}>
+            <Calendar size={16} color={Colors.accentPrimary} strokeWidth={1.75} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.paymentName} numberOfLines={1}>
+              {p.name}
+            </Text>
             <Text style={styles.paymentDue}>
               {p.dueIn === 0 ? 'Due today' : `Due in ${p.dueIn} days`}
             </Text>
@@ -725,6 +846,66 @@ function UpcomingPaymentsWidget({ payments }: { payments: DashboardVm['upcomingP
   );
 }
 
+// =============================================================
+// Loading + error states
+// =============================================================
+function DashboardSkeleton() {
+  return (
+    <View
+      style={[
+        styles.container,
+        { paddingTop: Spacing['3xl'] + Spacing.lg, paddingHorizontal: Spacing.lg },
+      ]}
+    >
+      <View style={[styles.header, { marginBottom: Spacing.lg }]}>
+        <View style={{ flex: 1 }}>
+          <Skeleton width={120} height={14} radius="sm" />
+          <View style={{ height: 8 }} />
+          <Skeleton width={180} height={26} radius="sm" />
+        </View>
+        <Skeleton width={44} height={44} radius="md" />
+      </View>
+      <Skeleton width="100%" height={150} radius="lg" />
+      <View style={{ height: Spacing.lg }} />
+      <Skeleton width="100%" height={80} radius="lg" />
+      <View style={{ height: Spacing.lg }} />
+      {[0, 1, 2].map((i) => (
+        <View key={i} style={{ marginBottom: Spacing.base }}>
+          <Skeleton width="100%" height={150} radius="lg" />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function FullScreenError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <View style={styles.fullScreenState}>
+      <View
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 32,
+          backgroundColor: 'rgba(255,180,171,0.15)',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: Spacing.base,
+        }}
+      >
+        <Droplet size={28} color={Colors.accentError} strokeWidth={1.5} />
+      </View>
+      <Text style={styles.fullScreenStateTitle}>Couldn&apos;t load dashboard</Text>
+      <Text style={styles.fullScreenStateText}>Check your connection and try again.</Text>
+      <View style={{ marginTop: Spacing.xl, alignSelf: 'stretch' }}>
+        <Button title="Retry" onPress={onRetry} fullWidth />
+      </View>
+    </View>
+  );
+}
+
+// =============================================================
+// Styles
+// =============================================================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -734,6 +915,8 @@ const styles = StyleSheet.create({
     paddingTop: Spacing['3xl'] + Spacing.lg,
     paddingHorizontal: Spacing.lg,
   },
+
+  // Full-screen states
   fullScreenState: {
     flex: 1,
     alignItems: 'center',
@@ -741,13 +924,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     padding: Spacing.xl,
   },
-  fullScreenStateIcon: {
-    fontSize: 48,
-    marginBottom: Spacing.base,
-  },
   fullScreenStateTitle: {
-    fontSize: Typography.sizes.lg,
-    fontWeight: Typography.weights.semiBold,
+    fontSize: Typography.sizes.xl,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
     marginBottom: Spacing.xs,
   },
@@ -755,66 +935,76 @@ const styles = StyleSheet.create({
     fontSize: Typography.sizes.base,
     color: Colors.textSecondary,
     textAlign: 'center',
-    marginTop: Spacing.sm,
   },
+
+  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: Spacing.lg,
   },
-  headerLeft: {
-    flex: 1,
-    paddingRight: Spacing.sm,
-  },
   greeting: {
-    fontSize: Typography.sizes.base,
+    fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   userName: {
-    fontSize: Typography.sizes['2xl'],
+    fontSize: Typography.sizes['3xl'],
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
+    letterSpacing: -0.6,
     marginTop: 2,
-    marginBottom: Spacing.xs,
-  },
-  aiButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  aiButtonIcon: {
-    fontSize: 24,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
-  bellButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.card,
-    justifyContent: 'center',
+
+  // Hero card
+  heroCard: {
+    marginBottom: Spacing.lg,
+    minHeight: 160,
+  },
+  heroLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 1.2,
+    fontWeight: Typography.weights.medium,
+    fontFamily: fontFamilyForWeight(Typography.weights.medium),
+  },
+  heroValue: {
+    fontSize: 48,
+    lineHeight: 52,
+    color: Colors.textPrimary,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    letterSpacing: -1.5,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.base,
+    fontVariant: ['tabular-nums'] as any,
+  },
+  heroFooter: {
+    flexDirection: 'row',
     alignItems: 'center',
-    position: 'relative',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
   },
-  bellIcon: {
-    fontSize: 22,
+  heroAiNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  bellBadge: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.error,
+  heroAiText: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.textSecondary,
+    marginLeft: 4,
+    letterSpacing: 0.2,
   },
+
+  // Quick actions
   quickActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -824,23 +1014,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
-  quickActionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: Colors.card,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.xs,
-  },
-  quickActionIconText: {
-    fontSize: 24,
-  },
   quickActionLabel: {
     fontSize: Typography.sizes.xs,
     color: Colors.textSecondary,
     fontWeight: Typography.weights.medium,
+    fontFamily: fontFamilyForWeight(Typography.weights.medium),
+    letterSpacing: 0.2,
   },
+
+  // Widget
   widget: {
     marginBottom: Spacing.base,
   },
@@ -850,44 +1032,48 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.base,
   },
-  widgetTitleRow: {
+  iconTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  glyph: {
+    width: 32,
+    height: 32,
+    borderRadius: BorderRadius.base,
+    backgroundColor: Colors.surfaceContainerHigh,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  widgetLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 1.2,
+    fontWeight: Typography.weights.medium,
+    fontFamily: fontFamilyForWeight(Typography.weights.medium),
   },
   widgetTitle: {
     fontSize: Typography.sizes.lg,
     fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
+    letterSpacing: -0.2,
   },
-  widgetSubtitle: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-    paddingHorizontal: Spacing.xs,
-  },
-  sectionTitle: {
+  widgetTitleAi: {
     fontSize: Typography.sizes.lg,
     fontWeight: Typography.weights.semiBold,
-    color: Colors.textPrimary,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+    color: Colors.accentAi,
+    letterSpacing: -0.2,
+    marginLeft: 6,
   },
-  linkText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.primary,
-    fontWeight: Typography.weights.medium,
-  },
-  emptyHint: {
+  metaText: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
-    fontStyle: 'italic',
   },
-  // Health Score
-  healthContent: {
+
+  // Health
+  healthRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -895,13 +1081,10 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: Spacing.lg,
   },
-  factorsEmptyText: {
+  factorsEmpty: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
     fontStyle: 'italic',
-  },
-  factorRow: {
-    marginBottom: Spacing.sm,
   },
   factorHeader: {
     flexDirection: 'row',
@@ -909,57 +1092,63 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   factorLabel: {
+    flex: 1,
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
-    flexShrink: 1,
     paddingRight: Spacing.xs,
   },
   factorValue: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+    fontVariant: ['tabular-nums'] as any,
   },
-  // Money Leaks
-  leakWidget: {
-    backgroundColor: Tints.errorBg,
-    borderWidth: 1,
-    borderColor: Tints.errorBorder,
+
+  // Leaks
+  leakCard: {
+    backgroundColor: 'rgba(255,180,171,0.06)',
+    borderColor: 'rgba(255,180,171,0.20)',
   },
-  leakIcon: {
-    fontSize: 20,
-    marginRight: Spacing.xs,
-  },
-  leakSavings: {
+  leakSavingsLine: {
     fontSize: Typography.sizes.base,
     color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.xs,
   },
   leakAmount: {
-    color: Colors.success,
-    fontWeight: Typography.weights.bold,
     fontSize: Typography.sizes.lg,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    color: Colors.accentSuccess,
+    fontVariant: ['tabular-nums'] as any,
   },
   leakRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderDefault,
   },
   leakType: {
+    flex: 1,
     fontSize: Typography.sizes.sm,
     color: Colors.textPrimary,
-    flexShrink: 1,
-    paddingRight: Spacing.sm,
   },
   leakValue: {
     fontSize: Typography.sizes.sm,
     fontWeight: Typography.weights.semiBold,
-    color: Colors.error,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+    color: Colors.accentError,
+    fontVariant: ['tabular-nums'] as any,
   },
-  // Action Cards
-  actionList: {
-    paddingHorizontal: Spacing.xs,
+  emptyHint: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
   },
+
+  // Action cards
   actionCard: {
-    width: 220,
+    width: 240,
     marginRight: Spacing.sm,
   },
   actionCardHeader: {
@@ -968,89 +1157,87 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.sm,
   },
-  actionCardIcon: {
-    fontSize: 28,
-  },
   actionCardTitle: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
     marginBottom: 4,
   },
   actionCardDescription: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
     lineHeight: Typography.sizes.sm * 1.4,
+    marginBottom: Spacing.sm,
   },
   actionCardFooter: {
     paddingTop: Spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: Colors.borderDefault,
   },
   actionCardImpact: {
     fontSize: Typography.sizes.sm,
-    color: Colors.success,
+    color: Colors.accentSuccess,
     fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
+    fontVariant: ['tabular-nums'] as any,
   },
+
   // Spending
-  spendingRow: {
+  statRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.sm,
   },
-  spendingItem: {
+  statItem: {
     flex: 1,
-    alignItems: 'center',
   },
-  spendingLabel: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textSecondary,
+  statHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 4,
   },
-  spendingAmount: {
-    fontSize: Typography.sizes.md,
-    fontWeight: Typography.weights.bold,
+  statLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginLeft: 4,
   },
-  spendingDivider: {
+  statValue: {
+    fontSize: Typography.sizes.lg,
+    fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.4,
+  },
+  statDivider: {
     width: 1,
-    height: 30,
-    backgroundColor: Colors.border,
+    height: 36,
+    backgroundColor: Colors.borderDefault,
+    marginHorizontal: Spacing.sm,
   },
-  savingsRateContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: Spacing.base,
-    marginBottom: Spacing.xs,
-  },
-  savingsRateLabel: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
-  },
-  savingsRateValue: {
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.bold,
-    color: Colors.primary,
-  },
+
   // Subscriptions
-  subscriptionStats: {
+  subRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: Spacing.sm,
-  },
-  subStat: {
     alignItems: 'center',
   },
-  subStatValue: {
+  subValue: {
     fontSize: Typography.sizes['2xl'],
     fontWeight: Typography.weights.bold,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
     color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
+    letterSpacing: -0.6,
   },
-  subStatLabel: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textSecondary,
+  subLabel: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
     marginTop: 2,
   },
+
   // Goals
   goalContent: {
     flexDirection: 'row',
@@ -1063,65 +1250,65 @@ const styles = StyleSheet.create({
   goalName: {
     fontSize: Typography.sizes.base,
     fontWeight: Typography.weights.semiBold,
+    fontFamily: fontFamilyForWeight(Typography.weights.semiBold),
     color: Colors.textPrimary,
-    marginBottom: 2,
   },
   goalAmount: {
     fontSize: Typography.sizes.sm,
     color: Colors.textSecondary,
-    marginBottom: 2,
+    marginTop: 2,
+    fontVariant: ['tabular-nums'] as any,
   },
   goalRemaining: {
     fontSize: Typography.sizes.xs,
-    color: Colors.success,
+    color: Colors.accentSuccess,
     fontWeight: Typography.weights.medium,
+    fontFamily: fontFamilyForWeight(Typography.weights.medium),
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginTop: 4,
   },
+
   // Forecast
-  forecastWidget: {
-    backgroundColor: Colors.primary,
-  },
-  forecastHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-  },
-  forecastIcon: {
-    fontSize: 24,
-    marginRight: Spacing.xs,
-  },
-  forecastMessage: {
-    fontSize: Typography.sizes.sm,
-    color: 'rgba(255,255,255,0.8)',
-  },
   forecastDays: {
-    fontSize: Typography.sizes['3xl'],
+    fontSize: 48,
+    lineHeight: 52,
+    color: Colors.textPrimary,
     fontWeight: Typography.weights.bold,
-    color: Colors.white,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    letterSpacing: -1.5,
     marginVertical: Spacing.xs,
+    fontVariant: ['tabular-nums'] as any,
   },
-  forecastBalance: {
-    fontSize: Typography.sizes.sm,
-    color: 'rgba(255,255,255,0.9)',
+  forecastDaysUnit: {
+    fontSize: Typography.sizes.lg,
+    color: Colors.textSecondary,
+    fontWeight: Typography.weights.regular,
+    letterSpacing: 0,
   },
+
   // Payments
   paymentRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
+    borderBottomColor: Colors.borderDefault,
   },
-  paymentIcon: {
-    fontSize: 24,
+  paymentGlyph: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.base,
+    backgroundColor: 'rgba(59,130,246,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.sm,
-  },
-  paymentInfo: {
-    flex: 1,
   },
   paymentName: {
     fontSize: Typography.sizes.base,
-    fontWeight: Typography.weights.medium,
     color: Colors.textPrimary,
+    fontWeight: Typography.weights.medium,
+    fontFamily: fontFamilyForWeight(Typography.weights.medium),
   },
   paymentDue: {
     fontSize: Typography.sizes.xs,
@@ -1130,7 +1317,9 @@ const styles = StyleSheet.create({
   },
   paymentAmount: {
     fontSize: Typography.sizes.base,
+    color: Colors.textPrimary,
     fontWeight: Typography.weights.bold,
-    color: Colors.primary,
+    fontFamily: fontFamilyForWeight(Typography.weights.bold),
+    fontVariant: ['tabular-nums'] as any,
   },
 });
