@@ -1,16 +1,9 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { IsString, MinLength, IsOptional, IsInt } from 'class-validator';
 import { AiProxyService } from './ai-proxy.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { User } from '../../common/decorators/user.decorator';
+import { User, RequestUser } from '../../common/decorators/user.decorator';
 
 class AskDto {
   @IsString()
@@ -39,46 +32,43 @@ export class AiProxyController {
 
   @Get('dashboard')
   @ApiOperation({ summary: 'Get personalized dashboard' })
-  dashboard(@User() user: any) {
+  dashboard(@User() user: RequestUser) {
     return this.aiProxy.getDashboard(user.id);
   }
 
   @Get('health-score')
   @ApiOperation({ summary: 'Calculate financial health score' })
-  healthScore(@User() user: any) {
+  healthScore(@User() user: RequestUser) {
     return this.aiProxy.getHealthScore(user.id);
   }
 
   @Get('leaks')
   @ApiOperation({ summary: 'Detect money leaks' })
-  leaks(@User() user: any) {
+  leaks(@User() user: RequestUser) {
     return this.aiProxy.getLeaks(user.id);
   }
 
   @Get('behavior')
   @ApiOperation({ summary: 'Analyze spending behavior' })
-  behavior(@User() user: any, @Query('days') days?: string) {
-    return this.aiProxy.analyzeBehavior(
-      user.id,
-      days ? parseInt(days, 10) : 30,
-    );
+  behavior(@User() user: RequestUser, @Query('days') days?: string) {
+    return this.aiProxy.analyzeBehavior(user.id, days ? parseInt(days, 10) : 30);
   }
 
   @Get('archetype')
   @ApiOperation({ summary: 'Determine user financial archetype' })
-  archetype(@User() user: any) {
+  archetype(@User() user: RequestUser) {
     return this.aiProxy.getArchetype(user.id);
   }
 
   @Post('action-cards/generate')
   @ApiOperation({ summary: 'Generate fresh action cards from AI' })
-  generateActionCards(@User() user: any) {
+  generateActionCards(@User() user: RequestUser) {
     return this.aiProxy.generateActionCards(user.id);
   }
 
   @Post('ask')
   @ApiOperation({ summary: 'Natural language financial query' })
-  ask(@User() user: any, @Body() dto: AskDto) {
+  ask(@User() user: RequestUser, @Body() dto: AskDto) {
     return this.aiProxy.ask(user.id, dto.query);
   }
 
@@ -90,7 +80,7 @@ export class AiProxyController {
 
   @Post('subscriptions/detect')
   @ApiOperation({ summary: 'Run subscription detection on transaction history' })
-  detectSubscriptions(@User() user: any) {
+  detectSubscriptions(@User() user: RequestUser) {
     return this.aiProxy.detectSubscriptions(user.id);
   }
 }

@@ -2,8 +2,11 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } fro
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { NotificationService } from './notification.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { User } from '../../common/decorators/user.decorator';
-import { CreateNotificationDto, UpdateNotificationPreferencesDto } from '@money-management/shared/dto';
+import { User, RequestUser } from '../../common/decorators/user.decorator';
+import {
+  CreateNotificationDto,
+  UpdateNotificationPreferencesDto,
+} from '@money-management/shared/dto';
 
 @ApiTags('notifications')
 @Controller('notifications')
@@ -15,56 +18,56 @@ export class NotificationController {
   @Get()
   @ApiOperation({ summary: 'Get all notifications' })
   @ApiQuery({ name: 'unread', required: false, type: Boolean })
-  findAll(@User() user: any, @Query('unread') unread?: string) {
+  findAll(@User() user: RequestUser, @Query('unread') unread?: string) {
     return this.notificationService.findAll(user.id, unread === 'true');
   }
 
   @Get('unread/count')
   @ApiOperation({ summary: 'Get unread notification count' })
-  getUnreadCount(@User() user: any) {
+  getUnreadCount(@User() user: RequestUser) {
     return this.notificationService.getUnreadCount(user.id);
   }
 
   @Get('preferences')
   @ApiOperation({ summary: 'Get notification preferences' })
-  getPreferences(@User() user: any) {
+  getPreferences(@User() user: RequestUser) {
     return this.notificationService.getPreferences(user.id);
   }
 
   @Put('preferences')
   @ApiOperation({ summary: 'Update notification preferences' })
-  updatePreferences(@User() user: any, @Body() prefs: UpdateNotificationPreferencesDto) {
+  updatePreferences(@User() user: RequestUser, @Body() prefs: UpdateNotificationPreferencesDto) {
     return this.notificationService.updatePreferences(user.id, prefs);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get notification by ID' })
-  findOne(@User() user: any, @Param('id') id: string) {
+  findOne(@User() user: RequestUser, @Param('id') id: string) {
     return this.notificationService.findOne(user.id, id);
   }
 
   @Put(':id/read')
   @ApiOperation({ summary: 'Mark notification as read' })
-  markAsRead(@User() user: any, @Param('id') id: string) {
+  markAsRead(@User() user: RequestUser, @Param('id') id: string) {
     return this.notificationService.markAsRead(user.id, id);
   }
 
   @Post('read-all')
   @ApiOperation({ summary: 'Mark all notifications as read' })
-  markAllAsRead(@User() user: any) {
+  markAllAsRead(@User() user: RequestUser) {
     return this.notificationService.markAllAsRead(user.id);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete notification' })
-  delete(@User() user: any, @Param('id') id: string) {
+  delete(@User() user: RequestUser, @Param('id') id: string) {
     return this.notificationService.delete(user.id, id);
   }
 
   // Admin/internal endpoint for creating notifications
   @Post()
   @ApiOperation({ summary: 'Create notification (internal use)' })
-  create(@User() user: any, @Body() dto: CreateNotificationDto) {
+  create(@User() user: RequestUser, @Body() dto: CreateNotificationDto) {
     return this.notificationService.create(user.id, dto);
   }
 }

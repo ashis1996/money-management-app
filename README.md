@@ -118,6 +118,7 @@ money-management-app/
 ## 🚀 Tech Stack
 
 ### Frontend (Mobile)
+
 - **React Native** with TypeScript
 - **Expo** for development and deployment
 - **Zustand** for state management
@@ -126,6 +127,7 @@ money-management-app/
 - **React Navigation** for routing
 
 ### Backend
+
 - **NestJS** (TypeScript) - Modular server framework
 - **Prisma** - Type-safe ORM
 - **PostgreSQL** - Primary database
@@ -135,12 +137,14 @@ money-management-app/
 - **bcrypt** - Password hashing
 
 ### AI Service
+
 - **FastAPI** (Python) - High-performance API
 - **spaCy** - NLP processing
 - **Transformers** - ML models
 - **OpenAI/Anthropic** - LLM integration (optional)
 
 ### Infrastructure
+
 - **Docker** - Containerization
 - **Kubernetes** - Orchestration
 - **AWS** (target):
@@ -152,6 +156,7 @@ money-management-app/
 ## 🛠️ Getting Started
 
 ### Prerequisites
+
 - Node.js 18+ and npm
 - Python 3.11+
 - Docker and Docker Compose
@@ -160,23 +165,27 @@ money-management-app/
 ### Quick Start (Docker)
 
 1. **Clone the repository**
+
 ```bash
 git clone <repository-url>
 cd money-management-app
 ```
 
 2. **Set up environment variables**
+
 ```bash
 cp .env.example .env
 # Edit .env with your values
 ```
 
 3. **Start all services**
+
 ```bash
 docker-compose up -d
 ```
 
 4. **Access services**
+
 - Backend API: http://localhost:3000
 - API Documentation: http://localhost:3000/docs
 - AI Service: http://localhost:8000
@@ -187,6 +196,7 @@ docker-compose up -d
 ### Manual Setup
 
 #### Backend
+
 ```bash
 cd backend
 npm install
@@ -197,6 +207,7 @@ npm run dev
 ```
 
 #### AI Service
+
 ```bash
 cd ai-service
 python -m venv venv
@@ -206,6 +217,7 @@ uvicorn app.main:app --reload
 ```
 
 #### Mobile App
+
 ```bash
 cd mobile
 npm install
@@ -215,51 +227,126 @@ npm start
 
 ## 📡 API Endpoints
 
+The complete API is documented via Swagger at `/docs` once the backend is
+running. The table below covers the surfaces that mobile / external
+integrators are expected to hit; admin-only and AI-internal routes are
+omitted for brevity (they're in the Swagger doc).
+
 ### Authentication
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/auth/register` | Register new user |
-| POST | `/api/v1/auth/login` | Login user |
-| POST | `/api/v1/auth/refresh` | Refresh access token |
-| POST | `/api/v1/auth/logout` | Logout user |
+
+| Method | Endpoint                | Description                              |
+| ------ | ----------------------- | ---------------------------------------- |
+| POST   | `/api/v1/auth/register` | Register a new user                      |
+| POST   | `/api/v1/auth/login`    | Log in (returns access + refresh tokens) |
+| POST   | `/api/v1/auth/refresh`  | Refresh the access token                 |
+| POST   | `/api/v1/auth/logout`   | Log out (single device or everywhere)    |
+
+### Users / Profile
+
+| Method | Endpoint                  | Description                                |
+| ------ | ------------------------- | ------------------------------------------ |
+| GET    | `/api/v1/users/me`        | Get the caller's profile                   |
+| PUT    | `/api/v1/users/me`        | Update the caller's profile                |
+| GET    | `/api/v1/users/me/export` | GDPR/DPDP right-to-access (full JSON dump) |
+| DELETE | `/api/v1/users/me`        | GDPR/DPDP right-to-erasure (cascades)      |
+| GET    | `/api/v1/users/dashboard` | Aggregated dashboard stats                 |
+
+### Accounts
+
+| Method | Endpoint                       | Description                   |
+| ------ | ------------------------------ | ----------------------------- |
+| GET    | `/api/v1/accounts`             | List the user's accounts      |
+| POST   | `/api/v1/accounts`             | Add an account                |
+| GET    | `/api/v1/accounts/net-worth`   | Total balance across accounts |
+| PUT    | `/api/v1/accounts/:id`         | Update an account             |
+| DELETE | `/api/v1/accounts/:id`         | Soft-delete an account        |
+| POST   | `/api/v1/accounts/:id/primary` | Mark an account as primary    |
 
 ### Transactions
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/transactions` | Get all transactions |
-| POST | `/api/v1/transactions` | Create transaction |
-| GET | `/api/v1/transactions/:id` | Get transaction by ID |
-| PUT | `/api/v1/transactions/:id` | Update transaction |
-| DELETE | `/api/v1/transactions/:id` | Delete transaction |
-| GET | `/api/v1/transactions/analytics/categories` | Get category breakdown |
+
+| Method | Endpoint                                    | Description                               |
+| ------ | ------------------------------------------- | ----------------------------------------- |
+| GET    | `/api/v1/transactions`                      | Paginated list (`page`, `limit`, filters) |
+| POST   | `/api/v1/transactions`                      | Create a transaction                      |
+| GET    | `/api/v1/transactions/:id`                  | Get a transaction by ID                   |
+| PUT    | `/api/v1/transactions/:id`                  | Update a transaction                      |
+| DELETE | `/api/v1/transactions/:id`                  | Soft-delete a transaction                 |
+| GET    | `/api/v1/transactions/analytics/categories` | Spend by category                         |
+| GET    | `/api/v1/transactions/analytics/monthly`    | Monthly income/expense                    |
+| GET    | `/api/v1/transactions/search`               | Free-text search                          |
 
 ### SMS
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/sms/ingest` | Ingest SMS message |
-| POST | `/api/v1/sms/ingest/batch` | Ingest multiple SMS |
-| GET | `/api/v1/sms/history` | Get SMS history |
+
+| Method | Endpoint                   | Description                                    |
+| ------ | -------------------------- | ---------------------------------------------- |
+| POST   | `/api/v1/sms/ingest`       | Ingest one SMS (idempotent via dedup hash)     |
+| POST   | `/api/v1/sms/ingest/batch` | Ingest multiple SMS                            |
+| GET    | `/api/v1/sms/history`      | Paginated SMS history with linked transactions |
 
 ### Subscriptions
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/subscriptions` | Get all subscriptions |
-| POST | `/api/v1/subscriptions` | Create subscription |
-| POST | `/api/v1/subscriptions/detect` | Detect subscriptions |
-| PUT | `/api/v1/subscriptions/:id` | Update subscription |
-| DELETE | `/api/v1/subscriptions/:id` | Delete subscription |
 
-### Insights
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/insights` | Get all insights |
-| GET | `/api/v1/insights/spending` | Get spending analysis |
-| GET | `/api/v1/insights/recommendations` | Get recommendations |
-| GET | `/api/v1/insights/predictions` | Get predictions |
+| Method | Endpoint                       | Description                     |
+| ------ | ------------------------------ | ------------------------------- |
+| GET    | `/api/v1/subscriptions`        | List subscriptions              |
+| POST   | `/api/v1/subscriptions`        | Create a subscription           |
+| POST   | `/api/v1/subscriptions/detect` | Run pattern detection on demand |
+| PUT    | `/api/v1/subscriptions/:id`    | Update a subscription           |
+| DELETE | `/api/v1/subscriptions/:id`    | Cancel a subscription           |
+
+### Budgets / Goals
+
+| Method | Endpoint                       | Description                   |
+| ------ | ------------------------------ | ----------------------------- |
+| GET    | `/api/v1/budgets`              | List budgets                  |
+| POST   | `/api/v1/budgets`              | Create a budget               |
+| GET    | `/api/v1/goals`                | List goals                    |
+| POST   | `/api/v1/goals`                | Create a goal                 |
+| POST   | `/api/v1/goals/:id/contribute` | Record progress toward a goal |
+
+### Insights (rule-based)
+
+| Method | Endpoint                           | Description                       |
+| ------ | ---------------------------------- | --------------------------------- |
+| GET    | `/api/v1/insights`                 | All insights for the user         |
+| GET    | `/api/v1/insights/spending`        | Spending analysis (period-scoped) |
+| GET    | `/api/v1/insights/recommendations` | Recommendations                   |
+| GET    | `/api/v1/insights/predictions`     | Forecasted spend                  |
+| GET    | `/api/v1/insights/anomalies`       | Outliers in recent transactions   |
+
+### AI (LLM-backed)
+
+| Method | Endpoint                           | Description                        |
+| ------ | ---------------------------------- | ---------------------------------- |
+| GET    | `/api/v1/ai/dashboard`             | Personalized dashboard (cached)    |
+| GET    | `/api/v1/ai/health-score`          | Financial health score (cached)    |
+| GET    | `/api/v1/ai/leaks`                 | Money leaks (cached)               |
+| GET    | `/api/v1/ai/behavior`              | Behavioral analysis                |
+| GET    | `/api/v1/ai/archetype`             | User spending archetype            |
+| POST   | `/api/v1/ai/action-cards/generate` | Refresh action cards               |
+| POST   | `/api/v1/ai/ask`                   | Free-form Q&A over the user's data |
+
+### Notifications
+
+| Method | Endpoint                             | Description        |
+| ------ | ------------------------------------ | ------------------ |
+| GET    | `/api/v1/notifications`              | List notifications |
+| GET    | `/api/v1/notifications/unread/count` | Unread count       |
+| GET    | `/api/v1/notifications/preferences`  | Preferences        |
+| PUT    | `/api/v1/notifications/preferences`  | Update preferences |
+| PUT    | `/api/v1/notifications/:id/read`     | Mark one as read   |
+| POST   | `/api/v1/notifications/read-all`     | Mark all as read   |
+
+### Health
+
+| Method | Endpoint               | Description                                    |
+| ------ | ---------------------- | ---------------------------------------------- |
+| GET    | `/api/v1/health`       | Liveness probe                                 |
+| GET    | `/api/v1/health/ready` | Readiness probe (checks DB / Redis / RabbitMQ) |
 
 ## 🗄️ Database Schema
 
 ### Core Tables
+
 - **users** - User accounts and authentication
 - **accounts** - Bank accounts and wallets
 - **transactions** - Financial transactions
@@ -279,23 +366,37 @@ SMS Received (Mobile)
        ▼
 POST /sms/ingest (Backend)
        │
-       ▼
-Publish: SMS_RECEIVED
-       │
-       ▼
-RabbitMQ Queue: sms.processing
-       │
-       ▼
-SMS Parser → Transaction Created
-       │
-       ▼
-Publish: TRANSACTION_CREATED
-       │
-       ├─────────────┬─────────────┐
-       ▼             ▼             ▼
-Subscription     AI Insights   Notification
-Detector         Engine        Service
+       ├─ dedup hash check (userId+sender+body+ts)
+       ├─ Transaction.upsert  (idempotent)
+       └─ publish: transaction.created
+                          │
+       ┌──────────────────┼──────────────────┐
+       ▼                  ▼                  ▼
+RabbitMQ:           RabbitMQ:           RabbitMQ:
+transaction.events  subscription.events notification.events
+       │                  │                  │
+       ▼                  ▼                  ▼
+- Behavior tag     - Subscription      - Push notification
+- Cache invalidate   pattern detect    - Persist to DB
+- Health score       (rate-limited)
+- Action cards
+  (cooldown-throttled)
 ```
+
+Notes:
+
+- The legacy `sms.processing` queue and the duplicate consumer that
+  re-created transactions from `sms.received` events were removed.
+  `SmsService.ingestSms` is the single source of truth for "SMS →
+  Transaction"; the consumer side only does fan-out work.
+- All three queues are independent — a slow handler on
+  `transaction.events` (the heavy AI fan-out path) can no longer
+  starve `notification.events`. Per-queue prefetch is tuned for
+  workload (5 / 20 / 50).
+  Subscription AI Insights Notification
+  Detector Engine Service
+
+````
 
 ## 🔒 Security
 
@@ -332,7 +433,7 @@ kubectl apply -f infra/k8s/rabbitmq-deployment.yaml
 kubectl apply -f infra/k8s/backend-deployment.yaml
 kubectl apply -f infra/k8s/ai-service-deployment.yaml
 kubectl apply -f infra/k8s/ingress.yaml
-```
+````
 
 ## 🧪 Testing
 
